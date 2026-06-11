@@ -22,7 +22,7 @@ Parent skill `$quiz` routes here for STYLE intent.
 
 # Badges
 
-`:color-badge[TEXT]` markdown syntax is the standard for all metadata display.
+`:color-badge[TEXT]` Markdown syntax is the standard for all metadata display.
 
 | Element | Syntax | Example |
 |---------|--------|---------|
@@ -129,7 +129,7 @@ Applies in: quiz screen (correct + incorrect), review cards, AI recommendations 
 
 - No emoji in button labels: `"Start Round"` not `"▶️ Start Round"`
 - Action buttons: `type="primary"`, `use_container_width=True`
-- All pills: `label_visibility="collapsed"` (bold markdown label above instead)
+- All pills: `label_visibility="collapsed"` (bold Markdown label above instead)
 
 ---
 

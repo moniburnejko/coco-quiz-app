@@ -63,7 +63,7 @@ Before interpolating a prompt into `$$...$$`, the code must call `.replace("$$",
 **7. json.loads() on Cortex output**
 `json.loads(response)` must never be called directly on a Cortex response. All parsing must go through `parse_cortex_json()`.
 - PASS: 0 direct json.loads on Cortex output
-- FAIL: any such occurrence (Cortex may return markdown fences or double-encoded JSON)
+- FAIL: any such occurrence (Cortex may return Markdown fences or double-encoded JSON)
 
 **8. `from snowflake.cortex import complete`**
 Must not appear. Use `AI_COMPLETE` via `session.sql()` only.

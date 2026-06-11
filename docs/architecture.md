@@ -4,13 +4,13 @@ A tour of what runs where, how data flows from study guide PDF to quiz question 
 
 ---
 
-## high-level topology
+## High-level topology
 
 ```mermaid
 flowchart TB
     subgraph Browser["Browser: Snowsight workspace"]
-        CC["Cortex Code chat<br/>AGENTS.md + skills loaded as context"]
-        WS["Workspace file tree<br/>AGENTS.md, quiz.py, environment.yml"]
+        CC["Snowflake CoCo chat<br/>AGENTS.md + skills loaded as context"]
+        WS["Workspace file tree<br/>AGENTS.md + generated app/ project"]
         CC <-.-> WS
     end
 
@@ -30,43 +30,43 @@ flowchart TB
     Browser -->|"SQL · AI_COMPLETE · AI_PARSE_DOCUMENT · CREATE STREAMLIT"| Snowflake
 ```
 
-Nothing runs locally. The PDF lives in a Snowflake stage. The Cortex Code lives in the Snowsight browser tab. The Streamlit app runs server-side in Snowflake. The workspace is the bridge - it holds `AGENTS.md` (project context), the skills (orchestration logic), and the generated `quiz.py` + `environment.yml` (app code). The agent never touches the user's local filesystem because there isn't one involved.
+Nothing runs locally. The PDF lives in a Snowflake stage. CoCo lives in the Snowsight browser tab. The Streamlit app runs server-side in Snowflake (container runtime). The workspace is the bridge - it holds `AGENTS.md` (project context), the skills (orchestration logic), and the generated `app/` project (app code). The agent never touches the user's local filesystem because there isn't one involved.
 
 ---
 
-## setup data flow
+## Setup data flow
 
 The setup pipeline runs once per exam, orchestrated by `$setup-exam`. It has three hand-off points where the user acts: once to upload the study guide PDF (and optionally a CSV/JSON question bank) to a stage, once to approve the extracted domain list, and once to upload the generated Streamlit files to a second stage. Everything between those hand-offs is SQL the agent runs.
 
-The pipeline starts after the user drops the PDF into `STAGE_QUIZ_DATA` via Snowsight's UI. The agent confirms the upload with `LIST @...`, then calls `AI_PARSE_DOCUMENT` in `LAYOUT` mode to convert the PDF into markdown. That markdown stays in the agent's working memory - it gets reused twice without a re-parse: first by `AI_COMPLETE` to extract domain names, weights (summing to 100), and topic taxonomies into `EXAM_DOMAINS`, then once per domain (in a second pass) to extract free-form `key_facts` that will later ground question generation and AI explanations.
+The pipeline starts after the user drops the PDF into `STAGE_QUIZ_DATA` via Snowsight's UI. The agent confirms the upload with `LIST @...`, then calls `AI_PARSE_DOCUMENT` in `LAYOUT` mode to convert the PDF into Markdown. That Markdown stays in the agent's working memory - it gets reused twice without a re-parse: first by `AI_COMPLETE` to extract domain names, weights (summing to 100), and topic taxonomies into `EXAM_DOMAINS`, then once per domain (in a second pass) to extract free-form `key_facts` that will later ground question generation and AI explanations.
 
 At this point the user gets a checkpoint: approve the domain list, re-extract with a tweaked prompt, or abort. No write to `QUIZ_QUESTIONS` runs until approval.
 
 The next branch depends on whether the user has a question bank. If yes, the agent runs `COPY INTO QUIZ_QUESTIONS FROM @stage/file.csv` with `source='MANUAL'`. If the CSV/JSON schema differs from the target table, `$adapt-questions` is invoked to map columns (Strategies A-E, one of which uses `AI_COMPLETE` to classify rows by domain). If there's no CSV/JSON, the agent generates questions directly via `AI_COMPLETE`, batched per domain - typically ~30 questions per domain in groups of 10, grounded on the `key_facts` extracted earlier. These questions are inserted into `QUIZ_QUESTIONS` so the user can use them later as `question bank` for the fast rounds.
 
-Once `QUIZ_QUESTIONS` is populated, the agent updates two lines in `AGENTS.md` (schema name and exam code), then reads the `$quiz/*` skills and writes `quiz.py` + `environment.yml` as files in the workspace. Before those files are considered final, the agent runs `$sis/pre-deploy` - a 22-item scan that catches dollar-quoting bugs, `st.rerun()` count violations, missing `@st.cache_data` decorators, and other Streamlit-in-Snowflake pitfalls. The scan must fully pass.
+Once `QUIZ_QUESTIONS` is populated, the agent updates two lines in `AGENTS.md` (schema name and exam code), then reads the `$quiz/*` skills and writes the decomposed `app/` project (entry point, `_*.py` modules, `pages/`, configs) into the workspace. Before those files are considered final, the agent runs `$sis/pre-deploy` - a scan across all app files that catches dollar-quoting bugs, SQL-injection risks, missing `@st.cache_data` decorators, and other Streamlit-in-Snowflake pitfalls. The scan must fully pass.
 
-The user then uploads both generated files to `STAGE_SIS_APP` via the Snowsight UI. The agent confirms the upload and runs `CREATE OR REPLACE STREAMLIT ... FROM @STAGE_SIS_APP`. The app is now live and shareable via its Snowsight URL.
+The user then previews the app from the workspace (**Run** → a private dev app, no stage involved) and clicks **Deploy** (compute pool + warehouse) - or, on the scripted fallback, uploads `app/` to `STAGE_SIS_APP` and the agent runs `CREATE OR REPLACE STREAMLIT ... RUNTIME_NAME = 'SYSTEM$ST_CONTAINER_RUNTIME_PY3_11' COMPUTE_POOL = ...`. The app is now live and shareable via its Snowsight URL.
 
-### quick reference
+### Quick reference
 
-| stage | input | output | mechanism |
+| Stage | Input | Output | Mechanism |
 |---|---|---|---|
-| Parse PDF | PDF on `STAGE_QUIZ_DATA` | markdown (in-memory) | `AI_PARSE_DOCUMENT(mode=LAYOUT)` |
-| Extract domains | markdown | `EXAM_DOMAINS` rows | `AI_COMPLETE` |
-| Extract key facts | markdown + each domain | `EXAM_DOMAINS.key_facts` | `AI_COMPLETE` (per-domain) |
+| Parse PDF | PDF on `STAGE_QUIZ_DATA` | Markdown (in-memory) | `AI_PARSE_DOCUMENT(mode=LAYOUT)` |
+| Extract domains | Markdown | `EXAM_DOMAINS` rows | `AI_COMPLETE` |
+| Extract key facts | Markdown + each domain | `EXAM_DOMAINS.key_facts` | `AI_COMPLETE` (per-domain) |
 | User checkpoint | domain list | approval gate | `ask_user_question` |
 | Load questions | CSV or key_facts | `QUIZ_QUESTIONS` rows | `COPY INTO` or `AI_COMPLETE` |
 | Update context | `AGENTS.md` | schema + exam_code filled | file edit |
-| Generate app | `$quiz/*` skills | `quiz.py` + `environment.yml` | file write in workspace |
-| Scan | generated files | PASS gate | `$sis/pre-deploy` (22 items) |
-| Deploy | files on `STAGE_SIS_APP` | live `SNOWPRO_QUIZ` | `CREATE STREAMLIT` |
+| Generate app | `$quiz/*` skills | `app/` project | file write in workspace |
+| Scan | generated files | PASS gate | `$sis/pre-deploy` (all items) |
+| Deploy | `app/` in workspace | live `SNOWPRO_QUIZ` | Workspaces **Run + Deploy** (or stage + `CREATE STREAMLIT`) |
 
 ---
 
-## runtime data flow
+## Runtime data flow
 
-Once the app is deployed, the agent is out of the loop. The user interacts with `quiz.py` running as Streamlit-in-Snowflake. The app talks directly to the four tables and (when needed) to `AI_COMPLETE`.
+Once the app is deployed, the agent is out of the loop. The user interacts with the deployed app running as Streamlit-in-Snowflake. The app talks directly to the four tables and (when needed) to `AI_COMPLETE`.
 
 The user lands on the **Home** screen. Cached calls (`load_domains`, `load_session_stats`, `load_recent_sessions`, `load_domain_errors`) populate the sidebar with domain filters and recent progress. Caching matters here because Streamlit-in-Snowflake re-runs the entire render function tree on every widget interaction - without `@st.cache_data`, the Home screen would re-query four tables on every keystroke. TTLs are unbounded (cache per SiS session).
 
@@ -78,21 +78,21 @@ When the round ends (last question submitted or user clicks **Finish**), the app
 
 The **Review** page (separate sidebar pill) has two tabs: **Wrong Answers** shows filtered `QUIZ_REVIEW_LOG` history with domain and date filters, and **Learning Dashboard** shows session trends (score-per-session line chart from `QUIZ_SESSION_LOG`, error distribution from `QUIZ_REVIEW_LOG` grouped by domain, readiness score against the 75% threshold). Optional features like flashcards, exam simulation, or achievement badges live as additional tabs or sidebar widgets - they read the same four tables, they don't add new ones.
 
-### invariants (things that must stay true)
+### Invariants (things that must stay true)
 
-- **Every `AI_COMPLETE` call** goes through `call_cortex()` (dollar-quoting + `$$` sanitization) and `parse_cortex_json()` (strips markdown fences, handles double-encoding). Never raw `json.loads()`.
+- **Every `AI_COMPLETE` call** goes through `call_cortex()` (dollar-quoting + `$$` sanitization) and `parse_cortex_json()` (strips Markdown fences, handles double-encoding). Never raw `json.loads()`.
 - **Deduplication within a round** uses `_get_shown_texts()` reading `round_history`, not session state keys and not the DB. Deduplication across rounds is an intentional non-goal - the same question can reappear in a later round.
 - **Write-back happens once**, at round end on "Finish". Not incrementally per question. This keeps `QUIZ_SESSION_LOG` atomic - one row per round, no partials.
-- **Exactly six `st.rerun()` calls** in `quiz.py`: Start Round, lazy-load at top of `render_quiz`, Retry, Submit Answer, Finish, Next. Streamlit-in-Snowflake v1.52 has known-buggy behaviour outside these six call sites. The pre-deploy scan enforces the count as a regression guard.
+- **`st.rerun()` discipline** - every slow button handler wraps its work in `st.spinner()` and ends with a single `st.rerun()` after setting state. (The old "exactly six call sites" budget targeted warehouse-runtime SiS 1.52 and is superseded on the container runtime - see `$sis/patterns`.)
 
 ---
 
-## table relationships
+## Table relationships
 
 ```mermaid
 erDiagram
     EXAM_DOMAINS {
-        int domain_id PK
+        varchar domain_id PK
         varchar domain_name
         int weight_pct "SUM=100"
         variant topics
@@ -100,7 +100,7 @@ erDiagram
     }
     QUIZ_QUESTIONS {
         int question_id PK
-        int domain_id "semantic ref"
+        varchar domain_id "semantic ref"
         varchar domain_name "denormalised"
         varchar difficulty
         varchar question_text
@@ -113,7 +113,7 @@ erDiagram
     QUIZ_REVIEW_LOG {
         int log_id PK
         timestamp logged_at
-        int domain_id "snapshot"
+        varchar domain_id "snapshot"
         varchar domain_name
         varchar difficulty
         varchar question_text "snapshot"
@@ -144,19 +144,19 @@ erDiagram
 
 ---
 
-## skill dependency
+## Skill dependency
 
-Skills are intentionally small and single-purpose. The 22-item pre-deploy scan is its own skill. The 8-item prompt audit is another. The 5-step Cortex diagnostic is a third. Each has one job, loaded only when the intent matches. This keeps context usage low - Cortex Code doesn't pull in question-generation guidance when the user is debugging a stage permission error.
+Skills are intentionally small and single-purpose. The pre-deploy scan is its own skill. The 8-item prompt audit is another. The 5-step Cortex diagnostic is a third. Each has one job, loaded only when the intent matches. This keeps context usage low - CoCo doesn't pull in question-generation guidance when the user is debugging a stage permission error.
 
-**At setup time** (driven by `$setup-exam`), Steps 1-4 are plain SQL (`CREATE SCHEMA`, `CREATE STAGE`, `CREATE TABLE`, `LIST`) with no skills involved. Step 5 (domain extraction) pulls in `$cortex/patterns` for the `AI_PARSE_DOCUMENT` + `AI_COMPLETE` call patterns. Step 6 (question loading) branches: the CSV path optionally pulls `$adapt-questions` (which itself pulls `$cortex/patterns` if the column-mapping strategy uses AI); the AI-generation path pulls `$cortex/patterns` + `$cortex/prompt-audit` (to catch bad prompts before they generate thousands of bad rows). Step 7 is a plain `AGENTS.md` edit. Step 8 (app generation) is the heaviest: `$quiz/screens` + `$quiz/questions` + `$quiz/style`, optionally `$quiz/features` if the user asked for optional features, and mandatorily `$sis/pre-deploy` for the 22-item scan. Steps 9-10 are plain SQL again.
+**At setup time** (driven by `$setup-exam`), Steps 1-4 are plain SQL (`CREATE SCHEMA`, `CREATE STAGE`, `CREATE TABLE`, `LIST`) with no skills involved. Step 5 (domain extraction) pulls in `$cortex/patterns` for the `AI_PARSE_DOCUMENT` + `AI_COMPLETE` call patterns. Step 6 (question loading) branches: the CSV path optionally pulls `$adapt-questions` (which itself pulls `$cortex/patterns` if the column-mapping strategy uses AI); the AI-generation path pulls `$cortex/patterns` + `$cortex/prompt-audit` (to catch bad prompts before they generate thousands of bad rows). Step 7 is a plain `AGENTS.md` edit. Step 8 (app generation) is the heaviest: `$quiz/screens` + `$quiz/questions` + `$quiz/style`, optionally `$quiz/features` if the user asked for optional features, and mandatorily `$sis/pre-deploy` for the scan. Steps 9-10 are plain SQL again.
 
-**At runtime** the agent is not involved at all. `quiz.py` contains baked-in versions of the patterns from `$cortex/patterns` (`call_cortex`, `parse_cortex_json`, dollar-quoting) and from `$quiz/questions` (`DIFFICULTY_GUIDE` constant, topic schedule algorithm) - not loaded dynamically but copied in during Step 8.
+**At runtime** the agent is not involved at all. The app modules contain baked-in versions of the patterns from `$cortex/patterns` (`call_cortex`, dollar-quoting — in `_cortex.py`) and from `$quiz/questions` (`DIFFICULTY_GUIDE` constant, topic schedule algorithm — in `_config.py` / `_questions.py`) - not loaded dynamically but copied in during Step 8.
 
-**Troubleshooting** is reactive and on-demand. If the user reports "AI returns weird JSON", the agent loads `$cortex/patterns` (5-step diagnostic). If the user reports "questions are low quality", the agent loads `$cortex/prompt-audit` (8-item scan). If the app crashes, the agent re-runs `$sis/pre-deploy` on the current `quiz.py`. If screens glitch, the agent re-reads `$quiz/screens`. One skill per failure class.
+**Troubleshooting** is reactive and on-demand. If the user reports "AI returns weird JSON", the agent loads `$cortex/patterns` (5-step diagnostic). If the user reports "questions are low quality", the agent loads `$cortex/prompt-audit` (8-item scan). If the app crashes, the agent re-runs `$sis/pre-deploy` on the current app files. If screens glitch, the agent re-reads `$quiz/screens`. One skill per failure class.
 
-### quick reference
+### Quick reference
 
-| caller | uses | purpose |
+| Caller | Uses | Purpose |
 |---|---|---|
 | `$setup-exam` Step 5 | `$cortex/patterns` | `AI_PARSE_DOCUMENT` + `AI_COMPLETE` patterns |
 | `$setup-exam` Step 6 (CSV) | `$adapt-questions` (optional) | column mapping strategies |
@@ -166,16 +166,16 @@ Skills are intentionally small and single-purpose. The 22-item pre-deploy scan i
 | `$setup-exam` Step 8 (optional) | `$quiz/features` | optional app features |
 | troubleshooting: AI error | `$cortex/patterns` | 5-step diagnostic |
 | troubleshooting: bad output | `$cortex/prompt-audit` | 8-item prompt scan |
-| troubleshooting: app crash | `$sis/pre-deploy` | 22-item Streamlit scan |
+| troubleshooting: app crash | `$sis/pre-deploy` | Streamlit pre-deploy scan |
 
 ---
 
-## why this shape
+## Why this shape
 
 A few architectural decisions worth knowing:
 
 - **Schema-per-exam** is the mandatory isolation boundary, because Snowsight has no `git` the agent can run to isolate code per exam. A schema is the cleanest isolation Snowflake offers natively. (If the workspace is Git-backed the user can optionally create a branch per exam on top - same category as uploading files manually.)
-- **`AI_PARSE_DOCUMENT` + `AI_COMPLETE`** instead of `AI_EXTRACT` because we need both structured extraction (domains, weights, topic taxonomies) and free-form extraction (key_facts) from the same PDF. Re-parsing per pass would be wasteful; parse once, reuse the markdown for both extractions.
-- **Cached `load_*` functions** in `quiz.py` because Streamlit-in-Snowflake re-renders the whole function tree on every widget interaction. Without `@st.cache_data`, every Next/Submit would re-query four tables. TTL is unbounded (cache per SiS session).
-- **Exactly six `st.rerun()` calls** because SiS v1.52 has known-buggy behaviour outside the six accepted call sites. The pre-deploy scan enforces the count as a regression guard.
+- **`AI_PARSE_DOCUMENT` + `AI_COMPLETE`** instead of `AI_EXTRACT` because we need both structured extraction (domains, weights, topic taxonomies) and free-form extraction (key_facts) from the same PDF. Re-parsing per pass would be wasteful; parse once, reuse the Markdown for both extractions.
+- **Cached `load_*` functions** in `_data.py` because Streamlit-in-Snowflake re-renders the whole function tree on every widget interaction. Without `@st.cache_data`, every Next/Submit would re-query four tables. TTL is unbounded (cache per SiS session).
+- **`st.rerun()` discipline, not a fixed count** - the rigid "exactly six call sites" budget targeted warehouse-runtime SiS 1.52 and is superseded on the container runtime (see `$sis/patterns`). Handlers still pair `st.spinner()` with a single final `st.rerun()`.
 - **Explanations on-demand, not eager**: each explanation is ~1-3 seconds of `AI_COMPLETE`. Generating for every answer would make the app feel broken. Generating on expand-disclosure hides the latency behind the click.

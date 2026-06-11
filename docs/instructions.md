@@ -1,26 +1,34 @@
 # Instructions - concise
 
-> first time? use [instructions-detailed.md](instructions-detailed.md) instead.
+> First time? Use [instructions-detailed.md](instructions-detailed.md) instead.
 
 ---
 
-## step 0 - one-time account prerequisites
+## Step 0 - one-time account prerequisites
 
-As `ACCOUNTADMIN` (EU accounts only, once per account):
+As `ACCOUNTADMIN`, once per account — only if your account cannot reach the model in-region (accounts created after 2026-03-09 already default to `ANY_REGION`):
 
 ```sql
-ALTER ACCOUNT SET CORTEX_ENABLED_CROSS_REGION = 'AWS_US';
+ALTER ACCOUNT SET CORTEX_ENABLED_CROSS_REGION = 'ANY_REGION';
 ```
+
+Confirm a compute pool exists for the container runtime (your role needs `USAGE` on it):
+
+```sql
+SHOW COMPUTE POOLS;
+```
+
+No usable pool and no admin to create one? The warehouse fallback (deploy Path C) works without it.
 
 In Snowsight: **AI & ML > Agents > Settings > Tools and connectors > Web search → enable**.
 
 ---
 
-## step 1 - load context into the workspace
+## Step 1 - load context into the workspace
 
 Two paths. Both end with `.snowflake/cortex/skills/` + `AGENTS.md` visible in the workspace file tree.
 
-### via Git integration (recommended)
+### Via Git integration (recommended)
 
 Fork this repo on GitHub. Then, as a role with `CREATE INTEGRATION`:
 
@@ -53,88 +61,89 @@ See [Integrate workspaces with a Git repository](https://docs.snowflake.com/en/u
 
 Then in Snowsight: **Projects > Workspaces > + Workspace > From Git repository** > select `coco_quiz_fork`. Workspace opens with skills, `AGENTS.md`, and `docs/` ready to use. 
 
-Benefits: `docs/` accessible inside Snowsight, commit and branch from the workspace, skill updates come via `git pull`, generated `quiz.py` can be committed back.
+Benefits: `docs/` accessible inside Snowsight, commit and branch from the workspace, skill updates come via `git pull`, the generated `app/` project can be committed back.
 
-### via manual upload (fallback)
+### Via manual upload (fallback)
 
 Clone the repo locally. In Snowsight: **Projects > Workspaces > + Workspace** (empty). Then:
 
-1. **custom skills**: in Cortex Code chat, click **+** > **Upload Folder(s)** > select `.snowflake/cortex/skills/` from the clone. All 7 skills (`$setup-exam`, `$adapt-questions`, `$cortex`, `$sis`, `$quiz`, + sub-skills) become available as slash commands.
+1. **Custom skills**: in Snowflake CoCo chat, click **+** > **Upload Folder(s)** > select `.snowflake/cortex/skills/` from the clone. All skills (5 invocable — `$setup-exam`, `$adapt-questions`, `$cortex`, `$sis`, `$quiz` — across 13 files incl. sub-skills) become available as slash commands.
 2. **AGENTS.md**: drag-and-drop to the workspace root (or use **+** > **Upload File(s)**).
 
 `docs/` is not uploaded - reference it from your local clone or from GitHub.
 
-### what you do NOT load either way
+### What you do NOT load either way
 
-- `quiz.py` and `environment.yml` - the agent generates these into the workspace on each `$setup-exam` run.
-- the PDF study guide and optional CSV - these go straight to a Snowflake stage in step 5, not the workspace.
-
----
-
-## step 2 - edit the environment table in AGENTS.md
-
-Open `AGENTS.md` in the workspace, find the `snowflake environment` table. Replace the three `<your_...>` placeholders (`<your_database>`, `<your_warehouse>`, `<your_role>`) with the actual object names. Leave `schema` and `exam_code` as is — `$setup-exam` fills those once the exam code is known. `$setup-exam` halts if it finds unfilled `<...>` placeholders, so make sure all three are replaced before running the setup prompt.
+- The `app/` project (`main.py`, `_*.py` modules, `pages/`, configs) - the agent generates it into the workspace on each `$setup-exam` run.
+- The PDF study guide and optional CSV - these go straight to a Snowflake stage in step 5, not the workspace.
 
 ---
 
-## step 3 - run the setup prompt
+## Step 2 - edit the environment table in AGENTS.md
 
-Paste the **setup prompt** from [prompts.md](prompts.md) into the Cortex Code chat. The agent will run `$setup-exam` end-to-end and stop at three checkpoints:
-
-- after asking you to upload the study guide PDF (and optionally a CSV) → you upload via Snowsight UI (step 5).
-- after extracting domains → approves / re-extracts / aborts.
-- before deploy → asks you to upload `quiz.py` + `environment.yml` to `STAGE_SIS_APP` (step 6).
+Open `AGENTS.md` in the workspace, find the `snowflake environment` table. Replace the `<your_...>` placeholders (`<your_database>`, `<your_warehouse>`, `<your_role>`, and `<your_compute_pool>` — the last one is skippable only if you plan the warehouse fallback) with the actual object names. Leave `schema` and `exam_code` as is — `$setup-exam` fills those once the exam code is known. `$setup-exam` halts if it finds unfilled required placeholders, so replace them before running the setup prompt.
 
 ---
 
-## step 4 - upload the study guide PDF (and optional CSV)
+## Step 3 - run the setup prompt
+
+Paste the **setup prompt** from [prompts.md](prompts.md) into the CoCo chat. The agent will run `$setup-exam` end-to-end and stop at three checkpoints:
+
+- After asking you to upload the study guide PDF (and optionally a CSV) → you upload via Snowsight UI (step 4).
+- After extracting domains → approve / re-extract / abort.
+- Before deploy → asks you to **Run + Deploy** the generated `app/` from the workspace (or, on the fallback path, to upload `app/` to `STAGE_SIS_APP`) (step 5).
+
+---
+
+## Step 4 - upload the study guide PDF (and optional CSV)
 
 When the agent stops and asks for the PDF:
 
 1. Snowsight > **Data > Databases > `<your_db>` > `QUIZ_<CODE>` > Stages > STAGE_QUIZ_DATA**.
 2. **+ Files** (top-right) > drag-drop the PDF > **Upload**.
-3. (optional) repeat for a CSV question bank if you have one.
+3. (Optional) repeat for a CSV question bank if you have one.
 4. Reply to the agent: "uploaded".
 
 The agent verifies with `LIST @STAGE_QUIZ_DATA` and continues.
 
 ---
 
-## step 5 - upload generated `quiz.py` and `environment.yml` to the app stage
+## Step 5 - preview and deploy the generated app
 
-After the agent finishes generation + passes its 22-item pre-deploy scan:
+After the agent finishes generation + passes the pre-deploy scan, the `app/` project sits in your workspace file tree.
 
-1. In your workspace, confirm both files exist (left-hand file tree).
-2. Snowsight > **Data > Databases > `<your_db>` > `QUIZ_<CODE>` > Stages > STAGE_SIS_APP**.
-3. **+ Files** > drag-drop both files > **Upload**.
-4. Reply "uploaded" - agent runs `CREATE OR REPLACE STREAMLIT ... FROM @STAGE_SIS_APP`.
+**Path A — Workspaces (default):**
 
-Alternative (unverified, faster if it works): right-click `quiz.py` in the workspace file tree → **Deploy as Streamlit App**.
+1. Open `app/main.py`, click **Run** (or Cmd/Ctrl+Enter). A private **dev app** preview opens in the browser — only you see it. Iterate with the agent until it looks right.
+2. Click **Deploy** (project toolbar). Set: app title `SNOWPRO_QUIZ`, database + schema `QUIZ_<CODE>`, **compute pool**, query warehouse.
+3. Reply "deployed" — the agent verifies with `SHOW STREAMLITS`.
+
+**Path B — scripted via stage (reproducible fallback):** Snowsight > **Data > Databases > `<your_db>` > `QUIZ_<CODE>` > Stages > STAGE_SIS_APP** > **+ Files** > upload the `app/` files (keep the `pages/` and `.streamlit/` folder layout) > reply "uploaded" — the agent runs `CREATE OR REPLACE STREAMLIT ... RUNTIME_NAME = 'SYSTEM$ST_CONTAINER_RUNTIME_PY3_11' COMPUTE_POOL = ...`.
+
+**Path C — no compute pool:** the agent generates `environment.yml` instead of `pyproject.toml` and deploys on the warehouse runtime (Streamlit 1.52.2) via the Path B stage flow, without the container parameters.
 
 ---
 
-## step 6 - open the app and verify
+## Step 6 - open the app and verify
 
 Snowsight > **Projects > Streamlit > SNOWPRO_QUIZ** (or whatever `app_name` is set in `AGENTS.md`).
 
-Walk through the 4 screens:
+Walk through both pages (navigation is native multipage):
 
-- **Home** - round size, difficulty, domain, question source, explanations toggle.
-- **Quiz** - answer questions, submit, check feedback + optional AI explanation.
-- **Summary** - score, pass/fail vs 75% threshold, wrong-answer cards.
-- **Review** - wrong-answer history with filters + Learning Dashboard tab.
+- **Quiz page** - home (round size, difficulty, domain, source, explanations toggle) → quiz (answer, submit, feedback + optional AI explanation) → summary (score, pass/fail vs 75% threshold, wrong-answer cards).
+- **Review page** - wrong-answer history with filters + Learning Dashboard tab.
 
 Complete at least one round so `QUIZ_SESSION_LOG` and `QUIZ_REVIEW_LOG` get data for dashboard charts.
 
 ---
 
-## adding another exam
+## Adding another exam
 
 Keep the same workspace, run the **setup prompt** again with a different PDF. The agent will ask for the exam code, create a new `QUIZ_<NEW_CODE>` schema, and deploy a second Streamlit app. The previous exam is untouched.
 
 ---
 
-## something broke?
+## Something broke?
 
 Paste the **fix prompt** from [prompts.md](prompts.md) with a description of what happened. The agent will run the relevant diagnostic skill, fix the issue, and ask you to re-upload.
 

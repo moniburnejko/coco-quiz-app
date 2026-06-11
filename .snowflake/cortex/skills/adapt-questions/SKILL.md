@@ -7,7 +7,7 @@ description: "Adapt CSV or JSON question bank files to the QUIZ_QUESTIONS table 
 
 ## When to Use
 
-- Invoked from `$setup-exam` Step 1 when user requests a schema compatibility scan
+- Invoked from `$setup-exam` Step 6 when user requests a schema compatibility scan
 - Invoked directly: "Adapt my questions CSV for the quiz schema"
 - Any time a user has a CSV or JSON file with questions that needs loading into QUIZ_QUESTIONS
 

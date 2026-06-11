@@ -8,22 +8,36 @@ If none of these match: paste the **fix prompt** from [prompts.md](prompts.md) w
 
 ## `AI_COMPLETE` fails with "not allowed to access this endpoint"
 
-**Cause:** cross-region inference is disabled. `claude-sonnet-4-6` lives in `AWS_US`; EU accounts need explicit permission to reach it.
+**Cause:** Cross-region inference is disabled. `claude-sonnet-4-6` is hosted in US regions; accounts that cannot reach it in-region need explicit permission. (Accounts created after 2026-03-09 default to `ANY_REGION` and are not affected.)
 
 **Fix (as `ACCOUNTADMIN`, once per account):**
 
 ```sql
-ALTER ACCOUNT SET CORTEX_ENABLED_CROSS_REGION = 'AWS_US';
+ALTER ACCOUNT SET CORTEX_ENABLED_CROSS_REGION = 'ANY_REGION';
 ```
 
-Verify:
+(`'AWS_GLOBAL'` is a narrower alternative; the legacy `'AWS_US'` still works but is narrowest.) Verify:
 
 ```sql
 SHOW PARAMETERS LIKE 'CORTEX_ENABLED_CROSS_REGION' IN ACCOUNT;
--- expected value: AWS_US
+-- expected: ANY_REGION (or AWS_GLOBAL / AWS_US)
 ```
 
 If you cannot get `ACCOUNTADMIN`, change the model in `AGENTS.md` > `cortex llm` to one available in your region.
+
+---
+
+## Deploy dialog shows no compute pool / "compute pool not found"
+
+**Cause:** The container runtime (default) needs a compute pool your role can use. The account has none, or your role lacks `USAGE` on it.
+
+**Fix:** Check what exists:
+
+```sql
+SHOW COMPUTE POOLS;
+```
+
+If the list is empty or unusable, ask an admin to create/grant one - or tell the agent to use the **warehouse fallback** (`$setup-exam` Step 9 Path C): it generates `environment.yml` and deploys without `RUNTIME_NAME`/`COMPUTE_POOL` (Streamlit capped at 1.52.2).
 
 ---
 
@@ -35,21 +49,21 @@ If you cannot get `ACCOUNTADMIN`, change the model in `AGENTS.md` > `cortex llm`
 
 ---
 
-## upload UI rejects a file with "too large"
+## Upload UI rejects a file with "too large"
 
-**Cause:** single-file upload via Snowsight UI is capped at **250 MB**.
+**Cause:** Single-file upload via Snowsight UI is capped at **250 MB**.
 
 **Fix options:**
-- compress the PDF (most study guides are under 10 MB; if yours is 300 MB it is scanned images - run it through a PDF optimiser first).
-- if you must upload >250 MB, use `snow stage copy` or `snowsql PUT` from a machine with the Snowflake CLI and keep the chat in Snowsight. The agent will verify via `LIST @stage` after your upload - it does not care how the file arrived.
+- Compress the PDF (most study guides are under 10 MB; if yours is 300 MB it is scanned images - run it through a PDF optimiser first).
+- If you must upload >250 MB, use `snow stage copy` or `snowsql PUT` from a machine with the Snowflake CLI and keep the chat in Snowsight. The agent will verify via `LIST @stage` after your upload - it does not care how the file arrived.
 
 ---
 
-## agent proceeds past a checkpoint without waiting for my "uploaded"
+## Agent proceeds past a checkpoint without waiting for my "uploaded"
 
-**Cause:** Cortex Code sometimes optimistically assumes upload completion when the chat is active.
+**Cause:** Snowflake CoCo sometimes optimistically assumes upload completion when the chat is active.
 
-**Fix:** cut it off with "stop - did you verify `LIST @STAGE_QUIZ_DATA`?" The agent backs up, runs `LIST`, and reports actual contents. If the file is missing it asks you to retry.
+**Fix:** Cut it off with "stop - did you verify `LIST @STAGE_QUIZ_DATA`?" The agent backs up, runs `LIST`, and reports actual contents. If the file is missing it asks you to retry.
 
 ---
 
@@ -57,7 +71,7 @@ If you cannot get `ACCOUNTADMIN`, change the model in `AGENTS.md` > `cortex llm`
 
 **Cause:** `AI_COMPLETE` occasionally rounds or drops a domain when the PDF has ambiguous formatting (sidebars, footers interrupting the domain blueprint).
 
-**Fix:** at the domain-extraction checkpoint, choose **Re-extract**. The agent wipes `EXAM_DOMAINS` and retries with a reinforced prompt. If it still fails after 2 retries:
+**Fix:** At the domain-extraction checkpoint, choose **Re-extract**. The agent wipes `EXAM_DOMAINS` and retries with a reinforced prompt. If it still fails after 2 retries:
 
 ```sql
 -- check what the PDF actually parsed to
@@ -79,7 +93,7 @@ AI_PARSE_DOCUMENT(..., {'mode': 'OCR'});
 
 **Cause:** `AI_COMPLETE` hit the output token limit on a batch of 10 questions, producing truncated JSON. The agent's `parse_cortex_json` swallows the error and logs it to `session_state.last_cortex_error`.
 
-**Fix:** reduce batch size (step 6b of `$setup-exam`) from 10 to 5 and rerun generation for that domain only:
+**Fix:** Reduce batch size (step 6b of `$setup-exam`) from 10 to 5 and rerun generation for that domain only:
 
 ```
 rerun question generation for domain_id = 3 with batch_size = 5.
@@ -89,23 +103,22 @@ The agent already has retry logic for exactly this case - usually one rerun is e
 
 ---
 
-## `quiz.py` deploys but the app shows a blank screen / python traceback
+## The app deploys but shows a blank screen / Python traceback
 
-**Cause:** a regression that slipped past the pre-deploy scan. Usually one of:
-- `st.rerun()` count drifted (must be exactly 6);
-- `CORTEX_MODEL` constant not defined;
-- a session-state key read before being initialised;
-- `parse_cortex_json` called on a `None`.
+**Cause:** A regression that slipped past the pre-deploy scan. Usually one of:
+- `CORTEX_MODEL` constant not defined (or an import between app modules broken);
+- A session-state key read before being initialised;
+- A Cortex JSON helper called on a `None`.
 
-**Fix:** paste the **fix prompt** with the error text. The agent re-runs `$sis/pre-deploy`, which catches these categories. Do not redeploy on a failing scan.
+**Fix:** Paste the **fix prompt** with the error text. The agent re-runs `$sis/pre-deploy`, which catches these categories. Do not redeploy on a failing scan.
 
 ---
 
-## pre-deploy scan passes but the app logs a `KeyError` at runtime
+## Pre-deploy scan passes but the app logs a `KeyError` at runtime
 
-**Cause:** an AI prompt produces JSON with an unexpected key name - `parse_cortex_json` returns a dict that doesn't contain what `render_quiz` expects.
+**Cause:** An AI prompt produces JSON with an unexpected key name - `parse_cortex_json` returns a dict that doesn't contain what `render_quiz` expects.
 
-**Fix:** run `$cortex/prompt-audit` on the offending prompt:
+**Fix:** Run `$cortex/prompt-audit` on the offending prompt:
 
 ```
 run $cortex/prompt-audit on the question generation prompt. focus on key name mismatches and JSON completeness.
@@ -115,11 +128,11 @@ Usually one field was renamed in the prompt but not updated in the parser (or vi
 
 ---
 
-## dashboard is empty after my first completed round
+## Dashboard is empty after my first completed round
 
-**Cause:** round ended in an unclean way (tab close, browser refresh, error on the Summary screen) and the write-back to `QUIZ_SESSION_LOG` didn't fire.
+**Cause:** Round ended in an unclean way (tab close, browser refresh, error on the Summary screen) and the write-back to `QUIZ_SESSION_LOG` didn't fire.
 
-**Fix:** check:
+**Fix:** Check:
 
 ```sql
 SELECT COUNT(*) FROM <your_database>.QUIZ_<CODE>.QUIZ_SESSION_LOG;
@@ -128,42 +141,46 @@ SELECT COUNT(*) FROM <your_database>.QUIZ_<CODE>.QUIZ_SESSION_LOG;
 If 0, start and finish one more round cleanly by clicking **Finish** on the quiz screen. If it stays at 0 after a clean finish, the write-back logic is broken - run:
 
 ```
-run $quiz/screens and $sis/pre-deploy on the current quiz.py. focus on the finish_round handler and QUIZ_SESSION_LOG INSERT.
+run $quiz/screens and $sis/pre-deploy on the current app files. focus on the finish-round handler and the QUIZ_SESSION_LOG INSERT.
 ```
 
 ---
 
-## everything looks fine but the Streamlit app is using an old cached version
+## Everything looks fine but the Streamlit app is using an old version
 
-**Cause:** SiS caches app bundles by stage URL. After uploading a new `quiz.py` to `STAGE_SIS_APP`, the running app does not auto-refresh.
+**Cause (Path A - Workspaces):** **Run** updates only your private *dev app*; the published app changes only on **Deploy**. If others see stale behaviour, you previewed but never re-deployed.
 
-**Fix:** either:
+**Fix (Path A):** Click **Deploy** again in the project toolbar.
+
+**Cause (Path B - stage):** SiS caches app bundles by stage URL. After uploading new `app/` files to `STAGE_SIS_APP`, the running app does not auto-refresh.
+
+**Fix (Path B):** Either:
 
 ```sql
-CREATE OR REPLACE STREAMLIT ... FROM '@...STAGE_SIS_APP' MAIN_FILE = '/quiz.py' ...;
+CREATE OR REPLACE STREAMLIT ... FROM '@...STAGE_SIS_APP' MAIN_FILE = 'main.py' ...;
 ```
 
 (this is what the agent runs - `OR REPLACE` invalidates the cached bundle), or in the Streamlit UI: click the three-dot menu > **Restart app**.
 
 ---
 
-## skill slash command (`/setup-exam`) does not show up in the chat
+## Skill slash command (`/setup-exam`) does not show up in the chat
 
-**Cause:** skill upload didn't complete, or the folder structure got flattened.
+**Cause:** Skill upload didn't complete, or the folder structure got flattened.
 
-**Fix:** check that the workspace has `/setup-exam/SKILL.md` at the expected path. In Cortex Code chat:
+**Fix:** Check that the workspace has `/setup-exam/SKILL.md` at the expected path. In CoCo chat:
 
 ```
 list the skills available in this workspace.
 ```
 
-If `setup-exam` is missing, re-upload: **Cortex Code > + > Upload Folder(s) » `.snowflake/cortex/skills/`** (not just one sub-folder).
+If `setup-exam` is missing, re-upload: **CoCo > + > upload folder(s) » `.snowflake/cortex/skills/`** (not just one sub-folder).
 
 Common flattening mistake: uploading `skills/` content directly into the workspace root (without the `.snowflake/cortex/` prefix). Snowsight expects the exact path `.snowflake/cortex/skills/<skill-name>/SKILL.md`.
 
 ---
 
-## how to reset everything and start over
+## How to reset everything and start over
 
 Assuming you want to keep the database but scrap one exam's schema:
 
@@ -173,4 +190,4 @@ DROP STREAMLIT <your_database>.QUIZ_<CODE>.SNOWPRO_QUIZ;
 DROP SCHEMA   <your_database>.QUIZ_<CODE>;
 ```
 
-Then re-run the **setup prompt** with the same exam. `$setup-exam` will recreate the schema, stages, tables, and ask for the PDF upload again.
+then re-run the **setup prompt** with the same exam. `$setup-exam` will recreate the schema, stages, tables, and ask for the PDF upload again.

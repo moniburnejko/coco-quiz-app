@@ -1,6 +1,6 @@
 ---
 name: setup-exam
-description: "Automated 9-step exam setup pipeline for Cortex Code in Snowsight. Creates Snowflake schema, extracts domains from PDF, generates questions, builds quiz.py, and deploys. Works for first exam or adding a new one. Triggers: setup exam, new exam, new certification, new study guide PDF, add exam, switch exam, create exam"
+description: "Automated 10-step exam setup pipeline for Snowflake CoCo in Snowsight. Creates Snowflake schema, extracts domains from PDF, generates questions, builds the multipage `app/` Streamlit project, and deploys it on the container runtime. Works for first exam or adding a new one. Triggers: setup exam, new exam, new certification, new study guide PDF, add exam, switch exam, create exam"
 ---
 
 # When to Use
@@ -20,11 +20,11 @@ Example prompts:
 
 # Environment: Snowsight Workspace
 
-This skill runs inside **Cortex Code in Snowsight**. Assumptions:
+This skill runs inside **CoCo in Snowsight**. Assumptions:
 - No bash / shell / git / `snow` CLI.
 - No `PUT file://...` from this agent — the workspace cannot read local filesystem.
 - Files are uploaded **manually by the user** via Snowsight UI (Data » Databases » Stages » + Files, or Ingestion » Add Data » Load files into a Stage).
-- Generated artefacts (`quiz.py`, `environment.yml`) are written as **files in this workspace** by the agent, then moved to a stage by the user (or deployed via workspace "Deploy as Streamlit App" if that path is confirmed working).
+- Generated artefacts (the `app/` Streamlit project — `main.py`, `_*.py` modules, `pages/`, configs) are written as **files in this workspace** by the agent. Deploy is via the Workspaces **Run + Deploy** flow (default) or by the user uploading `app/` to a stage for a scripted `CREATE STREAMLIT` (see Step 9).
 - Exam isolation is **schema-per-exam only** (`QUIZ_<CODE>`). No git branch.
 
 ---
@@ -116,7 +116,7 @@ If the user says no PDF is available → **STOP**. The study guide is required f
 
 **Routing logic:**
 - **Yes, I have a file** → ask for filename; continue to Step 1d.
-- **No, generate via AI** → continue to Step 1d; question_source default will be `'ai'` in quiz.py.
+- **No, generate via AI** → continue to Step 1d; question_source default will be `'ai'` on the app's home screen.
 
 ### 1d — Additional requirements
 
@@ -285,7 +285,7 @@ SELECT AI_COMPLETE(
 
 Extract ALL exam domains from this certification study guide.
 Return ONLY a valid JSON array. Each object must have:
-- domain_id (integer, starting from 1)
+- domain_id (string, e.g. "1", "2", sequential)
 - domain_name (string, exact name from the guide)
 - weight_pct (number, percentage weight - must sum to 100 across all domains)
 - topics (JSON array of topic strings covered in this domain)
@@ -421,7 +421,7 @@ Use the Edit tool on `AGENTS.md`. Follow the edit boundaries strictly.
 
 **MUST NOT edit:**
 - Database, warehouse, role (user-set values in env table — preconditions)
-- Environment: snowsight workspace section (platform constraints)
+- Environment: Snowsight Workspace section (platform constraints)
 - Domain model section (4 tables named — the column details live in this skill)
 - Cortex LLM section (model constant + cross-region note)
 - App overview section (screen flow, function list)
@@ -434,7 +434,7 @@ Use the Edit tool on `AGENTS.md`. Follow the edit boundaries strictly.
 2. **Title**: update to new exam name.
 3. **Additional requirements**: if user requested features not in AGENTS.md, append new subsections. Do not modify existing subsections.
 
-## Step 8 — Build quiz.py and environment.yml in workspace
+## Step 8 — Build the `app/` Streamlit project in workspace
 
 1. Read the updated AGENTS.md fully.
 2. **MANDATORY: read ALL quiz skills before generating code:**
@@ -442,62 +442,176 @@ Use the Edit tool on `AGENTS.md`. Follow the edit boundaries strictly.
    - `$quiz/questions` — DIFFICULTY_GUIDE (REQUIRED constant), answer shuffling, validation, retry logic
    - `$quiz/style` — EXAM_NAME constant, badge colors, chart colors (#29b5e8 blue, #F1914C orange), axis formatting, docs link format
    - If user requested optional features: also read `$quiz/features`
-3. Generate `quiz.py` per the complete specification.
-   - If the user chose "No CSV" in Step 1c → default `question_source = 'ai'` in the home screen.
-4. Generate `environment.yml` with exactly this content:
+   - For general Streamlit-in-Snowflake patterns, also consult the bundled `developing-with-streamlit` skill.
+3. Generate a decomposed multipage project under `app/` (NOT a single-file `quiz.py`):
 
-   ```yaml
-   name: snowpro_quiz
-   channels:
-     - snowflake
-   dependencies:
-     - streamlit=1.52.*
-     - pandas
-     - altair
+   ```
+   app/
+     main.py              # entry point: st.set_page_config + init_session_state + st.navigation
+     _config.py           # EXAM_NAME, EXAM_CODE, CORTEX_MODEL, PASS_THRESHOLD, DIFFICULTY_GUIDE, color constants
+     _cortex.py           # call_cortex() and the JSON-returning Cortex helpers
+     _data.py             # cached loaders (domains, session stats, recent sessions, domain errors) + clear_caches()
+     _questions.py        # topic schedule, get_question, AI generation, answer shuffling, dedup
+     _ui.py               # shared render helpers: badges, cards, explanation expander, docs link
+     pages/
+       quiz.py            # QUIZ page: home -> quiz -> summary state machine
+       review.py          # REVIEW page: wrong answers + learning dashboard
+     .streamlit/config.toml
+     pyproject.toml       # container-runtime deps (default)
+     snowflake.yml        # deploy descriptor (container)
    ```
 
-5. **Run the pre-deploy scan from the `$sis/pre-deploy` skill — all 22 items must pass.** Fix any issues and re-scan until clean.
+   - Generate `pages/<feature>.py` (e.g. `exam_simulation.py`, `flashcards.py`, `recommendations.py`) ONLY for features the user requested in Step 1d.
+   - If the user chose "No CSV" in Step 1c → default `question_source = 'ai'` on the home screen.
 
-Both files should be written as files in the current workspace (not inside `.snowflake/cortex/skills/`). The user will deploy them from workspace in Step 9.
+4. **`main.py` responsibilities** (entry point):
+   - `st.set_page_config(layout="centered", ...)` MUST be the very first `st.` call.
+   - `init_session_state()` — defaults for all session-state keys. `st.session_state` persists across pages; pages share it.
+   - Build the page list and run navigation:
+
+     ```python
+     pages = [
+         st.Page("pages/quiz.py", title="Quiz", default=True),
+         st.Page("pages/review.py", title="Review"),
+     ]
+     # append feature pages ONLY if that feature was generated, e.g.:
+     # pages.append(st.Page("pages/exam_simulation.py", title="Exam Simulation"))
+     st.navigation(pages).run()
+     ```
+
+   - Shared sidebar content (app title) renders in `main.py`; each page adds its own widgets.
+   - With `st.navigation` in the entry point, the `pages/` directory is NOT auto-discovered — navigation is fully controlled by this list. Do not rely on filename-based auto-pages.
+
+5. Generate `pyproject.toml` (container runtime, PyPI deps) with exactly:
+
+   ```toml
+   [project]
+   name = "snowpro_quiz"
+   version = "1.0.0"
+   requires-python = "==3.11.*"
+   dependencies = [
+     "streamlit[snowflake]",
+     "pandas",
+     "altair",
+   ]
+   ```
+
+6. Generate `.streamlit/config.toml` with exactly:
+
+   ```toml
+   [client]
+   showErrorDetails = "none"     # "none", NOT false — the deprecated false maps to "stacktrace" and still leaks tracebacks
+   toolbarMode = "minimal"
+
+   [theme]
+   base = "light"
+   primaryColor = "#29b5e8"
+   ```
+
+7. Generate `snowflake.yml` (deploy descriptor for Path B / Snowflake CLI) with exactly:
+
+   ```yaml
+   definition_version: 2
+   entities:
+     quiz_app:
+       type: streamlit
+       identifier: SNOWPRO_QUIZ
+       stage: STAGE_SIS_APP
+       query_warehouse: {warehouse}
+       compute_pool: {compute_pool}
+       runtime_name: SYSTEM$ST_CONTAINER_RUNTIME_PY3_11
+       main_file: main.py
+       artifacts:
+         - main.py
+         - _config.py
+         - _cortex.py
+         - _data.py
+         - _questions.py
+         - _ui.py
+         - pages/
+         - pyproject.toml
+         - .streamlit/config.toml
+   ```
+
+   Do NOT set `pages_dir` (navigation is `st.navigation`-controlled; the two methods must not be mixed). Do NOT set `execute_as`/`run_mode` — those are caller's-rights (Preview) fields; this app uses the owner-rights default.
+
+8. `environment.yml` is generated ONLY for the warehouse fallback (Step 9 Path C). Do not emit it on the container path.
+
+9. **Run the pre-deploy scan from the `$sis/pre-deploy` skill across ALL generated app files (`main.py`, `_*.py`, `pages/*.py`) — every item must pass.** Fix any issues and re-scan until clean.
+
+All files are written into the current workspace under `app/` (not inside `.snowflake/cortex/skills/`). The user deploys them in Step 9.
 
 ## Step 9 — Deploy Streamlit app
 
-Two supported deploy paths. The agent cannot execute `PUT`; the user drives file transfer via UI.
+Three supported deploy paths. **Path A (Workspaces) is the default.** The agent cannot click the UI or execute `PUT`; it instructs the user and verifies with SQL.
 
-### Path A — Deploy via STAGE_SIS_APP (default, verified)
+### Compute-pool prerequisite (Paths A and B)
+
+The container runtime needs a compute pool the role can use. Check before offering Path A/B:
+
+```sql
+SHOW COMPUTE POOLS;
+```
+
+If none exists (or the role lacks `USAGE` on any), ask an admin to create/grant one — or fall back to Path C (warehouse runtime).
+
+### Path A — Workspaces live preview + Deploy (default; Streamlit-in-Workspaces is Public Preview)
 
 1. Present instructions to the user:
 
-   > "Deploy ready. Please:
-   > 1. In Snowsight, go to **Data » Databases » {database} » QUIZ_<CODE> » Stages » STAGE_SIS_APP**.
-   > 2. Click **+ Files**, drag-drop both `quiz.py` and `environment.yml` from your workspace.
-   > 3. Confirm they appear in the stage.
-   > 4. Let me know when upload is complete."
+   > "The app is generated under `app/` in this workspace. To preview and deploy:
+   > 1. Open `app/main.py` and click **Run** (or press Cmd/Ctrl+Enter). This starts a private **dev app** preview in the browser — no stage upload needed. Iterate until it looks right.
+   > 2. Click **Deploy** in the project toolbar. In the dialog set: app title `SNOWPRO_QUIZ`, database `{database}`, schema `QUIZ_<CODE>`, **compute pool** `{compute_pool}`, query warehouse `{warehouse}`.
+   > 3. Reply 'deployed'."
 
 2. Verify:
    ```sql
+   SHOW STREAMLITS LIKE 'SNOWPRO_QUIZ' IN SCHEMA {database}.QUIZ_<CODE>;
+   ```
+
+Note: dev-app changes are visible only to the developing user. Other users see the app only after **Deploy** — and after every later edit, only after a re-Deploy.
+
+### Path B — Scripted: stage + CREATE STREAMLIT (container runtime)
+
+1. Ask the user to upload the `app/` files to the stage (**Data » Databases » {database} » QUIZ_<CODE> » Stages » STAGE_SIS_APP » + Files**), preserving the folder layout (`pages/`, `.streamlit/`). Then verify:
+   ```sql
    LIST @{database}.QUIZ_<CODE>.STAGE_SIS_APP;
    ```
-   Must return both files. If anything is missing, ask the user to retry.
-
-3. Execute:
+2. Execute:
    ```sql
    CREATE OR REPLACE STREAMLIT {database}.QUIZ_<CODE>.SNOWPRO_QUIZ
      FROM '@{database}.QUIZ_<CODE>.STAGE_SIS_APP'
-     MAIN_FILE = '/quiz.py'
+     MAIN_FILE = 'main.py'
+     RUNTIME_NAME = 'SYSTEM$ST_CONTAINER_RUNTIME_PY3_11'
+     COMPUTE_POOL = {compute_pool}
      QUERY_WAREHOUSE = {warehouse};
    ```
+   (Equivalent from a machine with the Snowflake CLI: `snow streamlit deploy`, driven by the generated `snowflake.yml`.)
 
-### Path B — Deploy from Workspace ("Deploy as Streamlit App")
+### Path C — Warehouse-runtime fallback (no compute pool available)
 
-⚠️ **UNVERIFIED** — confirm with the user whether this path is acceptable.
+Only when the account has no usable compute pool. Generate `environment.yml` (instead of `pyproject.toml`):
 
-If the user prefers: right-click `quiz.py` in the workspace file tree → **Deploy as Streamlit App**. Set warehouse, database, schema (`QUIZ_<CODE>`), and app name (`SNOWPRO_QUIZ`). Snowsight handles the internal stage.
-
-After deploy, verify:
-```sql
-SHOW STREAMLITS LIKE 'SNOWPRO_QUIZ' IN SCHEMA {database}.QUIZ_<CODE>;
+```yaml
+name: snowpro_quiz
+channels:
+  - snowflake
+dependencies:
+  - streamlit
+  - pandas
+  - altair
 ```
+
+Then deploy via the Path B stage flow, but without the container parameters:
+
+```sql
+CREATE OR REPLACE STREAMLIT {database}.QUIZ_<CODE>.SNOWPRO_QUIZ
+  FROM '@{database}.QUIZ_<CODE>.STAGE_SIS_APP'
+  MAIN_FILE = 'main.py'
+  QUERY_WAREHOUSE = {warehouse};
+```
+
+Note: the warehouse runtime caps Streamlit at 1.52.2 — flag to the user that container-only guidance in `$sis/patterns` does not all apply on this path.
 
 ### Choosing between paths
 
@@ -507,8 +621,9 @@ SHOW STREAMLITS LIKE 'SNOWPRO_QUIZ' IN SCHEMA {database}.QUIZ_<CODE>;
 
 | Option | Description |
 |--------|-------------|
-| **Path A — via stage (default)** | You upload files to STAGE_SIS_APP, I run `CREATE STREAMLIT`. Fully scripted. |
-| **Path B — workspace Deploy** | You right-click `quiz.py` in workspace → Deploy as Streamlit App. Faster if it works as expected. |
+| **Path A — Workspaces (default)** | Run `app/main.py` for a live dev-app preview, then one-click Deploy (compute pool + warehouse). |
+| **Path B — scripted via stage** | You upload `app/` to STAGE_SIS_APP, I run `CREATE STREAMLIT` on the container runtime. Fully reproducible. |
+| **Path C — warehouse fallback** | No compute pool available: `environment.yml` + warehouse runtime (Streamlit 1.52.2). |
 
 Default: Path A.
 
@@ -579,8 +694,8 @@ All stopping points below use `ask_user_question` (if available) to present stru
 - ⚠️ After Step 4: Wait for manual upload confirmation; verify via `LIST @stage`.
 - ⚠️ After Step 5a.1 (conditional): If conflicting domain structures found, let user choose.
 - ⚠️ After Step 5d: Domain verification. Approve/Re-extract/Abort. Do NOT proceed until user responds.
-- ⚠️ After Step 8 scan: All 22 items from `$sis/pre-deploy` must PASS. Do NOT deploy on any FAIL. (No `ask_user_question` — pass/fail gate.)
-- ⚠️ Step 9: Path A vs Path B deploy choice; wait for upload confirmation if Path A.
+- ⚠️ After Step 8 scan: All items from `$sis/pre-deploy` must PASS across every app file. Do NOT deploy on any FAIL. (No `ask_user_question` — pass/fail gate.)
+- ⚠️ Step 9: Compute-pool check (`SHOW COMPUTE POOLS`), then Path A / B / C deploy choice; wait for "deployed" (Path A) or upload confirmation (Path B/C).
 - ⚠️ After Step 10b: Derive app URL from `CURRENT_ORGANIZATION_NAME()` + `CURRENT_ACCOUNT_NAME()`, NOT from `CURRENT_ACCOUNT()`.
 - ⚠️ After Step 10: Deployment report. Done/Review.
 
@@ -594,7 +709,7 @@ All stopping points below use `ask_user_question` (if available) to present stru
 - **All SQL uses the new schema.** Double-check every query references `{database}.QUIZ_<CODE>`.
 - **Dollar-quoting for AI_COMPLETE prompts.** Sanitize any `$$` in interpolated content to `$ $`.
 - **If any step fails**, diagnose the issue, fix it, and retry. Do not skip steps.
-- **Manual upload is the only way to get files onto stages in Snowsight** — the agent cannot execute `PUT`. Always wait for user confirmation + `LIST @stage` check.
+- **Manual upload is the only way to get files onto stages in Snowsight** — the agent cannot execute `PUT`. Always wait for user confirmation + `LIST @stage` check. (Stages are needed for input files in Step 4 and for deploy Paths B/C; deploy Path A needs no stage.)
 - **Schema-per-exam** is the only isolation mechanism in this variant. No git, no branches.
 - **If a question bank needs schema adaptation**, invoke `$adapt-questions` before Step 6 loading.
 

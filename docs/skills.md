@@ -1,10 +1,10 @@
 # Skills
 
-Custom Cortex Code skills in this project live under `.snowflake/cortex/skills/` and are uploaded once per workspace via **Cortex Code chat > + > Upload Folder(s)**.
+Custom Snowflake CoCo skills in this project live under `.snowflake/cortex/skills/` and are uploaded once per workspace via **CoCo chat > + > Upload Folder(s)**.
 
 There are **13 skill files**: 2 top-level standalone pipelines, 3 parent "routers" that dispatch to intent-specific sub-skills, and 8 sub-skills. The parent routers are what you invoke via slash command (`/cortex`, `/sis`, `/quiz`). They read your intent keywords and forward to the right sub-skill automatically.
 
-Global Cortex Code skills (like `cortex-ai-functions`) ship natively with Cortex Code in Snowsight - no upload needed.
+Global CoCo skills (like `cortex-ai-functions`) ship natively with CoCo in Snowsight - no upload needed.
 
 ---
 
@@ -13,18 +13,18 @@ Global Cortex Code skills (like `cortex-ai-functions`) ship natively with Cortex
 **Scope:** the 10-step end-to-end pipeline that takes a study-guide PDF from upload to deployed Streamlit app.
 
 **When to use:**
-- first run of the workspace - sets everything up for a new exam;
-- adding another certification - creates a parallel `QUIZ_<NEW_CODE>` schema without touching the previous one.
+- First run of the workspace - sets everything up for a new exam;
+- Adding another certification - creates a parallel `QUIZ_<NEW_CODE>` schema without touching the previous one.
 
 **What it does:**
-- collects exam metadata (name, code), PDF filename, optional CSV/JSON filename, optional feature list;
-- creates the schema, both stages (`STAGE_QUIZ_DATA` with `SNOWFLAKE_SSE` + `DIRECTORY`, `STAGE_SIS_APP`), all 4 tables, and the CSV/JSON file format;
-- stops for manual PDF upload; calls `AI_PARSE_DOCUMENT` + `AI_COMPLETE` to populate `EXAM_DOMAINS` (domains, weights, topics, `key_facts`);
-- either loads the CSV/JSON question bank (via `$adapt-questions` if columns need remapping) or generates ~30 AI questions per domain in batches of 10 (when you want to run the quiz faster);
-- updates `AGENTS.md` in place with new exam code, schema, PDF filename;
-- reads `AGENTS.md` + all `$quiz/*` sub-skills, generates `quiz.py` + `environment.yml` in the workspace;
-- runs `$sis/pre-deploy` 22-item scan, fixes until clean;
-- stops for manual app-file upload to `STAGE_SIS_APP`, then runs `CREATE STREAMLIT` (Path A). Optionally the user uses the workspace right-click "Deploy as Streamlit App" (Path B - unverified).
+- Collects exam metadata (name, code), PDF filename, optional CSV/JSON filename, optional feature list;
+- Creates the schema, both stages (`STAGE_QUIZ_DATA` with `SNOWFLAKE_SSE` + `DIRECTORY`, `STAGE_SIS_APP`), all 4 tables, and the CSV/JSON file format;
+- Stops for manual PDF upload; calls `AI_PARSE_DOCUMENT` + `AI_COMPLETE` to populate `EXAM_DOMAINS` (domains, weights, topics, `key_facts`);
+- Either loads the CSV/JSON question bank (via `$adapt-questions` if columns need remapping) or generates ~30 AI questions per domain in batches of 10 (when you want to run the quiz faster);
+- Updates `AGENTS.md` in place with new exam code, schema, PDF filename;
+- Reads `AGENTS.md` + all `$quiz/*` sub-skills, generates the decomposed multipage `app/` project (entry point, `_*.py` modules, `pages/`, configs) in the workspace;
+- Runs the `$sis/pre-deploy` scan across all app files, fixes until clean;
+- Deploys: by default the user previews with **Run** and clicks **Deploy** in the workspace (Path A); scripted fallback = upload `app/` to `STAGE_SIS_APP` + `CREATE STREAMLIT` on the container runtime (Path B); warehouse fallback when no compute pool exists (Path C).
 
 **Built-in stopping points:** input collection, upload PDF, domain approval, pre-deploy gate, deploy path choice, final report. The agent never proceeds past these without user confirmation.
 
@@ -35,15 +35,15 @@ Global Cortex Code skills (like `cortex-ai-functions`) ship natively with Cortex
 **Scope:** schema adaptation for user-supplied question-bank files (CSV or JSON) that don't match the `QUIZ_QUESTIONS` target schema directly.
 
 **When to use:**
-- invoked from `$setup-exam` step 6 when a CSV has been uploaded;
-- invoked directly: "scan my questions.json for compatibility" or "import this CSV".
+- Invoked from `$setup-exam` step 6 when a CSV has been uploaded;
+- Invoked directly: "scan my questions.json for compatibility" or "import this CSV".
 
 **What it does:**
-- inspects source columns via SQL (`SELECT $1..$N FROM @STAGE_QUIZ_DATA/<file> ...`) - no bash, no local filesystem;
-- maps source columns to the target schema (`domain_id`, `difficulty`, `question_text`, `option_a..e`, `correct_answer`, `is_multi`, `source`);
-- picks the loading strategy (direct `COPY INTO`, transform via `INSERT SELECT`, or `AI_COMPLETE`-assisted mapping for messy sources);
-- handles answer-key formats (letter, full text, index);
-- backfills `domain_name` from `EXAM_DOMAINS` via join.
+- Inspects source columns via SQL (`SELECT $1..$N FROM @STAGE_QUIZ_DATA/<file> ...`) - no bash, no local filesystem;
+- Maps source columns to the target schema (`domain_id`, `difficulty`, `question_text`, `option_a..e`, `correct_answer`, `is_multi`, `source`);
+- Picks the loading strategy (direct `COPY INTO`, transform via `INSERT SELECT`, or `AI_COMPLETE`-assisted mapping for messy sources);
+- Handles answer-key formats (letter, full text, index);
+- Backfills `domain_name` from `EXAM_DOMAINS` via join.
 
 ---
 
@@ -56,12 +56,12 @@ Dispatches to one of two sub-skills depending on keywords in your message: **pat
 **Scope:** calling conventions, error handling, and a 5-step diagnostic for `AI_COMPLETE` and `AI_PARSE_DOCUMENT`.
 
 **When to use:**
-- writing any SQL that calls a Cortex AI function;
-- diagnosing "file not accessible", "model not found", NULL responses, parse errors;
-- verifying stage prerequisites (`SNOWFLAKE_SSE`, `DIRECTORY=TRUE`).
+- Writing any SQL that calls a Cortex AI function;
+- Diagnosing "file not accessible", "model not found", NULL responses, parse errors;
+- Verifying stage prerequisites (`SNOWFLAKE_SSE`, `DIRECTORY=TRUE`).
 
 **What it covers:**
-- `AI_COMPLETE`: `$$...$$` dollar-quoting, `$$` sanitisation before interpolation, error handling wrapper, VARIANT-string response decoding, `parse_cortex_json()` for markdown fences + double-encoding.
+- `AI_COMPLETE`: `$$...$$` dollar-quoting, `$$` sanitisation before interpolation, error handling wrapper, VARIANT-string response decoding, `parse_cortex_json()` for Markdown fences + double-encoding.
 - `AI_PARSE_DOCUMENT`: correct `TO_FILE(...)` + options object, common mistakes (no `BUILD_SCOPED_FILE_URL`, no `PARSE_JSON` wrap, no per-page pagination), stage DDL.
 - `AI_EXTRACT`: noted as an alternative for structured extraction.
 - 5-step diagnostic runbook: basic connectivity, model access, cross-region parameter, JSON output, available models.
@@ -73,14 +73,14 @@ Dispatches to one of two sub-skills depending on keywords in your message: **pat
 **When to use:**
 - `parse_cortex_json` raises `KeyError` or returns `None` for expected fields;
 - AI explanations are shallow, generic, or missing per-option reasoning;
-- a prompt was just edited and needs a sanity check.
+- A prompt was just edited and needs a sanity check.
 
 **What it checks:**
 - JSON output reliability (required keys, no unexpected fences, no double-encoding traps);
-- content completeness (difficulty adherence, grounding from `key_facts`);
-- deduplication block uses `_get_shown_texts()` correctly;
-- injection safety (user-derived values never f-string-interpolated into prompts);
-- prompt length + token budget for the selected model.
+- Content completeness (difficulty adherence, grounding from `key_facts`);
+- Deduplication block uses `_get_shown_texts()` correctly;
+- Injection safety (user-derived values never f-string-interpolated into prompts);
+- Prompt length + token budget for the selected model.
 
 ---
 
@@ -93,25 +93,25 @@ Dispatches to **patterns** (for writing code) or **pre-deploy** (for the mandato
 **Scope:** Streamlit-in-Snowflake v1.52.* coding rules for any `quiz.py` work.
 
 **When to use:**
-- writing or modifying any SiS code;
-- debugging runtime errors (rerun loops, widget state drift, date bugs, cache misses);
-- reviewing generated code for SiS compatibility.
+- Writing or modifying any SiS code;
+- Debugging runtime errors (rerun loops, widget state drift, date bugs, cache misses);
+- Reviewing generated code for SiS compatibility.
 
 **What it covers:**
 - `get_active_session()` placement and cache scope;
 - `st.rerun()` budget (must be exactly 6, at specific call sites);
-- unsupported APIs in SiS 1.52 (`st.fragment`, `st.connection`, `unsafe_allow_html=True`);
+- Unsupported APIs in SiS 1.52 (`st.fragment`, `st.connection`, `unsafe_allow_html=True`);
 - `session_state` reliability - mutable objects, rerun timing, safe patterns;
-- date handling, column-name normalisation, page config, table rendering with pandas.
+- Date handling, column-name normalisation, page config, table rendering with pandas.
 
 ### /sis/pre-deploy
 
 **Scope:** **mandatory** 22-item scan run before every `CREATE STREAMLIT`. Catches the top runtime-failure classes before they reach production.
 
 **When to use:**
-- before every deploy - no exceptions;
-- after any code change, before re-uploading to `STAGE_SIS_APP`;
-- when reviewing generated code for SiS compatibility.
+- Before every deploy - no exceptions;
+- After any code change, before re-uploading to `STAGE_SIS_APP`;
+- When reviewing generated code for SiS compatibility.
 
 **What it checks:** SQL-injection safety, `AI_COMPLETE` dollar-quoting, `parse_cortex_json` usage, `st.rerun()` count and placement, SiS-incompatible APIs, session-state patterns, date handling, column-name conventions, page config, and 12 more. All must pass.
 
@@ -155,7 +155,7 @@ Dispatches across four sub-skills depending on what you are working on: **screen
 
 ---
 
-## skill dependency graph
+## Skill dependency graph
 
 ```
 $setup-exam ----┬--> $adapt-questions -> $cortex/patterns (if AI-assisted mapping)

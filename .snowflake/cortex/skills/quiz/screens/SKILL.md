@@ -177,7 +177,7 @@ Reference: see `render_review()` in `quiz.py`
 
 **Layout**: 3 metrics (Sessions, Questions, Readiness with delta) -> Score per Session chart -> Errors by Domain chart.
 
-**Readiness metric**: `st.metric("Readiness", f"{avg_score:.1f}%", delta=f"{delta_val:+.1f}% vs pass")`. Value is a numeric percentage, NOT a badge — `st.metric()` does not render markdown badges. Hide delta when at threshold: `delta=... if abs(delta_val) >= 0.1 else None`.
+**Readiness metric**: `st.metric("Readiness", f"{avg_score:.1f}%", delta=f"{delta_val:+.1f}% vs pass")`. Value is a numeric percentage, NOT a badge — `st.metric()` does not render Markdown badges. Hide delta when at threshold: `delta=... if abs(delta_val) >= 0.1 else None`.
 
 **MANDATORY: read `$quiz/style` Color Scheme section before building any chart.** All chart colors, axis formatting, and label limits are defined there.
 

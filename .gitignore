@@ -36,6 +36,25 @@ snowflake.yml
 .DS_Store
 Thumbs.db
 *Zone.Identifier
+._*
+.AppleDouble
+.Spotlight-V100
+.Trashes
+
+# editor swap / backup files
+*~
+*.swp
+*.swo
+
+# aisession artifacts
+.remember/
+.claude/settings.local.json
+CLAUDE.local.md
+docs/superpowers/
+
+# secrets
+.streamlit/secrets.toml
+*.secret
 
 # keep data/ visible
 !data/

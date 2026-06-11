@@ -214,13 +214,13 @@ AI_EXTRACT is an optional alternative for extracting structured fields (domain n
 
 The current project uses AI_PARSE_DOCUMENT + AI_COMPLETE for all PDF processing. AI_EXTRACT is documented here as a reference for future optimization.
 
-See the built-in `cortex-ai-functions` skill in Cortex Code Snowsight for full AI_EXTRACT documentation including TO_FILE path handling and response format options.
+See the built-in `cortex-ai-functions` skill in Snowflake CoCo Snowsight for full AI_EXTRACT documentation including TO_FILE path handling and response format options.
 
 ---
 
 # Global Skills Reference
 
-Cortex Code in Snowsight ships with a built-in `cortex-ai-functions` skill that provides comprehensive reference documentation for all Cortex AI functions including AI_EXTRACT, AI_CLASSIFY, AI_FILTER, and the Document Intelligence workflow. It is available natively — no upload needed. Consult it when using a Cortex AI function not covered in this project skill.
+CoCo in Snowsight ships with a built-in `cortex-ai-functions` skill that provides comprehensive reference documentation for all Cortex AI functions including AI_EXTRACT, AI_CLASSIFY, AI_FILTER, and the Document Intelligence workflow. It is available natively — no upload needed. Consult it when using a Cortex AI function not covered in this project skill.
 
 ---
 
