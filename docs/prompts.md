@@ -52,7 +52,7 @@ read AGENTS.md, then triage the following:
 routing:
 - if the error mentions AI_COMPLETE, AI_PARSE_DOCUMENT, "model not found", "file not accessible", or is about cross-region → run the 5-step diagnostic from $cortex/patterns first, report pass/fail, then propose a fix.
 - if the app crashes in the browser or shows a python traceback → re-run $sis/pre-deploy on the current app files, fix all fails, then ask me to re-deploy (workspace Deploy, or re-upload to STAGE_SIS_APP on the scripted path).
-- if AI explanations or questions look wrong or come back with parse errors → run the 8-item audit from $cortex/prompt-audit on the offending prompt.
+- if AI explanations or questions look wrong or come back incomplete → run the 7-item audit from $cortex/prompt-audit on the offending prompt.
 - if screen transitions misbehave (stuck on a button, duplicate renders, stale widget values) → re-read $quiz/screens and propose a patch.
 
 never redeploy on a failing pre-deploy scan. always stop and ask me to re-deploy after a fix.

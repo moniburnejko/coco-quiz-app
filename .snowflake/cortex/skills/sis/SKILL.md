@@ -1,6 +1,6 @@
 ---
 name: sis
-description: "Streamlit in Snowflake (SiS v1.52.*) coding patterns and mandatory pre-deploy scan. Use when writing SiS app code or before deploying. Triggers: SiS, streamlit in snowflake, deploy, pre-deploy, rerun, widget state, scan, get_active_session, cache_data"
+description: "Streamlit-in-Snowflake (container runtime) coding patterns and mandatory pre-deploy scan. Use when writing SiS app code or before deploying. Triggers: SiS, streamlit in snowflake, deploy, pre-deploy, widget state, scan, get_active_session, cache_data, clear_caches, container runtime"
 ---
 
 # Streamlit in Snowflake
@@ -30,9 +30,9 @@ Intent Detection
 
 ## Capabilities
 
-- **Patterns**: Session management, rerun budget (10 locations), unsupported APIs, multi-answer checkboxes, date handling, column normalization, widget state safety, button click safety
-- **Pre-Deploy**: MANDATORY 22-item scan catching SQL injection, SiS incompatibilities, runtime errors
+- **Patterns**: Session management, caching without ttl + explicit invalidation, widget lifecycle (flag-at-top reset), multipage state, scoped reruns (`@st.fragment`), date handling, column normalization, button click safety
+- **Pre-Deploy**: MANDATORY 20-item scan across all app files catching SQL injection, cache/config pitfalls, runtime errors
 
 ## Output
 
-SiS-compatible code or a 22-item pre-deploy scan report with PASS/FAIL per item.
+SiS-compatible code or a 20-item pre-deploy scan report with PASS/FAIL per item.

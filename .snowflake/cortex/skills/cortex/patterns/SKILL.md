@@ -1,18 +1,20 @@
 ---
 name: cortex-patterns
-description: "Cortex AI function patterns — AI_COMPLETE dollar-quoting, response parsing, AI_PARSE_DOCUMENT, stage requirements, 5-step diagnostics. Use when calling or debugging Cortex AI functions. Triggers: AI_COMPLETE, AI_PARSE_DOCUMENT, cortex error, model not found, file not accessible, dollar-quoting, parse_cortex_json"
+description: "Cortex AI function patterns — AI_COMPLETE structured outputs (response_format), dollar-quoting, AI_PARSE_DOCUMENT, stage requirements, 5-step diagnostics. Use when calling or debugging Cortex AI functions. Triggers: AI_COMPLETE, AI_PARSE_DOCUMENT, cortex error, model not found, file not accessible, dollar-quoting, response_format, structured output, call_cortex_json"
 parent_skill: cortex
 ---
+
+> **Thin wrapper.** For the full Cortex AI functions reference (AI_CLASSIFY, AI_FILTER, AI_AGG, multimodal AI_COMPLETE, ...), use the bundled CoCo skill **`cortex-ai-functions`**. This skill keeps only the project-specific deltas: the structured-output calling pattern used by the app, `AI_PARSE_DOCUMENT` stage rules, and the diagnostics runbook.
 
 # When to Load
 
 Parent skill `$cortex` routes here for PATTERNS intent.
 
 - Calling `AI_COMPLETE` (question generation, explanation generation, key_facts extraction)
-- Calling `AI_PARSE_DOCUMENT` (PDF parsing in Phase 1)
+- Calling `AI_PARSE_DOCUMENT` (PDF parsing in `$setup-exam` Step 5)
 - Debugging Cortex errors: "file not accessible", "model not found", NULL responses
 - Setting up stages for Cortex AI functions
-- Before deploying quiz.py - verify Cortex connectivity
+- Before deploying the app - verify Cortex connectivity
 
 # When NOT to Use
 
@@ -30,48 +32,89 @@ All prompts passed to AI_COMPLETE must use `$$...$$` quoting, not single quotes.
 
 ```python
 safe_prompt = prompt.replace("$$", "$ $")
-sql = f"SELECT AI_COMPLETE('{CORTEX_MODEL}', $${safe_prompt}$$)"
+sql = f"SELECT AI_COMPLETE(model => '{CORTEX_MODEL}', prompt => $${safe_prompt}$$)"
 ```
 
 `CORTEX_MODEL` is a hardcoded constant - safe to interpolate. Never interpolate user-derived values.
 
-## Error handling
+## Structured outputs (the project standard for ALL JSON responses)
+
+`AI_COMPLETE` accepts a `response_format` argument (a JSON schema). The output is **validated token-by-token against the schema**, so the response is guaranteed to be schema-conformant JSON - no markdown fences, no missing keys, no prose wrapper. Every AI call in the app that expects JSON (questions, explanations, recommendations) MUST use it.
+
+Authoritative syntax: https://docs.snowflake.com/en/user-guide/snowflake-cortex/complete-structured-outputs
+
+**Schemas live in `_config.py`** as SQL OBJECT literal strings (static constants, written once - no runtime conversion):
+
+```python
+# _config.py
+RESPONSE_FORMATS = {
+    "question": """{
+        'type': 'json',
+        'schema': {'type': 'object', 'properties': {
+            'question_text': {'type': 'string'},
+            'is_multi':      {'type': 'boolean'},
+            'option_a':      {'type': 'string'},
+            'option_b':      {'type': 'string'},
+            'option_c':      {'type': 'string'},
+            'option_d':      {'type': 'string'},
+            'option_e':      {'type': 'string'},
+            'correct_answer':{'type': 'string'}},
+         'required': ['question_text', 'is_multi', 'option_a', 'option_b', 'correct_answer']}
+    }""",
+    "explanation": """{
+        'type': 'json',
+        'schema': {'type': 'object', 'properties': {
+            'why_correct': {'type': 'array', 'items': {'type': 'string'}},
+            'why_wrong':   {'type': 'object'},
+            'mnemonic':    {'type': 'string'},
+            'doc_search':  {'type': 'string'}},
+         'required': ['why_correct', 'why_wrong', 'mnemonic', 'doc_search']}
+    }""",
+}
+```
+
+**The calling helpers live in `_cortex.py`:**
 
 ```python
 def call_cortex(prompt):
+    """Free-text completion (e.g. key_facts extraction). Returns str or None."""
     try:
-        safe_prompt = prompt.replace("$$", "$ $")
-        rows = session.sql(f"SELECT AI_COMPLETE('{CORTEX_MODEL}', $${safe_prompt}$$)").collect()
+        safe = prompt.replace("$$", "$ $")
+        rows = session.sql(
+            f"SELECT AI_COMPLETE(model => '{CORTEX_MODEL}', prompt => $${safe}$$)"
+        ).collect()
         if not rows or rows[0][0] is None:
             return None
         return str(rows[0][0])
     except Exception as e:
         st.session_state["last_cortex_error"] = str(e)
         return None
-```
 
-## Response parsing
 
-AI_COMPLETE responses may have these encoding issues:
-1. **Plain JSON** - works directly with `json.loads()`
-2. **Markdown fences** - response wrapped in ` ```json ... ``` ` - strip fences before parsing
-3. **Double-encoded** - first `json.loads()` returns a string, needs second parse
-4. **VARIANT string wrapping** - Snowflake returns AI_COMPLETE results as VARIANT. When cast to `str()`, the value may arrive with surrounding JSON quotes: `'"```json\n{...}"'`. The `call_cortex()` function must strip this outer encoding before returning:
-
-```python
-raw = str(rows[0][0])
-# Strip VARIANT string encoding
-if raw.startswith('"'):
+def call_cortex_json(prompt, fmt_key):
+    """Schema-constrained completion. fmt_key indexes RESPONSE_FORMATS.
+    Returns a dict (schema-conformant) or None."""
     try:
-        decoded = json.loads(raw)
-        if isinstance(decoded, str):
-            raw = decoded
-    except Exception:
-        pass
-return raw
+        safe = prompt.replace("$$", "$ $")
+        rows = session.sql(
+            f"SELECT AI_COMPLETE(model => '{CORTEX_MODEL}', prompt => $${safe}$$, "
+            f"model_parameters => {{}}, response_format => {RESPONSE_FORMATS[fmt_key]})"
+        ).collect()
+        if not rows or rows[0][0] is None:
+            return None
+        raw = rows[0][0]
+        data = json.loads(raw) if isinstance(raw, str) else raw
+        return data if isinstance(data, dict) else None
+    except Exception as e:
+        st.session_state["last_cortex_error"] = str(e)
+        return None
 ```
 
-Always use `parse_cortex_json()` - never `json.loads()` directly. The `parse_cortex_json()` function must handle all 4 cases with separate try blocks (so a failure in one path does not skip the others).
+Rules:
+- The schema strings are static project constants - safe to interpolate into SQL. Never build them from user input, and keep quote characters out of schema text.
+- Because output is schema-conformant, there is **no markdown-fence stripping, no double-encode handling, no fence-aware parser**. The single `json.loads` guard above is the entire parse path.
+- Retry on `None` only (call failed or returned NULL) - not on "bad JSON" (structured output makes that case go away).
+- If the model is ever switched to an OpenAI `gpt-*` model, the schema must also set `'additionalProperties': false` and list every property in `required` (GPT requirement; Claude does not need it).
 
 ---
 
@@ -88,7 +131,7 @@ Common mistakes:
 | Using `BUILD_SCOPED_FILE_URL()` | Use `TO_FILE('@stage', 'file.pdf')` — returns FILE type, not VARCHAR |
 | Passing mode as string `'LAYOUT'` | Pass as OBJECT: `{'mode': 'LAYOUT'}` |
 | Wrapping in `PARSE_JSON()` | Do NOT — result is already VARIANT |
-| Paginating manually (page by page) | Do NOT — one call returns the full document |
+| Paginating manually (page by page) | Do NOT — one call returns the full document (up to 2,000 pages) |
 
 ```sql
 -- get full document content in one call
@@ -96,24 +139,16 @@ SELECT AI_PARSE_DOCUMENT(
     TO_FILE('@{database}.{schema}.STAGE_QUIZ_DATA', '<pdf_filename>'),
     {'mode': 'LAYOUT'}
 ):content::VARCHAR AS doc_content;
-
--- with subquery for further processing
-SELECT result:content::VARCHAR AS doc_content
-FROM (
-    SELECT AI_PARSE_DOCUMENT(
-        TO_FILE('@{database}.{schema}.STAGE_QUIZ_DATA', '<pdf_filename>'),
-        {'mode': 'LAYOUT'}
-    ) AS result
-);
 ```
 
 **Options OBJECT keys:**
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `mode` | STRING | `'OCR'` | `'OCR'` or `'LAYOUT'` |
-| `page_split` | BOOLEAN | `false` | Return pages as separate array elements |
+| `mode` | STRING | `'OCR'` | `'OCR'` or `'LAYOUT'` (LAYOUT returns Markdown incl. tables) |
+| `page_split` | BOOLEAN | `false` | Return pages as separate array elements (use for very large PDFs) |
 | `page_filter` | ARRAY | — | Process specific page ranges, e.g. `[{'start': 0, 'end': 10}]` |
+| `extract_images` | BOOLEAN | `false` | LAYOUT only — also return embedded images (base64) |
 
 ## Stage requirements
 
@@ -146,7 +181,7 @@ Run these tests when AI functions fail. Report pass/fail for each.
 ## Step 1 - Basic connectivity
 
 ```sql
-SELECT AI_COMPLETE('claude-sonnet-4-6', $Tell me the current Snowflake region in one word.$);
+SELECT AI_COMPLETE('claude-sonnet-4-6', $$Tell me the current Snowflake region in one word.$$);
 ```
 
 Expected: non-empty string. Fail: `not allowed to access this endpoint` or NULL.
@@ -154,10 +189,10 @@ Expected: non-empty string. Fail: `not allowed to access this endpoint` or NULL.
 ## Step 2 - Model access
 
 ```sql
-SELECT AI_COMPLETE('claude-sonnet-4-6', $Say "ok" in JSON exactly: {"status":"ok"}$);
+SELECT AI_COMPLETE('claude-sonnet-4-6', $$Say "ok" in one word.$$);
 ```
 
-Expected: string containing `{"status":"ok"}`. Fail: `Model not found` or NULL.
+Expected: non-empty string. Fail: `Model not found` or NULL.
 
 ## Step 3 - Cross-region parameter
 
@@ -165,21 +200,29 @@ Expected: string containing `{"status":"ok"}`. Fail: `Model not found` or NULL.
 SHOW PARAMETERS LIKE 'CORTEX_ENABLED_CROSS_REGION' IN ACCOUNT;
 ```
 
-Expected: value = `AWS_US`. If `DISABLED`: AI_COMPLETE will fail for EU accounts.
+Expected: `ANY_REGION` (or `AWS_GLOBAL` / legacy `AWS_US`). If `DISABLED` and the model is not in-region: AI_COMPLETE fails.
 
 Fix (requires ACCOUNTADMIN):
 ```sql
-ALTER ACCOUNT SET CORTEX_ENABLED_CROSS_REGION = 'AWS_US';
+ALTER ACCOUNT SET CORTEX_ENABLED_CROSS_REGION = 'ANY_REGION';
 ```
 
-## Step 4 - JSON parsing
+## Step 4 - Structured output
 
 ```sql
-SELECT AI_COMPLETE('claude-sonnet-4-6', $Return only valid JSON with this exact structure, no markdown fences:
-{"question_text": "What is a virtual warehouse?", "option_a": "A compute cluster", "option_b": "A storage unit", "option_c": "A database schema", "option_d": "A role", "correct_answer": "A"}$);
+SELECT AI_COMPLETE(
+    model => 'claude-sonnet-4-6',
+    prompt => $$Name any Snowflake feature.$$,
+    model_parameters => {},
+    response_format => {
+        'type': 'json',
+        'schema': {'type': 'object',
+                   'properties': {'feature': {'type': 'string'}},
+                   'required': ['feature']}
+    });
 ```
 
-Expected: JSON object (possibly with markdown fences - `parse_cortex_json` handles that).
+Expected: `{"feature": "..."}` — schema-conformant JSON, no fences. Fail: error mentioning `response_format` (older syntax/region issue) or NULL.
 
 ## Step 5 - Available models
 
@@ -196,7 +239,7 @@ Expected: list of available claude models in this region.
 | 1 - Basic connectivity | PASS / FAIL | |
 | 2 - Model access | PASS / FAIL | |
 | 3 - Cross-region | PASS / FAIL | current value |
-| 4 - JSON output | PASS / FAIL | |
+| 4 - Structured output | PASS / FAIL | |
 | 5 - Models list | INFO | |
 
 If Step 3 fails: provide the ALTER ACCOUNT fix and ask user to confirm ACCOUNTADMIN role before running.
@@ -205,16 +248,14 @@ If Step 3 fails: provide the ALTER ACCOUNT fix and ask user to confirm ACCOUNTAD
 
 # AI_EXTRACT (Alternative for Structured Extraction)
 
-AI_EXTRACT is an optional alternative for extracting structured fields (domain names, topics, weights) from documents. It returns JSON directly without a two-step parse-then-analyze pipeline.
+AI_EXTRACT is an optional alternative for extracting structured fields (domain names, weights, topics) from documents. It returns keyed JSON directly and can read the file itself (no separate parse step).
 
-| Approach | Best For | Cost |
-|----------|----------|------|
-| AI_PARSE_DOCUMENT + AI_COMPLETE | Full text extraction + free-form analysis (key_facts) | 0.5-3.33 credits/1000 pages + AI_COMPLETE cost |
-| AI_EXTRACT | Targeted structured fields (domain names, weights, topics) | 5 credits/million tokens |
+| Approach | Best For |
+|----------|----------|
+| AI_PARSE_DOCUMENT + AI_COMPLETE | Full text extraction + free-form analysis (key_facts) — the project default |
+| AI_EXTRACT | Targeted structured fields (domain names, weights, topics) in one call |
 
-The current project uses AI_PARSE_DOCUMENT + AI_COMPLETE for all PDF processing. AI_EXTRACT is documented here as a reference for future optimization.
-
-See the built-in `cortex-ai-functions` skill in Snowflake CoCo Snowsight for full AI_EXTRACT documentation including TO_FILE path handling and response format options.
+`$setup-exam` Step 5b documents the optional AI_EXTRACT path. For full AI_EXTRACT reference (TO_FILE handling, responseFormat options), consult the bundled `cortex-ai-functions` skill.
 
 ---
 
@@ -226,4 +267,4 @@ CoCo in Snowsight ships with a built-in `cortex-ai-functions` skill that provide
 
 ## Output
 
-Correct AI_COMPLETE/AI_PARSE_DOCUMENT calling patterns applied. Diagnostics report if troubleshooting.
+Correct AI_COMPLETE (structured-output) and AI_PARSE_DOCUMENT calling patterns applied. Diagnostics report if troubleshooting.

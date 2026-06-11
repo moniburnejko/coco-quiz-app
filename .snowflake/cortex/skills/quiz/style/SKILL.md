@@ -75,18 +75,17 @@ Use `st.markdown(f"#### {text}")` (h4 heading) for question text display. NOT `s
 
 ---
 
-# CSS Injection
+# Theme & CSS
 
-`unsafe_allow_html=True` is used ONLY ONCE — for sidebar pill font size, immediately after `st.set_page_config()`:
+NO `unsafe_allow_html` anywhere in the app (enforced by `$sis/pre-deploy`). Visual theming lives in `.streamlit/config.toml`:
 
-```python
-st.set_page_config(layout="centered", page_icon="...")
-st.markdown("""<style>
-    [data-testid="stSidebar"] [data-testid="stPills"] button { font-size: 1.1rem; }
-</style>""", unsafe_allow_html=True)
+```toml
+[theme]
+base = "light"
+primaryColor = "#29b5e8"
 ```
 
-No other CSS injection anywhere. `layout="centered"` always — never `"wide"`.
+`layout="centered"` always — never `"wide"` (set once, in `main.py`'s `st.set_page_config`). Shared visual helpers (badges, cards, doc links) live in `_ui.py` as plain Streamlit components — no raw HTML.
 
 ---
 

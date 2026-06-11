@@ -91,7 +91,7 @@ AI_PARSE_DOCUMENT(..., {'mode': 'OCR'});
 
 ## AI-generated questions come back with parse errors
 
-**Cause:** `AI_COMPLETE` hit the output token limit on a batch of 10 questions, producing truncated JSON. The agent's `parse_cortex_json` swallows the error and logs it to `session_state.last_cortex_error`.
+**Cause:** `AI_COMPLETE` hit the output token limit on a batch of 10 questions. With structured outputs that surfaces as a failed/NULL call (not malformed JSON); the helper logs it to `session_state.last_cortex_error`.
 
 **Fix:** Reduce batch size (step 6b of `$setup-exam`) from 10 to 5 and rerun generation for that domain only:
 
@@ -116,9 +116,9 @@ The agent already has retry logic for exactly this case - usually one rerun is e
 
 ## Pre-deploy scan passes but the app logs a `KeyError` at runtime
 
-**Cause:** An AI prompt produces JSON with an unexpected key name - `parse_cortex_json` returns a dict that doesn't contain what `render_quiz` expects.
+**Cause:** The `response_format` schema does not cover a key the rendering code reads - the call returns a schema-conformant dict, but the code expects a field the schema never asked for.
 
-**Fix:** Run `$cortex/prompt-audit` on the offending prompt:
+**Fix:** Run `$cortex/prompt-audit` on the offending prompt (item 1 checks schema-vs-code key coverage):
 
 ```
 run $cortex/prompt-audit on the question generation prompt. focus on key name mismatches and JSON completeness.

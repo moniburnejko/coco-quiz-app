@@ -63,7 +63,7 @@ Preferred model: `claude-sonnet-4-6`. Store as constant `CORTEX_MODEL` in `_conf
 
 Accounts that cannot reach the chosen model in-region must enable cross-region inference (once per account, as ACCOUNTADMIN): `ALTER ACCOUNT SET CORTEX_ENABLED_CROSS_REGION = 'ANY_REGION';` (`'AWS_GLOBAL'` is a narrower alternative; the legacy `'AWS_US'` still works but is narrowest). Accounts created after 2026-03-09 default to `ANY_REGION` and may need no change.
 
-For calling patterns, dollar-quoting, JSON parsing, and diagnostics: see `$cortex/patterns`.
+For calling patterns, dollar-quoting, structured outputs (`response_format`), and diagnostics: see `$cortex/patterns`.
 For prompt quality audit: see `$cortex/prompt-audit`.
 
 ---

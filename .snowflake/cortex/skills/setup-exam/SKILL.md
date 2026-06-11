@@ -297,6 +297,20 @@ Study guide content:
 
 Parse the response and INSERT each domain into EXAM_DOMAINS.
 
+**Optional alternative — `AI_EXTRACT`** (one call, keyed JSON, no free-form prompt). Offer it only if the AI_COMPLETE extraction struggles (e.g. messy PDF structure); AI_COMPLETE stays the default:
+
+```sql
+SELECT AI_EXTRACT(
+  text => :doc_content,
+  responseFormat => {
+    'domains': 'List every exam domain name, in order',
+    'weights': 'List each domain percentage weight (numbers summing to 100), same order',
+    'topics' : 'For each domain, list the topics it covers, same order'
+  });
+```
+
+Map the keyed arrays into EXAM_DOMAINS rows (domain_id = position as string). The key_facts extraction (5c) still uses AI_COMPLETE either way.
+
 ### 5c — Extract key_facts per domain
 
 **Reuse the `doc_content` from Step 5a.** Store it in a session variable, temporary table, or pass via CTE — do NOT re-call AI_PARSE_DOCUMENT for each domain.
@@ -379,16 +393,16 @@ WHERE q.domain_id = d.domain_id AND q.domain_name IS NULL;
 
 ### 6b — If no CSV — generate via AI (question bank pre-load)
 
-Generate questions grounded on `key_facts` from EXAM_DOMAINS.
+Generate questions grounded on `key_facts` from EXAM_DOMAINS, using AI_COMPLETE **structured outputs** — a `response_format` schema with a `questions` array of question objects (same per-question shape as `RESPONSE_FORMATS["question"]` in `$cortex/patterns`). Output is schema-conformant JSON; there is no parse-repair step.
 
-**Batch size**: MAX 10 questions per AI_COMPLETE call. Larger batches cause JSON truncation (model hits output token limits → invalid JSON).
+**Batch size**: MAX 10 questions per AI_COMPLETE call. Larger batches risk hitting the output token limit — with structured outputs that surfaces as a failed/NULL call, not malformed JSON.
 
 For each domain:
 1. Read domain's `key_facts` and `topics` from EXAM_DOMAINS.
 2. Generate questions in batches of 10:
-   - Each batch: specify domain, difficulty mix (roughly 3 easy + 4 medium + 3 hard), and a subset of topics to cover.
+   - Each batch: specify domain, difficulty mix (roughly 3 easy + 4 medium + 3 hard), and a subset of topics to cover. Include the per-field length guidance in the prompt (schema guarantees shape, not length).
    - Run 3 batches per domain → ~30 questions per domain.
-   - If JSON parse fails (truncation), retry the batch with 5 questions.
+   - If a batch call returns NULL/fails, retry that batch with 5 questions.
 3. INSERT each question with `source = 'AI_GENERATED'`, `domain_id`, `domain_name`, `difficulty`.
 
 **Target**: ~30 questions per domain (150 total for 5 domains).

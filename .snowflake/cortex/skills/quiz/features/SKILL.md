@@ -35,18 +35,14 @@ New mode alongside Practice. Fixed question count matching real exam, countdown 
 
 ## Navigation
 
-QUIZ page gets sub-pills in sidebar (like REVIEW has sub-pills): `PRACTICE | EXAM SIMULATION`. Appears in sidebar only when `_current_page == "QUIZ"`. PRACTICE is the existing flow (home→quiz→summary). EXAM SIMULATION is a separate flow.
+Generated as its own page: `pages/exam_simulation.py`, appended to the `st.navigation` list in `main.py` (title "Exam Simulation"). The Quiz page (practice flow) stays unchanged.
 
 ```
-QUIZ page (with Exam Simulation enabled):
-  sidebar sub-pills: PRACTICE | EXAM SIMULATION
-  PRACTICE: home -> quiz -> summary (existing, unchanged)
-  EXAM SIMULATION: sim_config -> sim_quiz -> sim_results
+pages/exam_simulation.py (own page):
+  sim_config -> sim_quiz -> sim_results   (internal state machine via _sim_screen)
 ```
 
 ## UI spec
-
-**Sidebar**: `st.pills("Quiz mode", options=["PRACTICE", "EXAM SIMULATION"], ...)` below nav pills, only when on QUIZ page. Use `label_visibility="collapsed"` with bold label above.
 
 **sim_config screen**: Shows exam params as read-only info:
 - Exam: {EXAM_NAME} ({EXAM_CODE})
@@ -87,11 +83,9 @@ QUIZ page (with Exam Simulation enabled):
 
 ## What
 
-New REVIEW sub-tab "FLASHCARDS". Shows wrong answers as flashcards — front = question, click to reveal = correct answer + mnemonic + docs link.
+Own page `pages/flashcards.py` (added to `st.navigation` in `main.py`, title "Flashcards"). Shows wrong answers as flashcards — front = question, click to reveal = correct answer + mnemonic + docs link.
 
 ## UI spec
-
-Add "FLASHCARDS" to REVIEW sub-pills: `["WRONG ANSWERS", "LEARNING DASHBOARD", "AI STUDY RECOMMENDATION", "FLASHCARDS"]` (only if this feature is enabled; if AI Study Recommendation is not enabled, omit it from the list).
 
 **Card front**: `st.container(border=True)` with:
 - Domain badge + difficulty badge
@@ -210,11 +204,11 @@ for badge in locked_badges:
 
 ## What
 
-AI-powered exam readiness analysis. REVIEW sub-tab "AI STUDY RECOMMENDATION".
+AI-powered exam readiness analysis. Own page `pages/recommendations.py`.
 
 ## Navigation
 
-Add "AI STUDY RECOMMENDATION" to REVIEW sub-pills when this feature is enabled.
+Added to the `st.navigation` list in `main.py` (title "AI Study Recommendation") when this feature is enabled.
 
 ## Condition
 
@@ -262,13 +256,11 @@ No `overall_assessment` key. `doc_search` converted to `doc_url` post-parse.
 
 ## Start Focused Session
 
-Sets domain_filter, difficulty, round_size=10, `_redirect_to_quiz=True`, then calls `st.rerun()`.
-
-> **CRITICAL**: `render_ai_recommendations()` must NEVER set `nav_pills` directly — the `st.pills()` widget with `key="nav_pills"` has already been instantiated by the time render functions run. Setting it causes `StreamlitAPIException`. Only the entry point (`main()`) may set `nav_pills`, BEFORE the sidebar widget is created. The `_redirect_to_quiz` handler in `main()` must set `nav_pills = "QUIZ"` along with screen/state resets.
+Sets `domain_filter`, `difficulty`, `round_size=10`, `screen="home"` (with the config pre-filled), then calls `st.switch_page("pages/quiz.py")` — `st.navigation` owns the page, so there is no nav-widget key to mutate (the old `nav_pills` redirect machinery does not exist in the multipage app).
 
 ## Session state keys
 
-`_ai_recommendations` (dict|None), `_rec_cache_key` (str|None), `_redirect_to_quiz` (bool)
+`_ai_recommendations` (dict|None), `_rec_cache_key` (str|None)
 
 ---
 

@@ -61,26 +61,27 @@ Dispatches to one of two sub-skills depending on keywords in your message: **pat
 - Verifying stage prerequisites (`SNOWFLAKE_SSE`, `DIRECTORY=TRUE`).
 
 **What it covers:**
-- `AI_COMPLETE`: `$$...$$` dollar-quoting, `$$` sanitisation before interpolation, error handling wrapper, VARIANT-string response decoding, `parse_cortex_json()` for Markdown fences + double-encoding.
+- `AI_COMPLETE`: `$$...$$` dollar-quoting, `$$` sanitisation before interpolation, **structured outputs** (`response_format` schemas in `RESPONSE_FORMATS`, `call_cortex_json()` helper — guaranteed schema-conformant JSON, no fence parsing).
 - `AI_PARSE_DOCUMENT`: correct `TO_FILE(...)` + options object, common mistakes (no `BUILD_SCOPED_FILE_URL`, no `PARSE_JSON` wrap, no per-page pagination), stage DDL.
-- `AI_EXTRACT`: noted as an alternative for structured extraction.
-- 5-step diagnostic runbook: basic connectivity, model access, cross-region parameter, JSON output, available models.
+- `AI_EXTRACT`: noted as an optional alternative for structured extraction (`$setup-exam` Step 5b).
+- 5-step diagnostic runbook: basic connectivity, model access, cross-region parameter, structured output, available models.
+- Defers to the bundled `cortex-ai-functions` skill for the full Cortex AI reference.
 
 ### /cortex/prompt-audit
 
-**Scope:** 8-item audit checklist for any `AI_COMPLETE` prompt in `quiz.py`.
+**Scope:** 7-item audit checklist for any `AI_COMPLETE` prompt in the app modules.
 
 **When to use:**
-- `parse_cortex_json` raises `KeyError` or returns `None` for expected fields;
+- `call_cortex_json` returns `None` or a dict missing expected content;
 - AI explanations are shallow, generic, or missing per-option reasoning;
 - A prompt was just edited and needs a sanity check.
 
 **What it checks:**
-- JSON output reliability (required keys, no unexpected fences, no double-encoding traps);
+- Structured output requested (`response_format` schema covers every key the code reads);
 - Content completeness (difficulty adherence, grounding from `key_facts`);
 - Deduplication block uses `_get_shown_texts()` correctly;
 - Injection safety (user-derived values never f-string-interpolated into prompts);
-- Prompt length + token budget for the selected model.
+- `doc_search` pattern (no hallucinated URLs).
 
 ---
 
@@ -90,30 +91,31 @@ Dispatches to **patterns** (for writing code) or **pre-deploy** (for the mandato
 
 ### /sis/patterns
 
-**Scope:** Streamlit-in-Snowflake v1.52.* coding rules for any `quiz.py` work.
+**Scope:** Streamlit-in-Snowflake coding rules for the container runtime — any app-module work.
 
 **When to use:**
 - Writing or modifying any SiS code;
-- Debugging runtime errors (rerun loops, widget state drift, date bugs, cache misses);
+- Debugging runtime errors (widget state drift, date bugs, cache staleness);
 - Reviewing generated code for SiS compatibility.
 
 **What it covers:**
 - `get_active_session()` placement and cache scope;
-- `st.rerun()` budget (must be exactly 6, at specific call sites);
-- Unsupported APIs in SiS 1.52 (`st.fragment`, `st.connection`, `unsafe_allow_html=True`);
-- `session_state` reliability - mutable objects, rerun timing, safe patterns;
-- Date handling, column-name normalisation, page config, table rendering with pandas.
+- Caching without `ttl` + explicit `clear_caches()` invalidation after writes;
+- Widget lifecycle (flag-at-top reset, `on_click`), multipage `session_state`, `@st.fragment` scoped reruns;
+- Still-constrained APIs (CSP / `unsafe_allow_html`, `.applymap` removed in pandas 3, `st.experimental_rerun`);
+- Date handling, column-name normalisation, button click safety, SQL safety.
+- Defers to the bundled `developing-with-streamlit` skill for general Streamlit patterns.
 
 ### /sis/pre-deploy
 
-**Scope:** **mandatory** 22-item scan run before every `CREATE STREAMLIT`. Catches the top runtime-failure classes before they reach production.
+**Scope:** **mandatory** 20-item scan across all app files (`main.py`, `_*.py`, `pages/*.py`, `config.toml`), run before every deploy. Catches the top runtime-failure classes before they reach production.
 
 **When to use:**
 - Before every deploy - no exceptions;
-- After any code change, before re-uploading to `STAGE_SIS_APP`;
+- After any code change, before re-deploying (Workspaces Deploy or stage upload);
 - When reviewing generated code for SiS compatibility.
 
-**What it checks:** SQL-injection safety, `AI_COMPLETE` dollar-quoting, `parse_cortex_json` usage, `st.rerun()` count and placement, SiS-incompatible APIs, session-state patterns, date handling, column-name conventions, page config, and 12 more. All must pass.
+**What it checks:** SQL-injection safety, `AI_COMPLETE` dollar-quoting, structured-output usage, cache discipline (no `ttl` + `clear_caches()` after writes), `config.toml` settings, `st.set_page_config` placement, screen transitions, date handling, column-name conventions, and more. All must pass.
 
 ---
 

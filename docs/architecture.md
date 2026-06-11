@@ -80,7 +80,7 @@ The **Review** page (separate sidebar pill) has two tabs: **Wrong Answers** show
 
 ### Invariants (things that must stay true)
 
-- **Every `AI_COMPLETE` call** goes through `call_cortex()` (dollar-quoting + `$$` sanitization) and `parse_cortex_json()` (strips Markdown fences, handles double-encoding). Never raw `json.loads()`.
+- **Every `AI_COMPLETE` call** goes through `_cortex.py`: `call_cortex()` for free text, `call_cortex_json()` with a `RESPONSE_FORMATS` schema for JSON (dollar-quoting + `$$` sanitization in both). Structured outputs guarantee schema-conformant JSON — there is no fence-stripping parser.
 - **Deduplication within a round** uses `_get_shown_texts()` reading `round_history`, not session state keys and not the DB. Deduplication across rounds is an intentional non-goal - the same question can reappear in a later round.
 - **Write-back happens once**, at round end on "Finish". Not incrementally per question. This keeps `QUIZ_SESSION_LOG` atomic - one row per round, no partials.
 - **`st.rerun()` discipline** - every slow button handler wraps its work in `st.spinner()` and ends with a single `st.rerun()` after setting state. (The old "exactly six call sites" budget targeted warehouse-runtime SiS 1.52 and is superseded on the container runtime - see `$sis/patterns`.)
@@ -146,13 +146,13 @@ erDiagram
 
 ## Skill dependency
 
-Skills are intentionally small and single-purpose. The pre-deploy scan is its own skill. The 8-item prompt audit is another. The 5-step Cortex diagnostic is a third. Each has one job, loaded only when the intent matches. This keeps context usage low - CoCo doesn't pull in question-generation guidance when the user is debugging a stage permission error.
+Skills are intentionally small and single-purpose. The pre-deploy scan is its own skill. The 7-item prompt audit is another. The 5-step Cortex diagnostic is a third. Each has one job, loaded only when the intent matches. This keeps context usage low - CoCo doesn't pull in question-generation guidance when the user is debugging a stage permission error.
 
 **At setup time** (driven by `$setup-exam`), Steps 1-4 are plain SQL (`CREATE SCHEMA`, `CREATE STAGE`, `CREATE TABLE`, `LIST`) with no skills involved. Step 5 (domain extraction) pulls in `$cortex/patterns` for the `AI_PARSE_DOCUMENT` + `AI_COMPLETE` call patterns. Step 6 (question loading) branches: the CSV path optionally pulls `$adapt-questions` (which itself pulls `$cortex/patterns` if the column-mapping strategy uses AI); the AI-generation path pulls `$cortex/patterns` + `$cortex/prompt-audit` (to catch bad prompts before they generate thousands of bad rows). Step 7 is a plain `AGENTS.md` edit. Step 8 (app generation) is the heaviest: `$quiz/screens` + `$quiz/questions` + `$quiz/style`, optionally `$quiz/features` if the user asked for optional features, and mandatorily `$sis/pre-deploy` for the scan. Steps 9-10 are plain SQL again.
 
 **At runtime** the agent is not involved at all. The app modules contain baked-in versions of the patterns from `$cortex/patterns` (`call_cortex`, dollar-quoting — in `_cortex.py`) and from `$quiz/questions` (`DIFFICULTY_GUIDE` constant, topic schedule algorithm — in `_config.py` / `_questions.py`) - not loaded dynamically but copied in during Step 8.
 
-**Troubleshooting** is reactive and on-demand. If the user reports "AI returns weird JSON", the agent loads `$cortex/patterns` (5-step diagnostic). If the user reports "questions are low quality", the agent loads `$cortex/prompt-audit` (8-item scan). If the app crashes, the agent re-runs `$sis/pre-deploy` on the current app files. If screens glitch, the agent re-reads `$quiz/screens`. One skill per failure class.
+**Troubleshooting** is reactive and on-demand. If the user reports "AI returns weird JSON", the agent loads `$cortex/patterns` (5-step diagnostic). If the user reports "questions are low quality", the agent loads `$cortex/prompt-audit` (7-item scan). If the app crashes, the agent re-runs `$sis/pre-deploy` on the current app files. If screens glitch, the agent re-reads `$quiz/screens`. One skill per failure class.
 
 ### Quick reference
 
@@ -165,7 +165,7 @@ Skills are intentionally small and single-purpose. The pre-deploy scan is its ow
 | `$setup-exam` Step 8 | `$quiz/{screens,questions,style}` + `$sis/pre-deploy` | app generation + scan |
 | `$setup-exam` Step 8 (optional) | `$quiz/features` | optional app features |
 | troubleshooting: AI error | `$cortex/patterns` | 5-step diagnostic |
-| troubleshooting: bad output | `$cortex/prompt-audit` | 8-item prompt scan |
+| troubleshooting: bad output | `$cortex/prompt-audit` | 7-item prompt scan |
 | troubleshooting: app crash | `$sis/pre-deploy` | Streamlit pre-deploy scan |
 
 ---

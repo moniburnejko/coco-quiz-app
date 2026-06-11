@@ -1,6 +1,6 @@
 ---
 name: sis-pre-deploy
-description: "MANDATORY 22-item pre-deploy scan for Streamlit in Snowflake (SiS v1.52.*). Run before EVERY deploy — catches SQL injection, runtime errors, SiS incompatibilities. Triggers: deploy, pre-deploy, scan, upload quiz, stage copy, before deploying, push to snowflake"
+description: "MANDATORY 20-item pre-deploy scan for the Streamlit-in-Snowflake app (container runtime). Run before EVERY deploy — catches SQL injection, runtime errors, cache and config pitfalls. Triggers: deploy, pre-deploy, scan, before deploying, push to snowflake, deploy checklist"
 parent_skill: sis
 ---
 
@@ -8,13 +8,13 @@ parent_skill: sis
 
 Parent skill `$sis` routes here for PRE-DEPLOY intent.
 
-- **MANDATORY** before every deploy of quiz.py to STAGE_SIS_APP
-- After any code changes, before pushing to Snowflake
+- **MANDATORY** before every deploy of the app (Workspaces Deploy or stage upload)
+- After any code changes, before re-deploying
 - When reviewing generated code for SiS compatibility
 
 # When NOT to Use
 
-- Coding patterns (session, rerun, widgets) -> use `$sis/patterns`
+- Coding patterns (session, cache, widgets) -> use `$sis/patterns`
 - UI styling/badges -> use `$quiz/style`
 - Cortex AI issues -> use `$cortex/patterns`
 
@@ -22,14 +22,14 @@ Parent skill `$sis` routes here for PRE-DEPLOY intent.
 
 # Pre-Deploy Scan
 
-Read `quiz.py` in full. Then check each of the 22 items below. For each item report PASS or FAIL. On FAIL: show the line number and the offending code snippet.
+Read ALL app files in full: `main.py`, every `_*.py` module, every `pages/*.py`, and `.streamlit/config.toml`. Then check each of the 20 items below across the whole project. For each item report PASS or FAIL. On FAIL: show the file, line number, and the offending code snippet.
 
 ## Scan Items
 
 ### SQL and data safety
 
 **1. SQL injection risk**
-Find every `session.sql(f"...")` call. Only `DATABASE`, `SCHEMA`, and `CORTEX_MODEL` constants are allowed in f-strings. Any runtime variable (`domain_id`, `difficulty`, dates, user input) must use bind params `:1, :2, …`.
+Find every `session.sql(f"...")` call in every module. Only `DATABASE`, `SCHEMA`, `CORTEX_MODEL`, and `RESPONSE_FORMATS` constants are allowed in f-strings. Any runtime variable (`domain_id`, `difficulty`, dates, user input) must use bind params `:1, :2, …`.
 - PASS: user-derived values use bind params
 - FAIL: any runtime variable interpolated directly into f-string SQL
 
@@ -51,7 +51,7 @@ Every `SELECT DISTINCT` query must also filter `WHERE column IS NOT NULL`.
 ### Cortex / AI_COMPLETE
 
 **5. AI_COMPLETE dollar-quoting**
-The `call_cortex` function must use `$$...$$` quoting, not single-quote `'...'`.
+`call_cortex` / `call_cortex_json` must use `$$...$$` quoting, not single-quote `'...'`.
 - PASS: `$${safe_prompt}$$` pattern used
 - FAIL: single-quote quoting - breaks on apostrophes in question text
 
@@ -60,95 +60,80 @@ Before interpolating a prompt into `$$...$$`, the code must call `.replace("$$",
 - PASS: `safe_prompt = prompt.replace("$$", "$ $")` present
 - FAIL: missing - a `$$` in question text will break the SQL query
 
-**7. json.loads() on Cortex output**
-`json.loads(response)` must never be called directly on a Cortex response. All parsing must go through `parse_cortex_json()`.
-- PASS: 0 direct json.loads on Cortex output
-- FAIL: any such occurrence (Cortex may return Markdown fences or double-encoded JSON)
+**7. Structured output for AI JSON**
+Every JSON-expecting AI call goes through `call_cortex_json` with a `response_format` schema from `RESPONSE_FORMATS`. No markdown-fence stripping, no fence-aware parsing, no ad-hoc `json.loads` on free-text completions.
+- PASS: all JSON calls use `response_format`; the only `json.loads` on AI output is the single guard inside `call_cortex_json`
+- FAIL: prose-only "return JSON" prompt, fence-stripping code, or `json.loads` on a `call_cortex` (free-text) result
 
 **8. `from snowflake.cortex import complete`**
 Must not appear. Use `AI_COMPLETE` via `session.sql()` only.
 - PASS: 0 occurrences
 - FAIL: any occurrence
 
-### Streamlit in Snowflake compatibility
+### Streamlit compatibility
 
-**9. `st.rerun()` count**
-Count all occurrences. The expected count is defined in `$sis/patterns` rerun budget. Each occurrence must correspond to a documented handler.
-- PASS: count matches the expected number and each is at a documented location
-- FAIL: count differs from expected (extra reruns cause blank screen, missing reruns cause duplicate buttons)
-- List all locations found: function name, line number, and which handler it belongs to
+**9. `st.experimental_rerun()`**
+Must not appear. Use `st.rerun()`.
+- PASS: 0 occurrences
+- FAIL: any occurrence (deprecated)
 
-**10. `st.experimental_rerun()`**
+**10. `.applymap(`**
 Must not appear.
 - PASS: 0 occurrences
-- FAIL: any occurrence (deprecated, crashes SiS)
+- FAIL: any occurrence (removed in pandas 3.0, use `.map(` instead)
 
-**11. `@st.fragment` / `st.fragment(`**
-Must not appear. Not supported in SiS.
+**11. `unsafe_allow_html`**
+Must not appear anywhere in the app. Theme and styling live in `.streamlit/config.toml` and native components (badges, containers).
 - PASS: 0 occurrences
 - FAIL: any occurrence
 
-**12. `st.container(horizontal=True)`**
-Must not appear. Use `st.columns()`.
-- PASS: 0 occurrences
-- FAIL: any occurrence (not available in SiS v1.52.*)
+### Session, cache, and config
 
-**13. `.applymap(`**
-Must not appear.
-- PASS: 0 occurrences
-- FAIL: any occurrence (removed in pandas >= 2.1, use `.map(` instead)
-
-**14. `st.connection("snowflake")`**
-Must not appear. Use `get_active_session()` only.
-- PASS: 0 occurrences
-- FAIL: any occurrence
-
-**15. `unsafe_allow_html=True` or `<style>` injection**
-Only allowed for sidebar CSS injection immediately after `st.set_page_config()`:
-```python
-st.markdown("""<style>[data-testid="stSidebar"] [data-testid="stPills"] button { font-size: 1.1rem; }</style>""", unsafe_allow_html=True)
-```
-- PASS: `unsafe_allow_html=True` appears only once, immediately after `st.set_page_config`, for sidebar pill font CSS
-- FAIL: `unsafe_allow_html=True` used anywhere else (in render functions, for content display, inline styling)
-
-### Session and rendering
-
-**16. `get_active_session()` inside `@st.cache_data`**
+**12. `get_active_session()` inside `@st.cache_data`**
 Every `@st.cache_data` function must call `get_active_session()` inside its own body. Reusing the module-level session in a cached context causes a runtime error.
 - PASS: each cached function calls get_active_session() internally
 - FAIL: any cached function uses a module-level session variable
 
-**17. `st.set_page_config` position and layout**
-`st.set_page_config(layout="centered")` must be the very first `st.*` call in the file.
-- PASS: it is the first `st.` call (ignoring imports and comments) and `layout="centered"`
-- FAIL: any `st.` call appears before it
-- FAIL: `layout="wide"` is used
+**13. Cache discipline: no `ttl`, explicit invalidation**
+No `@st.cache_data` loader may set a `ttl` (mid-session expiry resets stateful widgets and silently staleness-flips data). `_data.py` must define `clear_caches()` clearing every loader, and every DB-write path (round write-back, feature writes) must call it.
+- PASS: 0 `ttl=` on loaders; `clear_caches()` defined and called after every INSERT/UPDATE
+- FAIL: any `ttl=` on a loader, or a write path that does not invalidate
 
-**18. Screen transitions**
-Button handlers that do slow work (loading questions, writing to DB) MUST call `st.rerun()` after setting `screen` - otherwise stale widgets render alongside the new screen. Wrap the slow call in `st.spinner()`.
-- PASS: Start Round, Finish, Next all use `st.spinner()` + `st.rerun()` pattern
-- FAIL: button handler sets screen without `st.rerun()` when it also does slow work (causes duplicate buttons)
+**14. `st.set_page_config` position**
+`st.set_page_config(layout="centered", ...)` must be the very first `st.` call in `main.py`, and must appear ONLY in `main.py` (never in pages or modules).
+- PASS: first `st.` call in `main.py`; 0 occurrences elsewhere
+- FAIL: any `st.` call before it, `layout="wide"`, or a second occurrence in a page
+
+**15. `.streamlit/config.toml` settings**
+`[client] showErrorDetails = "none"` (the string — NOT `false`, which still leaks tracebacks) and `toolbarMode = "minimal"` must be present.
+- PASS: both set as specified
+- FAIL: missing file, `showErrorDetails = false`, or `"full"` left in from debugging
+
+**16. Screen transitions**
+Button handlers that do slow work (loading questions, writing to DB) MUST wrap the work in `st.spinner()` and end with a single `st.rerun()` after setting state - otherwise stale widgets render alongside the new screen.
+- PASS: Start Round, Submit, Finish, Next all use the `st.spinner()` + single `st.rerun()` pattern
+- FAIL: a slow handler sets state without a final `st.rerun()`, or calls `st.rerun()` more than once
 
 ### Date handling
 
-**19. Date from `.collect()` without cast**
+**17. Date from `.collect()` without cast**
 Any timestamp value from `.collect()` passed to `st.date_input` or date arithmetic must be cast: `datetime.date(raw.year, raw.month, raw.day)`.
 - PASS: all collect() dates are cast before use
 - FAIL: raw Snowflake datetime object passed directly to a widget
 
-**20. Date range query pattern**
-Comparisons against `TIMESTAMP_NTZ`: dates must be passed as formatted strings (`strftime("%Y-%m-%d")`); end date must use exclusive upper bound (`< end + 1 day`).
+**18. Date range query pattern**
+Comparisons against `TIMESTAMP_LTZ`/`TIMESTAMP_NTZ`: dates must be passed as formatted strings (`strftime("%Y-%m-%d")`); end date must use exclusive upper bound (`< end + 1 day`).
 - PASS: pattern followed
 - FAIL: date object passed directly or inclusive end bound used
 
-**21. `st.slider` with date variable**
+**19. `st.slider` with date variable**
 Must not receive a `datetime.date` as `min_value` / `max_value`. Use `st.date_input` for date ranges.
 - PASS: 0 violations
 - FAIL: any st.slider call with a date-typed min/max
 
 ### Column names
 
-**22. Column name normalization**
+**20. Column name normalization**
 All `.as_dict()` results must be normalized: `{k.upper(): v for k, v in row.as_dict().items()}`. Snowflake returns uppercase column names; accessing them with lowercase keys returns `None`.
 - PASS: normalization applied to every as_dict() call
 - FAIL: any as_dict() result accessed without uppercasing keys
@@ -157,35 +142,33 @@ All `.as_dict()` results must be normalized: `{k.upper(): v for k, v in row.as_d
 
 ## Output
 
-After checking all 22 items, a summary table:
+After checking all 20 items, a summary table:
 
 | # | Item | Status | Notes |
 |---|------|--------|-------|
-| 1 | SQL injection | PASS/FAIL | line X: `snippet` |
+| 1 | SQL injection | PASS/FAIL | file:line `snippet` |
 | 2 | Parameterized INSERT | PASS/FAIL | |
 | 3 | PARSE_JSON in VALUES | PASS/FAIL | |
 | 4 | SELECT DISTINCT NULL | PASS/FAIL | |
 | 5 | Dollar-quoting | PASS/FAIL | |
 | 6 | `$$` sanitization | PASS/FAIL | |
-| 7 | json.loads direct | PASS/FAIL | |
+| 7 | Structured output | PASS/FAIL | |
 | 8 | cortex import | PASS/FAIL | |
-| 9 | st.rerun() count | PASS/FAIL | found N occurrences |
-| 10 | experimental_rerun | PASS/FAIL | |
-| 11 | st.fragment | PASS/FAIL | |
-| 12 | container horizontal | PASS/FAIL | |
-| 13 | applymap | PASS/FAIL | |
-| 14 | st.connection snowflake | PASS/FAIL | |
-| 15 | unsafe_allow_html | PASS/FAIL | |
-| 16 | get_active_session in cache | PASS/FAIL | |
-| 17 | set_page_config first | PASS/FAIL | |
-| 18 | screen transitions | PASS/FAIL | |
-| 19 | date cast from collect() | PASS/FAIL | |
-| 20 | date range query pattern | PASS/FAIL | |
-| 21 | slider date | PASS/FAIL | |
-| 22 | column name normalization | PASS/FAIL | |
+| 9 | experimental_rerun | PASS/FAIL | |
+| 10 | applymap | PASS/FAIL | |
+| 11 | unsafe_allow_html | PASS/FAIL | |
+| 12 | get_active_session in cache | PASS/FAIL | |
+| 13 | cache ttl + clear_caches | PASS/FAIL | |
+| 14 | set_page_config position | PASS/FAIL | |
+| 15 | config.toml settings | PASS/FAIL | |
+| 16 | screen transitions | PASS/FAIL | |
+| 17 | date cast from collect() | PASS/FAIL | |
+| 18 | date range query pattern | PASS/FAIL | |
+| 19 | slider date | PASS/FAIL | |
+| 20 | column name normalization | PASS/FAIL | |
 
 **Final verdict:**
-- All 22 PASS -> "Clean. Proceed to deploy."
+- All 20 PASS -> "Clean. Proceed to deploy."
 - Any FAIL -> "Fix items [list] before deploying."
 
-For each FAIL item: show the exact line number and a 1-line fix suggestion.
+For each FAIL item: show the exact file + line number and a 1-line fix suggestion.
