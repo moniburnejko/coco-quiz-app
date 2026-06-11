@@ -2,9 +2,9 @@
 
 Custom Snowflake CoCo skills in this project live under `.snowflake/cortex/skills/` and are uploaded once per workspace via **CoCo chat > + > Upload Folder(s)**.
 
-There are **13 skill files**: 2 top-level standalone pipelines, 3 parent "routers" that dispatch to intent-specific sub-skills, and 8 sub-skills. The parent routers are what you invoke via slash command (`/cortex`, `/sis`, `/quiz`). They read your intent keywords and forward to the right sub-skill automatically.
+There are **13 skill files**: 2 top-level standalone pipelines, 3 parent "routers", and 8 sub-skills. CoCo activates skills by matching your message against each skill's `description` (every description also lists "Do NOT use for…" anti-triggers to prevent cross-firing); you can also invoke explicitly via slash command (`/setup-exam`, `/cortex`, `/sis`, `/quiz`). Each parent router's **body** contains the dispatch instructions — "for intent X, load `<sub-skill path>` and follow it" — which is how CoCo's own bundled router skills work (routing is prose, not frontmatter).
 
-Global CoCo skills (like `cortex-ai-functions`) ship natively with CoCo in Snowsight - no upload needed.
+This pack is a **thin layer over CoCo's bundled skills**: `$cortex/*` defers to the built-in `cortex-ai-functions` (full Cortex AI reference), `$sis/*` defers to `developing-with-streamlit` (general Streamlit patterns) and `deploy-to-spcs`/`snowflake-apps` (deploy mechanics). The bundled `skill-development` skill can lint this pack. Bundled skills ship natively with CoCo in Snowsight - no upload needed.
 
 ---
 
@@ -161,9 +161,13 @@ Dispatches across four sub-skills depending on what you are working on: **screen
 
 ```
 $setup-exam ----┬--> $adapt-questions -> $cortex/patterns (if AI-assisted mapping)
-                ├--> $cortex/patterns (AI_PARSE_DOCUMENT, AI_COMPLETE)
-                ├--> $sis/pre-deploy -> $cortex/patterns (dollar-quoting check)
+                ├--> $cortex/patterns (AI_PARSE_DOCUMENT, AI_COMPLETE structured outputs)
+                ├--> $sis/pre-deploy -> $cortex/patterns (dollar-quoting, response_format)
                 └--> $quiz/screens, $quiz/questions, $quiz/style, $quiz/features
 
 $cortex/prompt-audit - runs against prompts produced by $setup-exam and $quiz/questions
+
+Bundled CoCo skills this pack defers to (built-in, no upload):
+  $cortex/* -> cortex-ai-functions          $sis/* -> developing-with-streamlit
+  deploy    -> deploy-to-spcs / snowflake-apps        authoring/lint -> skill-development
 ```

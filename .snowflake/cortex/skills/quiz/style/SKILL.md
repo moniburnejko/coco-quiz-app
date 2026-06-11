@@ -1,7 +1,6 @@
 ---
 name: quiz-style
-description: "UI styling conventions for the quiz app — badge colors, section labels, chart colors, CSS rules, button style. Use for any visual or layout work in quiz.py. Triggers: badge, styling, color, CSS, chart, section label, button style, card, UI, layout"
-parent_skill: quiz
+description: "UI styling conventions for the quiz app — badge colors, section labels, chart colors, theme (config.toml), button style. Use for any visual or layout work in the app. Triggers: badge, styling, color, theme, chart, section label, button style, card, UI, layout. Do NOT use for behavior/state contracts (quiz-screens) or platform constraints (sis-patterns)."
 ---
 
 # When to Load

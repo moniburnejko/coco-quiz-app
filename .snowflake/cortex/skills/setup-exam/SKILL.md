@@ -456,7 +456,7 @@ Use the Edit tool on `AGENTS.md`. Follow the edit boundaries strictly.
    - `$quiz/questions` — DIFFICULTY_GUIDE (REQUIRED constant), answer shuffling, validation, retry logic
    - `$quiz/style` — EXAM_NAME constant, badge colors, chart colors (#29b5e8 blue, #F1914C orange), axis formatting, docs link format
    - If user requested optional features: also read `$quiz/features`
-   - For general Streamlit-in-Snowflake patterns, also consult the bundled `developing-with-streamlit` skill.
+   - For general Streamlit patterns consult the bundled `developing-with-streamlit` skill; for AISQL reference, the bundled `cortex-ai-functions`. This project's `$sis`/`$cortex` skills carry only the project deltas.
 3. Generate a decomposed multipage project under `app/` (NOT a single-file `quiz.py`):
 
    ```

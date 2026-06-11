@@ -1,7 +1,6 @@
 ---
 name: cortex-prompt-audit
-description: "7-item audit checklist for AI_COMPLETE prompts — structured-output usage, content completeness, doc_search pattern, injection safety. Use when prompts produce wrong keys, shallow content, or unsafe interpolation. Triggers: audit prompts, prompt quality, wrong keys, shallow explanation, prompt review, KeyError, response_format"
-parent_skill: cortex
+description: "7-item audit checklist for AI_COMPLETE prompts — structured-output usage, content completeness, doc_search pattern, injection safety. Use when prompts produce wrong keys, shallow content, or unsafe interpolation. Triggers: audit prompts, prompt quality, wrong keys, shallow explanation, prompt review, KeyError. Do NOT use for Cortex connectivity/calling errors (cortex-patterns) or SiS code patterns (sis-patterns)."
 ---
 
 # When to Load

@@ -1,7 +1,6 @@
 ---
 name: quiz-screens
-description: "Quiz app behavioral contracts — page flow (st.navigation), screen state machine, history tracking, write-back + cache invalidation, session state, explanation contract, dashboard. Use when building or modifying any page or shared UI module of the app. Triggers: screen flow, page flow, quiz screen, home screen, summary, review page, session state, write-back, explanation, history_item, st.navigation"
-parent_skill: quiz
+description: "Quiz app behavioral contracts — page flow (st.navigation), screen state machine, history tracking, write-back + cache invalidation, session state, explanation contract, dashboard. Use when building or modifying any page or shared UI module of the app. Triggers: screen flow, page flow, quiz screen, home screen, summary, review page, session state, write-back, explanation, history_item, st.navigation. Do NOT use for question generation (quiz-questions), styling (quiz-style), or optional features (quiz-features)."
 ---
 
 # When to Load

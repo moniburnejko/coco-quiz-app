@@ -1,7 +1,6 @@
 ---
 name: sis-pre-deploy
-description: "MANDATORY 20-item pre-deploy scan for the Streamlit-in-Snowflake app (container runtime). Run before EVERY deploy — catches SQL injection, runtime errors, cache and config pitfalls. Triggers: deploy, pre-deploy, scan, before deploying, push to snowflake, deploy checklist"
-parent_skill: sis
+description: "MANDATORY 20-item pre-deploy scan for the Streamlit-in-Snowflake app (container runtime). Run before EVERY deploy — catches SQL injection, runtime errors, cache and config pitfalls. Triggers: deploy, pre-deploy, scan, before deploying, push to snowflake, deploy checklist. Do NOT use for writing SiS code (sis-patterns) or Cortex call issues (cortex-patterns)."
 ---
 
 # When to Load

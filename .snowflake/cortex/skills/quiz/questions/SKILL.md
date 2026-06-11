@@ -1,7 +1,6 @@
 ---
 name: quiz-questions
-description: "Question generation patterns — DIFFICULTY_GUIDE, topic scheduling, deduplication, fallback chain, retry logic, validation. Use when loading questions or generating via AI. Triggers: generate questions, question generation, topic schedule, deduplication, difficulty guide, fallback chain, question validation, DIFFICULTY_GUIDE"
-parent_skill: quiz
+description: "Question generation patterns — DIFFICULTY_GUIDE, topic scheduling, deduplication, fallback chain, retry logic, schema validation. Use when loading questions or generating via AI. Triggers: generate questions, question generation, topic schedule, deduplication, difficulty guide, fallback chain, question validation, DIFFICULTY_GUIDE. Do NOT use for page/screen contracts (quiz-screens) or prompt audits (cortex-prompt-audit)."
 ---
 
 # When to Load

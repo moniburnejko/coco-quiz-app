@@ -118,7 +118,7 @@ For UI styling, badges, section labels, and chart colors: see `$quiz/style`.
 
 ### Global skills
 
-CoCo in Snowsight ships with built-in skills (including `cortex-ai-functions` reference for all Cortex AI functions). They are available natively from any workspace - no upload needed. Consult them when using functions not covered by `$cortex/patterns`.
+CoCo in Snowsight ships with built-in skills, available natively from any workspace - no upload needed. This project's skills are a **thin layer over them**: `$cortex/*` defers to `cortex-ai-functions` (full Cortex AI reference), `$sis/*` defers to `developing-with-streamlit` (general Streamlit patterns) and `deploy-to-spcs`/`snowflake-apps` (deploy mechanics). Consult the bundled skills for anything not covered by the project deltas.
 
 ---
 

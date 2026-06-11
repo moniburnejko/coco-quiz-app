@@ -1,6 +1,6 @@
 ---
 name: quiz
-description: "Quiz app implementation — screen contracts, question generation, UI styling. Use when building or modifying any part of quiz.py. Triggers: screen, quiz, home, summary, review, questions, generate, badge, styling, layout, session state, write-back"
+description: "Quiz app implementation — page/screen contracts, question generation, UI styling, optional features. Use when building or modifying any part of the generated app. Triggers: screen, page, quiz, home, summary, review, questions, generate, badge, styling, layout, session state, write-back"
 ---
 
 # Quiz App
@@ -30,9 +30,16 @@ Intent Detection
   └─→ FEATURES  → Load features/SKILL.md (OPTIONAL — only when user requests a feature)
 ```
 
-Multiple sub-skills may apply to a single task (e.g., adding a new screen needs both `screens/` for contracts and `style/` for UI conventions).
+## Routing
 
-**FEATURES intent**: Load only when the user explicitly requests an optional feature (exam simulation, flashcards, etc.). Do NOT load for regular quiz work.
+This parent does no work itself. Match the request against the intent table, then **open the sub-skill file(s) and follow them**:
+
+- SCREENS intent → load `.snowflake/cortex/skills/quiz/screens/SKILL.md` and follow it.
+- QUESTIONS intent → load `.snowflake/cortex/skills/quiz/questions/SKILL.md` and follow it.
+- STYLE intent → load `.snowflake/cortex/skills/quiz/style/SKILL.md` and follow it.
+- FEATURES intent → load `.snowflake/cortex/skills/quiz/features/SKILL.md` and follow it — ONLY when the user explicitly requests an optional feature. Do NOT load for regular quiz work.
+
+Multiple sub-skills may apply to a single task (e.g., adding a new page needs both `screens/` for contracts and `style/` for UI conventions).
 
 ## Capabilities
 

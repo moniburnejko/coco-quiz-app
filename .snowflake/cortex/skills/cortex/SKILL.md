@@ -26,6 +26,19 @@ Intent Detection
   └─→ AUDIT    → Load prompt-audit/SKILL.md
 ```
 
+## Routing
+
+This parent does no work itself. Match the request against the intent table, then **open the sub-skill file and follow it**:
+
+- PATTERNS intent → load `.snowflake/cortex/skills/cortex/patterns/SKILL.md` and follow it.
+- AUDIT intent → load `.snowflake/cortex/skills/cortex/prompt-audit/SKILL.md` and follow it.
+
+If both apply (e.g. a failing call AND a suspect prompt), load `patterns` first, then `prompt-audit`.
+
+## Bundled skills this defers to
+
+For the full Cortex AI functions reference (AI_CLASSIFY, AI_FILTER, AI_AGG, AI_EXTRACT details, multimodal), use the bundled **`cortex-ai-functions`** skill — available natively in CoCo, no upload. The sub-skills here carry only project-specific deltas.
+
 ## Capabilities
 
 - **Patterns**: AI_COMPLETE calling with dollar-quoting and structured outputs (`response_format`), AI_PARSE_DOCUMENT, stage requirements, 5-step diagnostics

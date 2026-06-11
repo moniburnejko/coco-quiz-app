@@ -1,7 +1,6 @@
 ---
 name: quiz-features
-description: "Optional features for the quiz app — exam simulation, flashcards, quick stats, spaced repetition, achievement badges, AI study recommendations. Implement ONLY features explicitly requested by the user. Triggers: exam simulation, timer, flashcard, spaced repetition, smart review, achievement, badge, streak, study recommendation, AI recommendation"
-parent_skill: quiz
+description: "Optional features for the quiz app — exam simulation, flashcards, quick stats, spaced repetition, achievement badges, AI study recommendations. Implement ONLY features explicitly requested by the user, never by default. Triggers: exam simulation, timer, flashcard, spaced repetition, smart review, achievement, badge, streak, study recommendation, AI recommendation. Do NOT use for the core quiz flow (quiz-screens)."
 ---
 
 # When to Load

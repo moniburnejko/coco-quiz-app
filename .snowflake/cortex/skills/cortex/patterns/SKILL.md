@@ -1,7 +1,6 @@
 ---
 name: cortex-patterns
-description: "Cortex AI function patterns — AI_COMPLETE structured outputs (response_format), dollar-quoting, AI_PARSE_DOCUMENT, stage requirements, 5-step diagnostics. Use when calling or debugging Cortex AI functions. Triggers: AI_COMPLETE, AI_PARSE_DOCUMENT, cortex error, model not found, file not accessible, dollar-quoting, response_format, structured output, call_cortex_json"
-parent_skill: cortex
+description: "Cortex AI function patterns — AI_COMPLETE structured outputs (response_format), dollar-quoting, AI_PARSE_DOCUMENT, stage requirements, 5-step diagnostics. Use when calling or debugging Cortex AI functions. Triggers: AI_COMPLETE, AI_PARSE_DOCUMENT, cortex error, model not found, file not accessible, dollar-quoting, response_format, structured output, call_cortex_json. Do NOT use for prompt-quality audits (cortex-prompt-audit) or the pre-deploy scan (sis-pre-deploy)."
 ---
 
 > **Thin wrapper.** For the full Cortex AI functions reference (AI_CLASSIFY, AI_FILTER, AI_AGG, multimodal AI_COMPLETE, ...), use the bundled CoCo skill **`cortex-ai-functions`**. This skill keeps only the project-specific deltas: the structured-output calling pattern used by the app, `AI_PARSE_DOCUMENT` stage rules, and the diagnostics runbook.

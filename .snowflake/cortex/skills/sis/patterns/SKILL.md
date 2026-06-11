@@ -1,7 +1,6 @@
 ---
 name: sis-patterns
-description: "Streamlit-in-Snowflake coding patterns for the container runtime — session management, caching without ttl + explicit invalidation, widget lifecycle (flag-at-top reset), multipage state, date handling, still-constrained APIs. Use when writing any SiS app code. Triggers: SiS, streamlit in snowflake, get_active_session, cache_data, clear_caches, widget state, st.fragment, config.toml, date handling, container runtime"
-parent_skill: sis
+description: "Streamlit-in-Snowflake coding patterns for the container runtime — session management, caching without ttl + explicit invalidation, widget lifecycle (flag-at-top reset), multipage state, date handling, still-constrained APIs. Use when writing any SiS app code. Triggers: SiS, streamlit in snowflake, get_active_session, cache_data, clear_caches, widget state, st.fragment, config.toml, date handling, container runtime. Do NOT use for the pre-deploy scan (sis-pre-deploy) or UI styling conventions (quiz-style)."
 ---
 
 > **Thin wrapper.** For general Streamlit development patterns use the bundled CoCo skill **`developing-with-streamlit`**. This skill keeps only the project deltas for Streamlit-in-Snowflake on the **container runtime** (Streamlit ≥1.50, Python 3.11).

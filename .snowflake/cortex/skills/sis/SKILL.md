@@ -26,7 +26,18 @@ Intent Detection
   └─→ PRE-DEPLOY → Load pre-deploy/SKILL.md
 ```
 
-**Note:** Always consult `patterns/SKILL.md` alongside `pre-deploy/SKILL.md` when preparing to deploy.
+## Routing
+
+This parent does no work itself. Match the request against the intent table, then **open the sub-skill file and follow it**:
+
+- PATTERNS intent → load `.snowflake/cortex/skills/sis/patterns/SKILL.md` and follow it.
+- PRE-DEPLOY intent → load `.snowflake/cortex/skills/sis/pre-deploy/SKILL.md` and follow it.
+
+When preparing to deploy, always consult `patterns` alongside `pre-deploy`.
+
+## Bundled skills this defers to
+
+For general Streamlit development use the bundled **`developing-with-streamlit`** skill; for SPCS/app deploy mechanics, **`deploy-to-spcs`** / **`snowflake-apps`** — all available natively in CoCo, no upload. The sub-skills here carry only project deltas for the container runtime.
 
 ## Capabilities
 
