@@ -18,6 +18,7 @@ Load a study guide PDF, and the agent creates the schema, extracts exam domains,
   - **Admin** - app configuration (toggles/sliders), question manager with one-click AI batch generation, bank stats, Cortex spend dashboard, maintenance tools.
 - **A learning loop, not just a quiz**: Socratic hints before answering (never spoil), AI explanations + concept contrast ("how does A differ from C?") after, an AI debrief of round patterns, and a remedial round when you fail (your wrong answers, reshuffled).
 - **AI-grounded content**: domains and key facts come from the official study guide PDF (`AI_PARSE_DOCUMENT`); questions are AI-generated at runtime (`AI_COMPLETE`), with an optional question bank you can seed from CSV/JSON, the Admin panel, or a scheduled recipe (resilience + speed when AI calls are unavailable).
+- **Real documentation grounding** (optional, default-on when available): if you install the free **Snowflake Documentation** Cortex Knowledge Extension from Marketplace, questions and explanations are grounded in actual Snowflake docs and cite the **exact `SOURCE_URL`** (with a readable excerpt) — no more guessed search links. Falls back cleanly when absent.
 - **Persistent progress** across sessions via `QUIZ_SESSION_LOG` + `QUIZ_REVIEW_LOG` - the app remembers your weak domains between logins.
 - **Schema-per-exam isolation** (`QUIZ_<EXAM_CODE>`) so multiple certifications coexist in one database.
 - **Custom CoCo skills** in `.snowflake/cortex/skills/` drive the whole pipeline end to end.

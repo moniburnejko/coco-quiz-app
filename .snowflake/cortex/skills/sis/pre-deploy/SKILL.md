@@ -1,6 +1,6 @@
 ---
 name: sis-pre-deploy
-description: "MANDATORY 21-item pre-deploy scan for the Streamlit-in-Snowflake app (container runtime). Run before EVERY deploy — catches SQL injection, runtime errors, cache and config pitfalls, untrusted-input handling. Triggers: deploy, pre-deploy, scan, before deploying, push to snowflake, deploy checklist. Do NOT use for writing SiS code (sis-patterns) or Cortex call issues (cortex-patterns)."
+description: "MANDATORY 22-item pre-deploy scan for the Streamlit-in-Snowflake app (container runtime). Run before EVERY deploy — catches SQL injection, runtime errors, cache and config pitfalls, untrusted-input handling, doc-grounding isolation. Triggers: deploy, pre-deploy, scan, before deploying, push to snowflake, deploy checklist. Do NOT use for writing SiS code (sis-patterns) or Cortex call issues (cortex-patterns)."
 ---
 
 # When to Load
@@ -21,7 +21,7 @@ Parent skill `$sis` routes here for PRE-DEPLOY intent.
 
 # Pre-Deploy Scan
 
-Read ALL app files in full: `main.py`, every `_*.py` module, every `pages/*.py`, and `.streamlit/config.toml`. Then check each of the 21 items below across the whole project. For each item report PASS or FAIL. On FAIL: show the file, line number, and the offending code snippet.
+Read ALL app files in full: `main.py`, every `_*.py` module, every `pages/*.py`, and `.streamlit/config.toml`. Then check each of the 22 items below across the whole project. For each item report PASS or FAIL. On FAIL: show the file, line number, and the offending code snippet.
 
 ## Scan Items
 
@@ -144,11 +144,17 @@ All Admin-page and flag writes (question edits, new questions, config saves, fla
 - PASS: all four conditions hold across `pages/admin.py` and every prompt that embeds bank questions
 - FAIL: any f-string write, uncapped input, unvalidated answer key, or undelimited stored text in a prompt
 
+**22. Doc-grounding (CKE) isolation + fallback** (only if the app uses doc grounding)
+All Cortex Search / CKE access goes through `_search.py` (the single caller); every call is wrapped try/except returning `[]`, and every consumer (generation, explanation) has a non-grounded fallback branch; retrieved chunks are delimited (`<doc_context>`); and **no `SNOWFLAKE.CORTEX.SEARCH_PREVIEW` appears in any app module** (runtime uses the Python `snowflake.core` API).
+- PASS: single caller, try/except + fallback everywhere, chunks delimited, no SEARCH_PREVIEW in app code
+- FAIL: a direct CKE call outside `_search.py`, a missing fallback branch, undelimited chunks, or `SEARCH_PREVIEW` in an app module
+- N/A: app does not use doc grounding
+
 ---
 
 ## Output
 
-After checking all 21 items, a summary table:
+After checking all 22 items, a summary table:
 
 | # | Item | Status | Notes |
 |---|------|--------|-------|
@@ -173,9 +179,10 @@ After checking all 21 items, a summary table:
 | 19 | slider date | PASS/FAIL | |
 | 20 | column name normalization | PASS/FAIL | |
 | 21 | admin/flag inputs hardened | PASS/FAIL | |
+| 22 | doc-grounding (CKE) isolation + fallback | PASS/FAIL/N/A | |
 
 **Final verdict:**
-- All 21 PASS -> "Clean. Proceed to deploy."
+- All 22 PASS -> "Clean. Proceed to deploy."
 - Any FAIL -> "Fix items [list] before deploying."
 
 For each FAIL item: show the exact file + line number and a 1-line fix suggestion.

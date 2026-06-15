@@ -61,7 +61,7 @@ Per-round summary, written by the app at round end. Drives the Learning Dashboar
 columns: `session_id`, `session_ts`, `exam_code`, `round_size`, `correct_count`, `score_pct`, `domain_filter`, `difficulty`.
 
 ### QUIZ_CONFIG
-Runtime app configuration (key-value, VARIANT), edited from the Admin page. Defaults live in `_config.py` `CONFIG_DEFAULTS`; DB values override them via the cached `load_config()`.
+Runtime app configuration (key-value, VARIANT), edited from the Admin page. Defaults live in `_config.py` `CONFIG_DEFAULTS`; DB values override them via the cached `load_config()`. Keys include the learning-loop toggles and `docs_grounding` (`auto`/`on`/`off` — grounding in the Snowflake Documentation CKE; see `$cortex/patterns`).
 columns: `config_key`, `config_value`, `updated_at`.
 
 ---

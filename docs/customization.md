@@ -279,6 +279,36 @@ Spot-check a few rows after seeding (`SELECT ... ORDER BY RANDOM() LIMIT 5`) —
 
 ---
 
+## 7. Doc-grounded mode (Snowflake Documentation CKE)
+
+Install the free **Snowflake Documentation** listing from Marketplace (Snowsight » Data Products » Marketplace; needs `IMPORT SHARE`/ACCOUNTADMIN; creates `SNOWFLAKE_DOCUMENTATION`) and the app grounds its AI in real Snowflake docs — a Cortex Knowledge Extension (a shared Cortex Search service, ~56K chunks). Default-on when present; toggle on the Admin page (`docs_grounding` = `auto`/`on`/`off`).
+
+What changes when on:
+- **Questions** are generated from retrieved doc chunks + `key_facts` (hybrid — prefers the docs, keeps the exam scope).
+- **Explanations** cite the chunk's exact `SOURCE_URL` and show a "📚 From the docs" excerpt — instead of a guessed search link.
+- All retrieval is isolated in `app/_search.py` (Python `snowflake.core` API) with graceful fallback: no listing → the app behaves exactly as without it. Grounding is Snowflake-docs-only; `$setup-exam` sets `docs_grounding='off'` for non-Snowflake exams.
+
+Cost: each grounded question/explanation adds one Cortex Search query (consumer-billed compute, small; cached per query/session).
+
+**Doc-grounded seeding (worksheet):** the section-6 recipe can ground the bank too — `SEARCH_PREVIEW` is fine in a worksheet (ad-hoc):
+
+```sql
+WITH ctx AS (
+  SELECT d.domain_name,
+         SNOWFLAKE.CORTEX.SEARCH_PREVIEW(
+           'SNOWFLAKE_DOCUMENTATION.SHARED.CKE_SNOWFLAKE_DOCS_SERVICE',
+           OBJECT_CONSTRUCT('query', d.domain_name, 'columns',
+             ARRAY_CONSTRUCT('CHUNK','SOURCE_URL'), 'limit', 5)::STRING) AS r
+  FROM <db>.QUIZ_<CODE>.EXAM_DOMAINS d WHERE d.domain_id = '1'
+)
+-- feed r:results (the doc chunks) into the AI_COMPLETE generation prompt from section 6,
+-- instructing the model to prefer the documentation context.
+SELECT * FROM ctx;
+```
+(In the app, Admin "Generate batch" uses the Python `search_docs()` — never `SEARCH_PREVIEW`.)
+
+---
+
 ## Anti-patterns to avoid
 
 - **Don't hard-code domain names, weights, or topic lists anywhere in the app code.** They come from `EXAM_DOMAINS` at runtime. Hard-coding breaks the multi-exam design.

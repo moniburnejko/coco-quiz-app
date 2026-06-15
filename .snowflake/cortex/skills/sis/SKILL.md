@@ -42,8 +42,8 @@ For general Streamlit development use the bundled **`developing-with-streamlit`*
 ## Capabilities
 
 - **Patterns**: Session management, caching without ttl + explicit invalidation, widget lifecycle (flag-at-top reset), multipage state, scoped reruns (`@st.fragment`), date handling, column normalization, button click safety
-- **Pre-Deploy**: MANDATORY 21-item scan across all app files catching SQL injection, cache/config pitfalls, untrusted-input handling, runtime errors
+- **Pre-Deploy**: MANDATORY 22-item scan across all app files catching SQL injection, cache/config pitfalls, untrusted-input handling, doc-grounding isolation, runtime errors
 
 ## Output
 
-SiS-compatible code or a 21-item pre-deploy scan report with PASS/FAIL per item.
+SiS-compatible code or a 22-item pre-deploy scan report with PASS/FAIL per item.

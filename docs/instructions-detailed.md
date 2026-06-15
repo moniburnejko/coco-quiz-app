@@ -52,6 +52,10 @@ The container runtime (default deploy target) needs TWO account-level things:
 
 `$setup-exam` Step 1f checks both up front. No pool / no admin for the EAI? Use the warehouse fallback (step 9, Path C) — neither is needed.
 
+### Optional — doc grounding (recommended)
+
+Get the free **Snowflake Documentation** listing (Snowsight » Data Products » Marketplace; `IMPORT SHARE`/ACCOUNTADMIN). It gives the app a Cortex Search service over real Snowflake docs, so questions/explanations are grounded and cite exact pages. `$setup-exam` Step 1g detects it; if it's absent the app falls back cleanly (no grounding, no error). Toggle later on the Admin page (`docs grounding`).
+
 ### Role-level
 
 The role you will use needs, on the target database:

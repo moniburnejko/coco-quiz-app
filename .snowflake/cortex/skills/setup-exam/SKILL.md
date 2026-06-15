@@ -171,6 +171,25 @@ Record the EAI name (the `external_access_integration` value in AGENTS.md) — i
 
 **⚠️ STOP** if either prerequisite is missing and the user can't resolve it. Offer the **warehouse fallback** (Step 9 Path C): no compute pool, no EAI, `environment.yml` from the Snowflake Anaconda channel, Streamlit 1.52.2. Confirm container vs warehouse before continuing — it sets the deps file (`pyproject.toml` vs `environment.yml`) and the deploy path.
 
+### 1g — Doc grounding (optional, default-on when available)
+
+The app can ground question generation and explanations in the **Snowflake Documentation CKE** — a free Marketplace Cortex Search service (`SNOWFLAKE_DOCUMENTATION.SHARED.CKE_SNOWFLAKE_DOCS_SERVICE`) — and cite the exact doc page. Default-on with graceful fallback. Probe it once (one ad-hoc `SEARCH_PREVIEW` is fine here; the app itself uses the Python API — see `$cortex/patterns`):
+
+```sql
+SELECT SNOWFLAKE.CORTEX.SEARCH_PREVIEW(
+  'SNOWFLAKE_DOCUMENTATION.SHARED.CKE_SNOWFLAKE_DOCS_SERVICE',
+  '{"query": "virtual warehouse", "columns": ["DOCUMENT_TITLE"], "limit": 1}');
+```
+
+- **Reachable** → leave `docs_grounding = 'auto'` (effectively on); tell the user grounding is active.
+- **Not reachable** → tell the user it's free and optional: "Get the **Snowflake Documentation** listing in Snowsight » Data Products » Marketplace (free; needs `IMPORT SHARE`/ACCOUNTADMIN), then turn on **Admin » docs grounding**." Continue with fallback (unchanged behavior).
+- **Non-Snowflake exam** (the CKE is Snowflake-docs only) → seed `'off'` so grounding never fires:
+  ```sql
+  MERGE INTO {database}.QUIZ_<CODE>.QUIZ_CONFIG t
+  USING (SELECT 'docs_grounding' AS k, TO_VARIANT('off') AS v) s ON t.config_key = s.k
+  WHEN NOT MATCHED THEN INSERT (config_key, config_value) VALUES (s.k, s.v);
+  ```
+
 ## Step 2 — Create Snowflake schema
 
 Each exam gets a dedicated schema. Replace `<EXAM_CODE>` with the mapped code, hyphens replaced by underscores (e.g. `COF-C03` → `QUIZ_COF_C03`).
@@ -519,7 +538,7 @@ Use the Edit tool on `AGENTS.md`. Follow the edit boundaries strictly.
 2. **MANDATORY: read these skills BEFORE writing any code.** They are generation rules, not a post-hoc linter — reading them first is what makes the pre-deploy scan pass on the first try. (Skipping this step produced 10+ scan failures and a costly fix pass in a real run.)
    - `$sis/patterns` — caching (no `ttl` + `clear_caches()`), widget lifecycle, container-runtime constraints, SQL safety
    - `$sis/pre-deploy` — the 21 rules your generated code must ALREADY satisfy
-   - `$cortex/patterns` — `call_cortex_json` + `response_format` structured outputs (no fence parsing), untrusted-content delimiting
+   - `$cortex/patterns` — `call_cortex_json` + `response_format` structured outputs (no fence parsing), untrusted-content delimiting, and the **Cortex Search (CKE) retrieval** helper `_search.py` (generate it when grounding is in play — Step 1g)
    - `$quiz/screens` — page flow, session state, explanation/hint/contrast/debrief/remedial contracts, write-back + `clear_caches()`
    - `$quiz/questions` — DIFFICULTY_GUIDE (REQUIRED constant), answer shuffling, validation, retry logic
    - `$quiz/style` — EXAM_NAME constant, theming contract (config.toml keys), chart colors (#29b5e8 blue, #F1914C orange)
@@ -543,6 +562,7 @@ Use the Edit tool on `AGENTS.md`. Follow the edit boundaries strictly.
      _data.py             # cached loaders (domains, session stats, recent sessions, domain errors) + clear_caches()
      _questions.py        # topic schedule, get_question, AI generation, answer shuffling, dedup
      _ui.py               # shared render helpers: badges, cards, explanation expander, docs link
+     _search.py           # Docs CKE retrieval: search_docs/docs_available/grounding_on (optional grounding)
      pages/
        quiz.py            # QUIZ page: home -> quiz -> summary state machine
        review.py          # REVIEW page: wrong answers + learning dashboard
@@ -633,6 +653,7 @@ Use the Edit tool on `AGENTS.md`. Follow the edit boundaries strictly.
          - _data.py
          - _questions.py
          - _ui.py
+         - _search.py
          - pages/
          - pyproject.toml
          - .streamlit/config.toml

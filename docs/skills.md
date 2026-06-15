@@ -66,6 +66,7 @@ Dispatches to one of two sub-skills depending on keywords in your message: **pat
 - `AI_COMPLETE`: `$$...$$` dollar-quoting, `$$` sanitisation before interpolation, **structured outputs** (`response_format` schemas in `RESPONSE_FORMATS`, `call_cortex_json()` helper — guaranteed schema-conformant JSON, no fence parsing).
 - `AI_PARSE_DOCUMENT`: correct `TO_FILE(...)` + options object, common mistakes (no `BUILD_SCOPED_FILE_URL`, no `PARSE_JSON` wrap, no per-page pagination), stage DDL.
 - `AI_EXTRACT`: noted as an optional alternative for structured extraction (`$setup-exam` Step 5b).
+- **Cortex Search (CKE) retrieval**: the `_search.py` helper (`search_docs`/`docs_available`/`grounding_on`) that grounds questions/explanations in the Snowflake Documentation CKE — Python `snowflake.core` API at runtime, `SEARCH_PREVIEW` build-time only, graceful fallback.
 - 5-step diagnostic runbook: basic connectivity, model access, cross-region parameter, structured output, available models.
 - Defers to the bundled `cortex-ai-functions` skill for the full Cortex AI reference.
 
@@ -110,7 +111,7 @@ Dispatches to **patterns** (for writing code) or **pre-deploy** (for the mandato
 
 ### /sis/pre-deploy
 
-**Scope:** **mandatory** 21-item scan across all app files (`main.py`, `_*.py`, `pages/*.py`, `config.toml`), run before every deploy. Catches the top runtime-failure classes (incl. untrusted-input handling) before they reach production.
+**Scope:** **mandatory** 22-item scan across all app files (`main.py`, `_*.py`, `pages/*.py`, `config.toml`), run before every deploy. Catches the top runtime-failure classes (incl. untrusted-input handling + doc-grounding isolation) before they reach production.
 
 **When to use:**
 - Before every deploy - no exceptions;

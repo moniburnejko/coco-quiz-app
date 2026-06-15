@@ -31,6 +31,8 @@ No compute pool / no admin for the EAI? The warehouse fallback (deploy Path C) w
 
 In Snowsight: **AI & ML > Agents > Settings > Tools and connectors > Web search → enable**.
 
+Optional (recommended): get the free **Snowflake Documentation** listing in Snowsight » Data Products » Marketplace. It lets the app ground questions/explanations in real docs and cite exact pages. Skippable — the app falls back cleanly without it.
+
 ---
 
 ## Step 1 - load context into the workspace

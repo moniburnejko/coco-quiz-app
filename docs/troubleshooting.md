@@ -170,6 +170,25 @@ run $quiz/screens and $sis/pre-deploy on the current app files. focus on the fin
 
 ---
 
+## Questions/explanations aren't grounded in docs (no real citations)
+
+**Cause:** Doc grounding is off or the Snowflake Documentation CKE isn't reachable. Grounding is default-on only when the service is available, and is forced off for non-Snowflake exams.
+
+**Fix:**
+1. Confirm the free **Snowflake Documentation** listing is installed (Snowsight » Data Products » Marketplace) and your role can query it:
+   ```sql
+   SELECT SNOWFLAKE.CORTEX.SEARCH_PREVIEW(
+     'SNOWFLAKE_DOCUMENTATION.SHARED.CKE_SNOWFLAKE_DOCS_SERVICE',
+     '{"query": "time travel", "columns": ["DOCUMENT_TITLE"], "limit": 1}');
+   ```
+   Empty/error → install the listing or get access granted. If the imported database has a different name, set `DOCS_SEARCH_SERVICE` in `_config.py`.
+2. On the **Admin** page, set **docs grounding** to `on` (or `auto`).
+3. Cross-region: if your account's region can't reach the shared service, the probe fails and the app falls back silently — no error, just no grounding.
+
+This never blocks the app: without grounding it uses `key_facts` + the generic `doc_search` link, exactly as before.
+
+---
+
 ## Everything looks fine but the Streamlit app is using an old version
 
 **Cause (Path A - Workspaces):** **Run** updates only your private *dev app*; the published app changes only on **Deploy**. If others see stale behaviour, you previewed but never re-deployed.

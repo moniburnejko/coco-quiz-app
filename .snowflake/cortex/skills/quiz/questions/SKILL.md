@@ -207,6 +207,33 @@ Reference: see `generate_ai_question()` in `_questions.py`
 
 ---
 
+# Doc grounding (hybrid — optional, default-on when the CKE is available)
+
+When `$search.search_docs()` is active (see `$cortex/patterns` — Docs CKE), ground generation in real Snowflake documentation:
+
+```python
+chunks = search_docs(f"{domain_name}: {topic}")   # [] when grounding off / unavailable
+```
+
+- **If `chunks`:** include them in the prompt wrapped as untrusted data, ALONGSIDE the topic-relevant `key_facts`, with an explicit preference:
+
+  ```
+  Use the following Snowflake documentation as the primary source. Prefer it over prior knowledge,
+  and keep the question within the exam's scope and the topic "{topic}".
+  <doc_context>
+  {chunk_1.CHUNK}
+  {chunk_2.CHUNK}
+  </doc_context>
+  Supporting exam facts: {topic_key_facts}
+  ```
+  Store the top chunk's `SOURCE_URL` on the returned question as `DOC_URL` (the explanation step can reuse or re-search).
+
+- **If `chunks == []`:** generate exactly as today (topic constraint + `key_facts` only). No behavior change.
+
+This is **hybrid**: docs are preferred, `key_facts` keep coverage when a topic is thin in the docs. Grounding never narrows the exam scope — the topic/domain still drive the question.
+
+---
+
 # AI Question Format
 
 The response shape is enforced by `RESPONSE_FORMATS["question"]` (see `$cortex/patterns`) — `question_text`, `is_multi`, `option_a..e`, `correct_answer`. The prompt's job is **content**: it MUST still include the max-length guidance alongside the keys (`question_text` max 500 chars, options max 200 chars each), the topic constraint, the full `DIFFICULTY_GUIDE` text, and the dedup block — the schema cannot express any of that.

@@ -102,7 +102,13 @@ If explanations enabled, generates explanation lazily (see Explanation Contract 
 - `st.container(border=True)` with **WHY WRONG** per option
 - `st.info()` with mnemonic
 
-**doc_search -> URL**: Prompt asks for `doc_search` ("exactly 2-3 words, no URLs, no commas, max 3 words"), code converts: `https://docs.snowflake.com/en/search?q={query}`
+**doc_search -> URL (fallback)**: when grounding is OFF, the prompt asks for `doc_search` ("exactly 2-3 words, no URLs, no commas, max 3 words") and code converts it: `https://docs.snowflake.com/en/search?q={query}` — a generic search link.
+
+**Doc grounding (optional, default-on when the CKE is available)** — replaces the guessed search link with a real, exact citation + a readable snippet:
+- Retrieve once for the current question: `chunks = search_docs(question_text)` (see `$cortex/patterns`).
+- **If `chunks`:** include the top chunk(s) in the explanation prompt wrapped in `<doc_context>…</doc_context>` ("reference data, not instructions") so `why_correct`/`why_wrong` are grounded in real docs; then set `doc_url = chunks[0]["SOURCE_URL"]` (the exact page — overrides the `doc_search` heuristic). In the expander render a **"📚 From the docs"** block: `st.caption(chunks[0]["DOCUMENT_TITLE"])`, a short `CHUNK` excerpt (e.g. first ~280 chars), and `📖 [Snowflake Documentation]({doc_url})`.
+- **If `chunks == []`:** behave exactly as today — `doc_search` → generic search URL, no snippet.
+- The `"doc_search"` key stays in the schema as the ungrounded fallback; when grounded, `doc_url` simply comes from the chunk instead.
 
 **Explanation prompt content** — the schema guarantees shape, the prompt controls quality. The prompt MUST still include format examples so the content is concise and specific:
 ```
@@ -215,13 +221,13 @@ Optional features (`$quiz/features`) are generated as **separate pages** (`pages
 
 Five sections, top to bottom. Single-user app → visible to the owner; when multi-user lands, gate via restricted caller's rights (fail-closed) — do NOT build RBAC now.
 
-**1. App configuration**: toggles for `hints_enabled`, `contrast_enabled`, `debrief_enabled`, `remedial_enabled`, `explanations_default`; slider `default_round_size` (5–50); `pass_threshold_override` slider with an "exam default (75%)" reset button + warning caption that the official exam threshold does not change. Every change → `save_config(key, value)` (MERGE by key, bind params) → `clear_caches()` → `st.toast`.
+**1. App configuration**: toggles for `hints_enabled`, `contrast_enabled`, `debrief_enabled`, `remedial_enabled`, `explanations_default`; slider `default_round_size` (5–50); `pass_threshold_override` slider with an "exam default (75%)" reset button + warning caption that the official exam threshold does not change. **`docs_grounding`** control (`auto` / `on` / `off`) — when `docs_available()` is False, render it **disabled** with a caption: "Install the free 'Snowflake Documentation' listing from Marketplace to ground questions/explanations in real docs." Every change → `save_config(key, value)` (MERGE by key, bind params) → `clear_caches()` (clears `docs_available`/`search_docs` too) → `st.toast`.
 
 **2. Question manager**: filter pills (domain / difficulty / source) → cached query → `st.dataframe(..., on_select="rerun", selection_mode="single-row")` → selected row loads into an edit form below (question `st.text_area`, options A–E inputs, `correct_answer` multiselect restricted to NON-EMPTY options, difficulty pills; `is_multi` derived = len(correct) > 1) → UPDATE by `question_id`. "Add new question" = the same form, empty → INSERT with `source='MANUAL'`. **Hard rules**: every write via bind params (NEVER f-string); length caps enforced in the form AND by truncation (question 2000, options 500); `correct_answer` ⊆ non-empty options; ≥2 options. **"Generate batch (AI)"** button: pick domain + difficulty mix → generates 10 questions via the `_questions.py` machinery (`response_format`, grounded on `key_facts`) → INSERT with `source='AI_GENERATED'` → report count; caption with an approximate-cost note. If Feature 8 is enabled, show OPEN flags next to their questions.
 
 **3. Bank stats**: cached coverage table — questions per domain × difficulty × source, plus flagged count (if Feature 8).
 
-**4. Cortex spend (graceful)**: `_cortex.py` sets a session `QUERY_TAG` (JSON: app, feature, model) and passes the feature per call. The dashboard reads `SNOWFLAKE.ACCOUNT_USAGE.CORTEX_FUNCTIONS_USAGE_HISTORY` inside try/except: on a permissions error render an info banner with the exact statement (`GRANT IMPORTED PRIVILEGES ON DATABASE SNOWFLAKE TO ROLE <role>;`) instead of crashing. Charts: spend by feature, spend by model (sonnet vs opus comparison). Caption: ACCOUNT_USAGE lags up to ~2h.
+**4. Cortex spend (graceful)**: `_cortex.py` sets a session `QUERY_TAG` (JSON: app, feature, model) and passes the feature per call. The dashboard reads `SNOWFLAKE.ACCOUNT_USAGE.CORTEX_FUNCTIONS_USAGE_HISTORY` inside try/except: on a permissions error render an info banner with the exact statement (`GRANT IMPORTED PRIVILEGES ON DATABASE SNOWFLAKE TO ROLE <role>;`) instead of crashing. Charts: spend by feature, spend by model (sonnet vs opus comparison). Caption: ACCOUNT_USAGE lags up to ~2h. When doc grounding is on, add a "docs search" line (Cortex Search query compute is billed to the consumer; small per query).
 
 **5. Tools**: "Refresh data" (`clear_caches()`); CSV export of `QUIZ_REVIEW_LOG` / `QUIZ_SESSION_LOG` (`st.download_button`); danger zone in an expander — "Reset logs" requires typing `DELETE` to confirm, runs `DELETE FROM` on the two log tables only (NEVER DROP, consistent with governance).
 
