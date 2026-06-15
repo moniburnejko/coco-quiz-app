@@ -42,7 +42,7 @@ Load a study guide PDF, and the agent creates the schema, extracts exam domains,
 ## Prerequisites
 
 - Snowflake account with a role that has `USAGE`+`CREATE SCHEMA` on a database, `USAGE` on a warehouse, and access to Cortex AI functions.
-- A **compute pool** with `USAGE` for your role (container runtime; `SHOW COMPUTE POOLS;`) - or use the warehouse fallback.
+- For the default **container runtime**, two things (the warehouse fallback needs neither): a **compute pool** with `USAGE` for your role (`SHOW COMPUTE POOLS;`), and a **PyPI external access integration** so it can install pandas/altair (`CREATE EXTERNAL ACCESS INTEGRATION … ALLOWED_NETWORK_RULES = (snowflake.external_access.pypi_rule)`, ACCOUNTADMIN). `$setup-exam` checks both up front (Step 1f) and gives you the DDL.
 - One-time as `ACCOUNTADMIN`, only if the model is not reachable in-region: `ALTER ACCOUNT SET CORTEX_ENABLED_CROSS_REGION = 'ANY_REGION';` (accounts created after 2026-03-09 default to it).
 - Snowsight > AI & ML > Agents > Settings > Tools and connectors > Web search > enable.
 - A study guide PDF for your target exam - [Snowflake certifications catalog](https://learn.snowflake.com/en/certifications/).

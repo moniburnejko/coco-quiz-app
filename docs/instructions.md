@@ -12,13 +12,22 @@ As `ACCOUNTADMIN`, once per account — only if your account cannot reach the mo
 ALTER ACCOUNT SET CORTEX_ENABLED_CROSS_REGION = 'ANY_REGION';
 ```
 
-Confirm a compute pool exists for the container runtime (your role needs `USAGE` on it):
+The default container runtime needs TWO things (the warehouse fallback needs neither):
 
-```sql
-SHOW COMPUTE POOLS;
-```
+1. A **compute pool** (your role needs `USAGE`):
+   ```sql
+   SHOW COMPUTE POOLS;
+   ```
+2. A **PyPI external access integration** — the container installs pandas/altair from PyPI (they aren't in the base image), so as `ACCOUNTADMIN`:
+   ```sql
+   CREATE OR REPLACE EXTERNAL ACCESS INTEGRATION pypi_access_integration
+     ALLOWED_NETWORK_RULES = (snowflake.external_access.pypi_rule)   -- Snowflake's managed rule; no custom rule needed
+     ENABLED = TRUE;
+   GRANT USAGE ON INTEGRATION pypi_access_integration TO ROLE <your_role>;
+   ```
+   Attach it at deploy (Deploy dialog → Network, or `EXTERNAL_ACCESS_INTEGRATIONS = (pypi_access_integration)`). **Without it, the deploy fails with "Failed to retrieve package… Have you enabled External Access Integration?"**
 
-No usable pool and no admin to create one? The warehouse fallback (deploy Path C) works without it.
+No compute pool / no admin for the EAI? The warehouse fallback (deploy Path C) works without either.
 
 In Snowsight: **AI & ML > Agents > Settings > Tools and connectors > Web search → enable**.
 

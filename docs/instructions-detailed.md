@@ -35,13 +35,22 @@ ALTER ACCOUNT SET CORTEX_ENABLED_CROSS_REGION = 'ANY_REGION';
 
 Without this, every `AI_COMPLETE` call will fail with "not allowed to access this endpoint". Accounts created after 2026-03-09 already default to `ANY_REGION`; `'AWS_GLOBAL'` is a narrower alternative, the legacy `'AWS_US'` still works but is narrowest.
 
-The container runtime (default deploy target) also needs a **compute pool**:
+The container runtime (default deploy target) needs TWO account-level things:
 
-```sql
-SHOW COMPUTE POOLS;   -- at least one, with USAGE for your role
-```
+1. A **compute pool**:
+   ```sql
+   SHOW COMPUTE POOLS;   -- at least one, with USAGE for your role
+   ```
+2. A **PyPI external access integration** (the container installs pandas/altair from PyPI — they are NOT in the base image, which has only Python/Streamlit/Snowpark):
+   ```sql
+   CREATE OR REPLACE EXTERNAL ACCESS INTEGRATION pypi_access_integration
+     ALLOWED_NETWORK_RULES = (snowflake.external_access.pypi_rule)   -- managed rule, no custom network rule needed
+     ENABLED = TRUE;
+   GRANT USAGE ON INTEGRATION pypi_access_integration TO ROLE <your_role>;
+   ```
+   You attach it to the app at deploy time (Deploy dialog → **Network**, or `EXTERNAL_ACCESS_INTEGRATIONS=(pypi_access_integration)`). Skipping it is the cause of the "Failed to retrieve package… EAI?" deploy error.
 
-No pool and no admin to create one? Use the warehouse fallback (step 9, Path C) — no compute pool needed.
+`$setup-exam` Step 1f checks both up front. No pool / no admin for the EAI? Use the warehouse fallback (step 9, Path C) — neither is needed.
 
 ### Role-level
 

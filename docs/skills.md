@@ -18,7 +18,8 @@ This pack is a **thin layer over CoCo's bundled skills**: `$cortex/*` defers to 
 
 **What it does:**
 - Collects exam metadata (name, code), PDF filename, optional CSV/JSON filename, optional feature list, and the look & feel choice (default theme or a guided custom-theming dialog — Streamlit theme keys only);
-- Creates the schema, both stages (`STAGE_QUIZ_DATA` with `SNOWFLAKE_SSE` + `DIRECTORY`, `STAGE_SIS_APP`), all 5 tables (incl. `QUIZ_CONFIG`), and the CSV/JSON file format;
+- Validates AGENTS.md placeholders and runs an early **deploy preflight** (Step 1f): verifies a compute pool + a PyPI external access integration for the container runtime, or switches to the warehouse fallback;
+- Creates the schema, both stages (`STAGE_QUIZ_DATA` with `SNOWFLAKE_SSE` + `DIRECTORY` — verified via `DESCRIBE STAGE`, `STAGE_SIS_APP`), all 5 tables (incl. `QUIZ_CONFIG`), and the CSV/JSON file format;
 - Stops for manual PDF upload; calls `AI_PARSE_DOCUMENT` + `AI_COMPLETE` to populate `EXAM_DOMAINS` (domains, weights, topics, `key_facts`);
 - Loads the CSV/JSON question bank if provided (via `$adapt-questions` if columns need remapping); otherwise the bank deliberately stays empty — NO build-time generation; the agent hands over the seeding options (Admin Generate batch / worksheet recipe / Automation);
 - Updates `AGENTS.md` in place with new exam code, schema, PDF filename;

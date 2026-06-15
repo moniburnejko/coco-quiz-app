@@ -1,8 +1,12 @@
 # SnowPro Core certification quiz app - Streamlit in Snowflake
 
+> ## ⛔ How to run this project — do NOT improvise
+> To set up an exam you **MUST** open `.snowflake/cortex/skills/setup-exam/SKILL.md` and execute it **step by step, top to bottom**, honoring every mandatory STOP. Read the whole skill first; create nothing before its Step 2.
+> The sections below are **reference context** (what the app is, the data model, constraints) — they are **NOT the build procedure** and are not detailed enough to improvise from. Improvising from this overview instead of loading the skill causes known failures (stage without encryption, unfilled placeholders, deploy without compute pool + PyPI EAI).
+
 ## What this project is
 
-A context package for Snowflake CoCo that, given a study guide PDF, autonomously creates the Snowflake schema, extracts exam domains, generates or loads questions, builds and deploys a 4-screen Streamlit-in-Snowflake quiz app, and tracks learning progress across sessions. Invoked via `$setup-exam`.
+A context package for Snowflake CoCo that, given a study guide PDF, autonomously creates the Snowflake schema, extracts exam domains, loads an optional question bank, builds and deploys a multipage Streamlit-in-Snowflake quiz app, and tracks learning progress across sessions. Invoked via `$setup-exam` — **which you must read and follow, not summarize.**
 
 ---
 
@@ -21,11 +25,12 @@ Do not touch any database or schema other than the one configured below:
 | app stage | `STAGE_SIS_APP`                      |
 | app_name  | `SNOWPRO_QUIZ`                       |
 | main_file | `main.py`                            |
-| compute_pool | `<your_compute_pool>`             |
+| compute_pool | `<your_compute_pool>` (container runtime) |
+| external_access_integration | `pypi_access_integration` (container runtime — lets it install pandas/altair from PyPI) |
 | runtime   | `container` (default) / `warehouse` (fallback) |
 | deps_file | `pyproject.toml` (container) / `environment.yml` (warehouse) |
 
-**Preconditions** (user-set before running `$setup-exam`): replace `<your_database>`, `<your_warehouse>`, `<your_role>` with actual object names; replace `<your_compute_pool>` too unless you plan the warehouse fallback (`$setup-exam` Step 9 Path C). The role must have `CREATE SCHEMA` on `database` (and `USAGE` on the compute pool for the container runtime). `$setup-exam` stops if any required `<...>` placeholder remains unfilled.
+**Preconditions** (user-set before running `$setup-exam`): replace `<your_database>`, `<your_warehouse>`, `<your_role>` with actual object names; replace `<your_compute_pool>` too unless you plan the warehouse fallback (`$setup-exam` Step 9 Path C). The role must have `CREATE SCHEMA` on `database`. **The default container runtime needs TWO extra things — a compute pool (`USAGE`) and a PyPI external access integration** (so it can install pandas/altair; the base image has only Python/Streamlit/Snowpark). `$setup-exam` Step 1f checks both up front and gives you the DDL if missing. The warehouse fallback needs neither. `$setup-exam` stops if any required `<...>` placeholder remains unfilled.
 
 **Outputs** (populated in the table above by `$setup-exam`): `schema` (= `<database>.QUIZ_<EXAM_CODE>`) and `exam_code` (from the study guide PDF). `$setup-exam` is idempotent (`IF NOT EXISTS`) and never drops. Each exam gets its own schema - never share a schema between exams.
 

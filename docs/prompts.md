@@ -9,15 +9,19 @@ A second prompt covers the fix-session path when something breaks post-deploy.
 ## Setup prompt - paste to build the app
 
 ```
-verify the session context matches AGENTS.md (role, warehouse, database). then run $setup-exam end-to-end for the exam i am about to name.
+FIRST open and read .snowflake/cortex/skills/setup-exam/SKILL.md in full, then execute it step by step, in order, honoring every mandatory STOP. Do NOT improvise the pipeline from the AGENTS.md overview.
 
-stop at the manual upload (pdf study guide to STAGE_QUIZ_DATA) and wait for me to confirm with "uploaded".
+verify the session context matches AGENTS.md (role, warehouse, database). validate that AGENTS.md has no <...> placeholders left (echo the env table and list any) before creating anything.
+
+run the Step 1f deploy preflight: confirm a compute pool exists (SHOW COMPUTE POOLS) and a PyPI external access integration is available; if either is missing, give me the exact DDL and STOP — or switch me to the warehouse fallback.
+
+stop at the manual upload (pdf study guide to STAGE_QUIZ_DATA) and wait for me to confirm with "uploaded". after creating the stage, DESCRIBE it and confirm SNOWFLAKE_SSE before parsing.
 
 stop at the domain-extraction checkpoint - show me the domain list, weights sum, and key_facts lengths; ask for approve / re-extract / abort.
 
-before deploy, run the full pre-deploy scan from $sis/pre-deploy across all app files. do NOT deploy on any FAIL - fix and re-scan until clean.
+read $sis/patterns and $sis/pre-deploy BEFORE generating any code, and generate snowflake.yml + .streamlit/config.toml first. the pre-deploy scan is a final confirmation - aim for zero failures, not a cleanup pass.
 
-at deploy time default to the workspaces flow: i will run app/main.py for the dev preview and click Deploy myself, then confirm with "deployed". offer the stage path only as fallback.
+at deploy time default to the workspaces flow: i will run main.py for the dev preview and click Deploy (with the PyPI EAI attached in the Network field) myself, then confirm with "deployed". offer the stage path only as fallback. name the app per app_name in AGENTS.md.
 
 after deploy, run SHOW STREAMLITS to confirm and report: exam name, exam code, schema, domain count, question count, app URL.
 

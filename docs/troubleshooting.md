@@ -6,6 +6,30 @@ If none of these match: paste the **fix prompt** from [prompts.md](prompts.md) w
 
 ---
 
+## App deploy fails: "Failed to retrieve package… Have you enabled External Access Integration (EAI)?"
+
+**Cause:** The container runtime (the default deploy target) installs `pandas`/`altair` from PyPI, which needs an External Access Integration. The base image ships only Python, Streamlit, and Snowpark — so without an EAI the package fetch fails (DNS/connect error to `pypi.org`).
+
+**Fix (as `ACCOUNTADMIN`, once per account):**
+
+```sql
+CREATE OR REPLACE EXTERNAL ACCESS INTEGRATION pypi_access_integration
+  ALLOWED_NETWORK_RULES = (snowflake.external_access.pypi_rule)   -- Snowflake's managed rule; no custom rule needed
+  ENABLED = TRUE;
+GRANT USAGE ON INTEGRATION pypi_access_integration TO ROLE <your_role>;
+```
+
+Then attach it and redeploy — Deploy dialog → **Network → External Access Integrations** → `pypi_access_integration`, or for an existing app:
+
+```sql
+ALTER STREAMLIT <your_database>.QUIZ_<CODE>.SNOWPRO_QUIZ
+  SET EXTERNAL_ACCESS_INTEGRATIONS = (pypi_access_integration);
+```
+
+**No EAI / no ACCOUNTADMIN?** Switch to the warehouse fallback (`$setup-exam` Step 9 Path C): `environment.yml` from the Snowflake Anaconda channel — no EAI, no compute pool, Streamlit 1.52.2.
+
+---
+
 ## `AI_COMPLETE` fails with "not allowed to access this endpoint"
 
 **Cause:** Cross-region inference is disabled. `claude-sonnet-4-6` is hosted in US regions; accounts that cannot reach it in-region need explicit permission. (Accounts created after 2026-03-09 default to `ANY_REGION` and are not affected.)
