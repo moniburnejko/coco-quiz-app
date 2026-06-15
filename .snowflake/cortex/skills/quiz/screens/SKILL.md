@@ -1,6 +1,6 @@
 ---
 name: quiz-screens
-description: "Quiz app behavioral contracts — page flow (st.navigation), screen state machine, history tracking, write-back + cache invalidation, session state, explanation contract, dashboard. Use when building or modifying any page or shared UI module of the app. Triggers: screen flow, page flow, quiz screen, home screen, summary, review page, session state, write-back, explanation, history_item, st.navigation. Do NOT use for question generation (quiz-questions), styling (quiz-style), or optional features (quiz-features)."
+description: "Quiz app behavioral contracts — page flow (st.navigation), screen state machine, history tracking, write-back + cache invalidation, session state, explanation contract, dashboard. Use when building or modifying any page or shared UI module of the app. Triggers: screen flow, page flow, quiz screen, home screen, summary, review page, session state, write-back, explanation, history_item, st.navigation. Do NOT use for question generation (quiz-questions), styling (quiz-design), or optional features (quiz-features)."
 ---
 
 # When to Load
@@ -15,7 +15,7 @@ Parent skill `$quiz` routes here for SCREENS intent.
 # When NOT to Use
 
 - Cortex AI issues -> use `$cortex/patterns`
-- SiS rendering patterns -> use `$sis/patterns`
+- SiS rendering patterns -> use `$sis`
 - Prompt quality audit -> use `$cortex/prompt-audit`
 - UI styling/badges -> use `$quiz/design`
 - Question generation logic -> use `$quiz/questions`
@@ -67,7 +67,7 @@ Cross-page redirects (e.g. recommendations -> quiz): set the target state, then 
 
 **Layout**: progress bar -> domain/difficulty badges -> h4 question text -> answer input -> submit -> result + explanation -> navigation
 
-**Answer input**: `st.radio()` for single-answer (index=None, disabled once answered). Independent `st.checkbox()` per option for multi-answer (see `$sis/patterns` Multi-Answer Checkboxes).
+**Answer input**: `st.radio()` for single-answer (`index=None`, disabled once answered). For multi-answer, render each option as an independent `st.checkbox` with a stable key (`cb_A`, `cb_B`, …); read the selection from session state after rendering; disable all once answered. On "Next", clear the `cb_*` keys via the flag-at-top reset (queue `["cb_A", …, "cb_E"]` in `_op_clear_keys`, rerun, pop at the top — see `$sis` widget lifecycle).
 
 **Socratic hint (BEFORE answering; gate `hints_enabled`)**: a secondary "💡 Podpowiedź" button near the answer input, visible ONLY while `answered == False`. First click → `call_cortex_json(prompt, "hint")`, show `hint_1`; second click reveals `hint_2`. The prompt MUST instruct: hints narrow the concept space (level 1) or eliminate ONE distractor with reasoning (level 2) and must NEVER name or imply the correct option; embed question/options per the untrusted-content delimiting rule (`$cortex/patterns`). State: `hint` (None/{}/dict), `hint_level` (0/1/2); once answered, the button disappears (the explanation takes over); record `hint_used = hint_level > 0` in the history item; reset both on Next.
 
@@ -82,6 +82,16 @@ If explanations enabled, generates explanation lazily (see Explanation Contract 
 **Navigation after answer**: Main content area shows ONLY "Next" button (primary, full-width) — or "Finish Round" (primary) on the last question. Do NOT show a "Finish" button next to "Next" — it causes accidental round termination.
 
 **Sidebar "End Round"**: When `screen == "quiz"`, the sidebar shows an "End Round" button (secondary, full-width). This lets the user finish early without it competing with "Next" in the main area. Clicking sets `_pending_finish = True` and does a natural rerender.
+
+**Button click safety**: guard slow-action buttons (Start Round, Submit, Next, Finish) with the `_transitioning` flag so a double-click can't double-fire during the rerun:
+```python
+if st.button("Next", disabled=st.session_state.get("_transitioning", False)):
+    st.session_state["_transitioning"] = True
+    # ... action ...
+    st.session_state["_transitioning"] = False
+    st.rerun()
+```
+Pair this with the spinner + single-`st.rerun()` rule in `$sis`.
 
 ---
 
@@ -175,11 +185,13 @@ Each submitted answer is appended to `round_history`:
 
 # Review: Wrong Answers (`pages/review.py`)
 
-Query `QUIZ_REVIEW_LOG` via the cached loader in `_data.py` (`@st.cache_data` with NO ttl, `get_active_session()` inside — see `$sis/patterns` Caching). Do NOT query directly in the page code. Freshness comes from `clear_caches()` at write time, not from a ttl.
+Query `QUIZ_REVIEW_LOG` via the cached loader in `_data.py` (`@st.cache_data` with NO ttl, `get_active_session()` inside — see `$sis` Caching). Do NOT query directly in the page code. Freshness comes from `clear_caches()` at write time, not from a ttl.
 
 Filters: domain pills (multi, empty=all) + date range slider (integer offset, not date objects).
 
 Wrong answer cards: `st.container(border=True)` with domain badge + difficulty badge + date badge, question text, correct answer, mnemonic caption, doc link caption.
+
+**Date handling** (filters + dashboard): values from `.collect()` are Snowflake datetimes — cast with `datetime.date(raw.year, raw.month, raw.day)` before feeding any widget or doing date arithmetic. For range queries against `TIMESTAMP_LTZ`, pass dates as `strftime("%Y-%m-%d")` strings with an exclusive upper bound (`< end + 1 day`) to include the full last day. Use `st.date_input` for date ranges — never pass a `datetime.date` to `st.slider` (this filter uses an integer day-offset).
 
 ---
 

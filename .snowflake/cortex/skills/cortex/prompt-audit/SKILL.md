@@ -16,8 +16,8 @@ Parent skill `$cortex` routes here for AUDIT intent.
 # When NOT to Use
 
 - Cortex connectivity/calling issues -> use `$cortex/patterns`
-- SiS rendering patterns -> use `$sis/patterns`
-- Pre-deploy scan -> use `$sis/pre-deploy`
+- SiS rendering patterns -> use `$sis`
+- Pre-deploy scan -> use `$sis`
 
 # Instructions
 

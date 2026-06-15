@@ -14,7 +14,7 @@ Example prompts:
 # When NOT to Use
 
 - Do not use this skill if the exam schema is already set up (check `SHOW SCHEMAS LIKE 'QUIZ_<CODE>' IN DATABASE {database};`).
-- Do not use for fixing bugs in an existing quiz — use `$cortex/patterns`, `$cortex/prompt-audit`, or `$sis/pre-deploy` instead.
+- Do not use for fixing bugs in an existing quiz — use `$cortex/patterns`, `$cortex/prompt-audit`, or `$sis` instead.
 
 ---
 
@@ -536,8 +536,7 @@ Use the Edit tool on `AGENTS.md`. Follow the edit boundaries strictly.
 
 1. Read the updated AGENTS.md fully.
 2. **MANDATORY: read these skills BEFORE writing any code.** They are generation rules, not a post-hoc linter — reading them first is what makes the pre-deploy scan pass on the first try. (Skipping this step produced 10+ scan failures and a costly fix pass in a real run.)
-   - `$sis/patterns` — caching (no `ttl` + `clear_caches()`), widget lifecycle, container-runtime constraints, SQL safety
-   - `$sis/pre-deploy` — the 21 rules your generated code must ALREADY satisfy
+   - `$sis` — container-runtime gotchas (no-`ttl` cache + `clear_caches()`, widget lifecycle, SQL safety) AND the pre-deploy scan your generated code must ALREADY pass
    - `$cortex/patterns` — `call_cortex_json` + `response_format` structured outputs (no fence parsing), untrusted-content delimiting, and the **Cortex Search (CKE) retrieval** helper `_search.py` (generate it when grounding is in play — Step 1g)
    - `$quiz/screens` — page flow, session state, explanation/hint/contrast/debrief/remedial contracts, write-back + `clear_caches()`
    - `$quiz/questions` — DIFFICULTY_GUIDE (REQUIRED constant), answer shuffling, validation, retry logic
@@ -663,7 +662,7 @@ Use the Edit tool on `AGENTS.md`. Follow the edit boundaries strictly.
 
 8. `environment.yml` is generated ONLY for the warehouse fallback (Step 9 Path C). Do not emit it on the container path.
 
-9. **Run the `$sis/pre-deploy` scan across ALL app files as a FINAL CONFIRMATION** (`main.py`, `_*.py`, `pages/*.py`, `.streamlit/config.toml`). If you read item 2's skills and applied the generation rules, this reports **0 failures** — that is the target. More than 0 means a rule was skipped during generation; fix and re-scan, but treat repeated failures as a sign you didn't internalize item 2.
+9. **Run the `$sis` scan across ALL app files as a FINAL CONFIRMATION** (`main.py`, `_*.py`, `pages/*.py`, `.streamlit/config.toml`). If you read item 2's skills and applied the generation rules, this reports **0 failures** — that is the target. More than 0 means a rule was skipped during generation; fix and re-scan, but treat repeated failures as a sign you didn't internalize item 2.
 
 All files are written into the current workspace under `app/` (not inside `.snowflake/cortex/skills/`). The user deploys them in Step 9.
 
@@ -676,7 +675,7 @@ Run ONLY if the user enabled **self-verify** in Step 1d. Requires a CoCo session
    python -m py_compile app/main.py app/_config.py app/_cortex.py app/_data.py app/_questions.py app/_ui.py app/pages/*.py
    ```
 2. Snowflake-bound modules (`get_active_session`, `AI_COMPLETE`) cannot execute outside SiS — do NOT try to run them; compile/parse checks only.
-3. On any failure: fix the module, re-run the `$sis/pre-deploy` scan, then repeat 8.5.
+3. On any failure: fix the module, re-run the `$sis` scan, then repeat 8.5.
 4. Report: list of files checked, PASS/FAIL per file.
 
 This step supplements the Step 8 scan with an execution-level syntax check — it never replaces it.
@@ -746,7 +745,7 @@ CREATE OR REPLACE STREAMLIT {database}.QUIZ_<CODE>.SNOWPRO_QUIZ
   QUERY_WAREHOUSE = {warehouse};
 ```
 
-Note: the warehouse runtime caps Streamlit at 1.52.2 — flag to the user that container-only guidance in `$sis/patterns` does not all apply on this path.
+Note: the warehouse runtime caps Streamlit at 1.52.2 — flag to the user that container-only guidance in `$sis` does not all apply on this path.
 
 ### Choosing between paths
 
@@ -831,7 +830,7 @@ All stopping points below use `ask_user_question` (if available) to present stru
 - ⚠️ After Step 4: Wait for manual upload confirmation; verify via `LIST @stage`.
 - ⚠️ After Step 5a.1 (conditional): If conflicting domain structures found, let user choose.
 - ⚠️ After Step 5d: Domain verification. Approve/Re-extract/Abort. Do NOT proceed until user responds.
-- ⚠️ After Step 8 scan: All items from `$sis/pre-deploy` must PASS across every app file. Do NOT deploy on any FAIL. (No `ask_user_question` — pass/fail gate.)
+- ⚠️ After Step 8 scan: All items from `$sis` must PASS across every app file. Do NOT deploy on any FAIL. (No `ask_user_question` — pass/fail gate.)
 - ⚠️ After Step 8.5 (only if self-verify enabled): all modules compile-clean; on FAIL fix → re-scan → re-verify. If the session cannot execute code, state it and proceed.
 - ⚠️ Step 9: Compute-pool check (`SHOW COMPUTE POOLS`), then Path A / B / C deploy choice; wait for "deployed" (Path A) or upload confirmation (Path B/C).
 - ⚠️ After Step 10b: Derive app URL from `CURRENT_ORGANIZATION_NAME()` + `CURRENT_ACCOUNT_NAME()`, NOT from `CURRENT_ACCOUNT()`.

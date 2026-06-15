@@ -128,16 +128,16 @@ For UI styling, badges, section labels, and chart colors: see `$quiz/design`.
 | Skill | Invoke | Purpose | Sub-skills |
 |-------|--------|---------|------------|
 | `$cortex` | Cortex AI work | Calling patterns, diagnostics, prompt auditing | `$cortex/patterns`, `$cortex/prompt-audit` |
-| `$sis` | SiS code or deploy | Coding patterns, mandatory pre-deploy scan | `$sis/patterns`, `$sis/pre-deploy` |
+| `$sis` | SiS code or deploy | Container-runtime gotchas + mandatory pre-deploy scan | (standalone) |
 | `$quiz` | app code work | Screen contracts, question generation, UI styling, optional features | `$quiz/screens`, `$quiz/questions`, `$quiz/design`, `$quiz/features` |
 | `$setup-exam` | new exam | Full 10-step pipeline (schema, stages, tables, domains, questions, app build, deploy) | (standalone) |
 | `$adapt-questions` | question bank import | Schema mapping, loading strategies, domain coverage | (standalone) |
 
 ### Skill dependencies
 
-- `$setup-exam` uses `$sis/pre-deploy` (pre-deploy scan), `$quiz/*` (app generation), optionally `$adapt-questions` (CSV/JSON schema mismatch)
+- `$setup-exam` uses `$sis` (pre-deploy scan), `$quiz/*` (app generation), optionally `$adapt-questions` (CSV/JSON schema mismatch)
 - `$adapt-questions` depends on `$cortex/patterns` (if Strategy D uses AI_COMPLETE)
-- `$sis/pre-deploy` depends on `$cortex/patterns` (dollar-quoting, JSON parsing)
+- `$sis` depends on `$cortex/patterns` (dollar-quoting, JSON parsing)
 - `$cortex/prompt-audit` validates prompts authored during `$setup-exam`
 
 ### Global skills

@@ -18,8 +18,8 @@ Parent skill `$cortex` routes here for PATTERNS intent.
 # When NOT to Use
 
 - Prompt quality audit -> use `$cortex/prompt-audit`
-- SiS rendering patterns -> use `$sis/patterns`
-- Pre-deploy scan -> use `$sis/pre-deploy`
+- SiS rendering patterns -> use `$sis`
+- Pre-deploy scan -> use `$sis`
 
 ---
 
