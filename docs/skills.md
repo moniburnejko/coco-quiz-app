@@ -17,13 +17,14 @@ This pack is a **thin layer over CoCo's bundled skills**: `$cortex/*` defers to 
 - Adding another certification - creates a parallel `QUIZ_<NEW_CODE>` schema without touching the previous one.
 
 **What it does:**
-- Collects exam metadata (name, code), PDF filename, optional CSV/JSON filename, optional feature list;
-- Creates the schema, both stages (`STAGE_QUIZ_DATA` with `SNOWFLAKE_SSE` + `DIRECTORY`, `STAGE_SIS_APP`), all 4 tables, and the CSV/JSON file format;
+- Collects exam metadata (name, code), PDF filename, optional CSV/JSON filename, optional feature list, and the look & feel choice (default theme or a guided custom-theming dialog — Streamlit theme keys only);
+- Creates the schema, both stages (`STAGE_QUIZ_DATA` with `SNOWFLAKE_SSE` + `DIRECTORY`, `STAGE_SIS_APP`), all 5 tables (incl. `QUIZ_CONFIG`), and the CSV/JSON file format;
 - Stops for manual PDF upload; calls `AI_PARSE_DOCUMENT` + `AI_COMPLETE` to populate `EXAM_DOMAINS` (domains, weights, topics, `key_facts`);
-- Either loads the CSV/JSON question bank (via `$adapt-questions` if columns need remapping) or generates ~30 AI questions per domain in batches of 10 (when you want to run the quiz faster);
+- Loads the CSV/JSON question bank if provided (via `$adapt-questions` if columns need remapping); otherwise the bank deliberately stays empty — NO build-time generation; the agent hands over the seeding options (Admin Generate batch / worksheet recipe / Automation);
 - Updates `AGENTS.md` in place with new exam code, schema, PDF filename;
 - Reads `AGENTS.md` + all `$quiz/*` sub-skills, generates the decomposed multipage `app/` project (entry point, `_*.py` modules, `pages/`, configs) in the workspace;
 - Runs the `$sis/pre-deploy` scan across all app files, fixes until clean;
+- Optionally (advanced mode, Step 8.5) self-verifies the generated modules via code execution, and supports the quality model profile + an Automations hand-off (`docs/customization.md` section 5);
 - Deploys: by default the user previews with **Run** and clicks **Deploy** in the workspace (Path A); scripted fallback = upload `app/` to `STAGE_SIS_APP` + `CREATE STREAMLIT` on the container runtime (Path B); warehouse fallback when no compute pool exists (Path C).
 
 **Built-in stopping points:** input collection, upload PDF, domain approval, pre-deploy gate, deploy path choice, final report. The agent never proceeds past these without user confirmation.
@@ -108,7 +109,7 @@ Dispatches to **patterns** (for writing code) or **pre-deploy** (for the mandato
 
 ### /sis/pre-deploy
 
-**Scope:** **mandatory** 20-item scan across all app files (`main.py`, `_*.py`, `pages/*.py`, `config.toml`), run before every deploy. Catches the top runtime-failure classes before they reach production.
+**Scope:** **mandatory** 21-item scan across all app files (`main.py`, `_*.py`, `pages/*.py`, `config.toml`), run before every deploy. Catches the top runtime-failure classes (incl. untrusted-input handling) before they reach production.
 
 **When to use:**
 - Before every deploy - no exceptions;
@@ -125,11 +126,11 @@ Dispatches across four sub-skills depending on what you are working on: **screen
 
 ### /quiz/screens
 
-**Scope:** behavioural contracts for the quiz app screens - home, quiz, summary, review, dashboard.
+**Scope:** behavioural contracts for the app pages - quiz (home/quiz/summary state machine), review, admin.
 
-**When to use:** building or modifying any screen; adding a new feature to the flow; debugging screen transitions or state.
+**When to use:** building or modifying any page; adding a new feature to the flow; debugging page transitions or state.
 
-**What it covers:** screen flow diagram, session-state key table, `history_item` schema, write-back to `QUIZ_REVIEW_LOG` and `QUIZ_SESSION_LOG` on round end, explanation rendering contract (collapsed by default, expands to `why_correct` / `why_wrong` / `mnemonic` / `doc_url`), dashboard chart specs (score-per-session line chart, domain error bar chart, readiness score).
+**What it covers:** page flow (`st.navigation`), config layer (`QUIZ_CONFIG` + gates), session-state key table, `history_item` schema, the learning loop (Socratic hint pre-answer, explanation + contrast post-answer, AI debrief + fail-only remedial round on summary), write-back + `clear_caches()` on round end, Admin page contract (config, question manager + Generate batch, bank stats, Cortex spend with graceful grants, tools), dashboard chart specs.
 
 ### /quiz/questions
 
@@ -141,15 +142,15 @@ Dispatches across four sub-skills depending on what you are working on: **screen
 
 ### /quiz/style
 
-**Scope:** UI conventions - badge colours, section labels, chart colours, CSS rules, button style.
+**Scope:** UI conventions - theming contract (config.toml), badge colours, section labels, chart colours, button style.
 
-**When to use:** any visual or layout work; reviewing visual consistency across screens; adding new badges / cards / sections.
+**When to use:** any visual or layout work (incl. the Step 1e custom-look dialog); reviewing visual consistency across pages; adding new badges / cards / sections.
 
-**What it covers:** `EXAM_NAME` constant, badge colour palette, section-label pattern, chart colour constants (`#29b5e8` blue, `#F1914C` orange), axis formatting, docs-link format, card layout, button style variants.
+**What it covers:** the full `[theme]`/`[theme.sidebar]` key reference (the ONLY styling mechanism — no CSS, no external fonts), the canonical default theme, dialog→key mapping for custom looks, badge palette theming, chart colour constants aligned with `chartCategoricalColors`, axis formatting, docs-link format, card layout, button style variants.
 
 ### /quiz/features
 
-**Scope:** optional feature implementations - exam simulation mode, flashcards, quick stats, spaced repetition, achievement badges, AI study recommendations.
+**Scope:** optional feature implementations - exam simulation mode, flashcards, quick stats, spaced repetition, achievement badges, AI study recommendations, misconception analysis (Review page), flag-a-question.
 
 **When to use:** **only** when the user explicitly requests a feature in their prompt. Never trigger by default.
 

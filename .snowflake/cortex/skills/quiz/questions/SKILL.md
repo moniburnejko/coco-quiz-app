@@ -215,7 +215,7 @@ Some SnowPro questions have 5 options. `option_e` is in the schema as optional. 
 
 The code then adds UPPERCASE keys (`QUESTION_TEXT`, `DOMAIN_ID`, `DOMAIN_NAME`, `DIFFICULTY`, etc.) and returns the dict for in-memory use during the current round.
 
-**Note**: Runtime AI questions are **ephemeral** — they are NOT persisted to `QUIZ_QUESTIONS`. Only pre-loaded questions (from CSV/`$setup-exam` generation) exist in the table. The `source = 'AI_GENERATED'` field is for display/tracking, not for insert.
+**Note**: Runtime AI questions are **ephemeral** — they are NOT persisted to `QUIZ_QUESTIONS`. The table is seeded separately (CSV at build, Admin "Generate batch", the worksheet recipe in `docs/customization.md`, or a scheduled task/Automation) — never during `$setup-exam`. The `source` field distinguishes `'MANUAL'` vs `'AI_GENERATED'` rows.
 
 ---
 

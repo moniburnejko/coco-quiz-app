@@ -21,7 +21,7 @@ at deploy time default to the workspaces flow: i will run app/main.py for the de
 
 after deploy, run SHOW STREAMLITS to confirm and report: exam name, exam code, schema, domain count, question count, app URL.
 
-i am setting up: [exam name + any optional features you want, e.g. "SnowPro Core COF-C03, add a timed exam simulation mode"].
+i am setting up: [exam name + any optional features or advanced options you want, e.g. "SnowPro Core COF-C03, add a timed exam simulation mode, use the quality model profile"].
 ```
 
 ### When to paste
@@ -33,8 +33,9 @@ i am setting up: [exam name + any optional features you want, e.g. "SnowPro Core
 
 1. Exam name + exam code (e.g. "SnowPro Core", "COF-C03").
 2. PDF filename (required) - the study guide you will upload.
-3. CSV/JSON question-bank filename - optional; if you don't have one, it generates questions via AI.
-4. Any additional customisations (optional features, alternative scoring, etc.).
+3. CSV/JSON question-bank filename - optional; without one the bank stays empty (runtime AI questions only; seed the bank later from Admin / a worksheet recipe / an Automation).
+4. Any additional customisations (optional features, advanced mode — quality model profile / self-verify / Automations, alternative scoring, etc.).
+5. Default look or custom — custom runs a short theming dialog (Streamlit theme keys only, no CSS).
 5. "uploaded" confirmation after the input-file stage upload.
 6. Approve / Re-extract / Abort after domain extraction.
 7. Deploy path: Path A (workspace **Run + Deploy**, default), Path B (scripted stage + `CREATE STREAMLIT`, container runtime), or Path C (warehouse fallback, no compute pool).

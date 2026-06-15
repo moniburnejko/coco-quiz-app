@@ -15,11 +15,14 @@ Load a study guide PDF, and the agent creates the schema, extracts exam domains,
 - **A multipage Streamlit app** (decomposed `app/` project, native `st.navigation`, container runtime):
   - **Quiz** - configure round, answer single-/multi-select questions, see score + pass/fail (75% threshold) with wrong-answer cards.
   - **Review** - filterable history of every mistake + learning dashboard (score trend, per-domain error distribution, session history).
-- **AI-grounded content**: domains and key facts come from the official study guide PDF (`AI_PARSE_DOCUMENT`); questions are either AI-generated at runtime (`AI_COMPLETE`), pre-generated into a question bank, or imported from CSV/JSON file.
+  - **Admin** - app configuration (toggles/sliders), question manager with one-click AI batch generation, bank stats, Cortex spend dashboard, maintenance tools.
+- **A learning loop, not just a quiz**: Socratic hints before answering (never spoil), AI explanations + concept contrast ("how does A differ from C?") after, an AI debrief of round patterns, and a remedial round when you fail (your wrong answers, reshuffled).
+- **AI-grounded content**: domains and key facts come from the official study guide PDF (`AI_PARSE_DOCUMENT`); questions are AI-generated at runtime (`AI_COMPLETE`), with an optional question bank you can seed from CSV/JSON, the Admin panel, or a scheduled recipe (resilience + speed when AI calls are unavailable).
 - **Persistent progress** across sessions via `QUIZ_SESSION_LOG` + `QUIZ_REVIEW_LOG` - the app remembers your weak domains between logins.
 - **Schema-per-exam isolation** (`QUIZ_<EXAM_CODE>`) so multiple certifications coexist in one database.
 - **Custom CoCo skills** in `.snowflake/cortex/skills/` drive the whole pipeline end to end.
 - **Optional add-ons**: spaced repetition, flashcards, exam-simulation mode, achievement badges, AI study recommendations (`$quiz/features`).
+- **Advanced mode (opt-in)**: quality model profile (`claude-opus-4-7`), agent self-verify via Cloud Agents, scheduled maintenance via Automations (**Preview**) — all off by default ([docs/customization.md](docs/customization.md) section 5).
 
 ## What is different from the CLI version
 

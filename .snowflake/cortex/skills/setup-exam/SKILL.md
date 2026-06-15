@@ -120,11 +120,33 @@ If the user says no PDF is available → **STOP**. The study guide is required f
 
 ### 1d — Additional requirements
 
-Ask: "Any additional requirements or customizations? (e.g., specific UI features, AI study recommendations, different scoring)"
+Ask: "Any additional requirements or customizations? (e.g., specific UI features, AI study recommendations, different scoring — or advanced mode: quality model profile, self-verify, Automations)"
+
+Advanced options (see AGENTS.md `Advanced options` — all OFF unless explicitly requested here):
+- **quality model profile** → set `CORTEX_MODEL = "claude-opus-4-7"` in `_config.py` at Step 8 (do NOT change AGENTS.md defaults).
+- **self-verify** → run Step 8.5 after the scan.
+- **automations** → after Step 10, point the user to the report-only recipe in `docs/customization.md` section 5c (**Preview** — verify account availability).
 
 If the user mentions features not already in AGENTS.md, ask clarifying questions about requirements BEFORE proceeding to Step 2.
 
 Wait for the user's response before proceeding.
+
+### 1e — App look & feel
+
+**Use `ask_user_question` tool (if available):**
+
+> "Do you want to decide the app's look (colors, style), or use the default theme?"
+
+| Option | Description |
+|--------|-------------|
+| **Default look** | Clean Snowflake-blue theme (recommended) — no further questions |
+| **Custom look** | I'll ask a few quick style questions and theme the app to your taste |
+
+**Routing logic:**
+- **Default look** → use the canonical theme from `$quiz/style` in Step 8. Continue.
+- **Custom look** → run a short guided dialog (one question at a time): light or dark base; primary/accent color (name or hex); corner roundness (sharp / soft / round); font stack (sans-serif / serif / monospace); sidebar tint (same as app / subtle contrast). Map answers ONLY to native Streamlit `[theme]` / `[theme.sidebar]` keys per the `$quiz/style` theming contract — **never CSS, never `unsafe_allow_html`, no external font files (CSP)**. Confirm the resulting palette back to the user in words before Step 2.
+
+Store the choice for Step 8 (config.toml generation).
 
 ## Step 2 — Create Snowflake schema
 
@@ -148,7 +170,7 @@ CREATE STAGE IF NOT EXISTS {database}.QUIZ_<CODE>.STAGE_QUIZ_DATA
 CREATE STAGE IF NOT EXISTS {database}.QUIZ_<CODE>.STAGE_SIS_APP;
 ```
 
-**Tables** — all 4 with exact DDL below:
+**Tables** — all 5 with exact DDL below:
 
 ```sql
 CREATE TABLE IF NOT EXISTS {database}.QUIZ_<CODE>.EXAM_DOMAINS (
@@ -184,8 +206,10 @@ CREATE TABLE IF NOT EXISTS {database}.QUIZ_<CODE>.QUIZ_REVIEW_LOG (
     difficulty     VARCHAR,
     question_text  VARCHAR,
     correct_answer VARCHAR,
+    selected_answer VARCHAR,
     mnemonic       VARCHAR(500),
-    doc_url        VARCHAR(500)
+    doc_url        VARCHAR(500),
+    misconception  VARCHAR
 );
 
 CREATE TABLE IF NOT EXISTS {database}.QUIZ_<CODE>.QUIZ_SESSION_LOG (
@@ -200,7 +224,15 @@ CREATE TABLE IF NOT EXISTS {database}.QUIZ_<CODE>.QUIZ_SESSION_LOG (
 );
 ```
 
-Rationale for 4 tables: QUIZ_REVIEW_LOG stores per-question wrong answers (Review tab + domain error analysis). QUIZ_SESSION_LOG stores per-round summaries (score, round size — needed for progress metrics). Rounds with 0 wrong answers have no QUIZ_REVIEW_LOG rows, so merging would lose session data.
+```sql
+CREATE TABLE IF NOT EXISTS {database}.QUIZ_<CODE>.QUIZ_CONFIG (
+    config_key   VARCHAR PRIMARY KEY,
+    config_value VARIANT,
+    updated_at   TIMESTAMP_LTZ DEFAULT CURRENT_TIMESTAMP()
+);
+```
+
+Rationale: QUIZ_REVIEW_LOG stores per-question wrong answers (Review page + domain error analysis; `selected_answer`/`misconception` feed the optional misconception-analysis feature). QUIZ_SESSION_LOG stores per-round summaries (score, round size — needed for progress metrics). Rounds with 0 wrong answers have no QUIZ_REVIEW_LOG rows, so merging would lose session data. QUIZ_CONFIG holds runtime app configuration edited from the Admin page (defaults live in `_config.py`; DB values override them). If the user enables the flag-a-question feature, `$quiz/features` Feature 8 adds a QUIZ_FLAGS table.
 
 **File format:**
 ```sql
@@ -364,7 +396,7 @@ Present the domain verification results, then ask:
 
 ⚠️ **STOP**: Do NOT proceed until user responds.
 
-## Step 6 — Load or generate questions
+## Step 6 — Load the question bank (optional)
 
 ### 6a — If user has a CSV (from Step 1c) already uploaded in Step 4
 
@@ -391,25 +423,22 @@ FROM {database}.QUIZ_<CODE>.EXAM_DOMAINS d
 WHERE q.domain_id = d.domain_id AND q.domain_name IS NULL;
 ```
 
-### 6b — If no CSV — generate via AI (question bank pre-load)
+### 6b — If no CSV — the bank stays empty (do NOT generate questions now)
 
-Generate questions grounded on `key_facts` from EXAM_DOMAINS, using AI_COMPLETE **structured outputs** — a `response_format` schema with a `questions` array of question objects (same per-question shape as `RESPONSE_FORMATS["question"]` in `$cortex/patterns`). Output is schema-conformant JSON; there is no parse-repair step.
+**Do NOT generate a question bank during setup.** Build-time generation is slow, burns the user's token budget before they ever see the app, and confuses users ("are these the only questions?"). The app is fully functional without a bank: `question_source` defaults to `'ai'` (runtime generation, one question at a time).
 
-**Batch size**: MAX 10 questions per AI_COMPLETE call. Larger batches risk hitting the output token limit — with structured outputs that surfaces as a failed/NULL call, not malformed JSON.
+Inform the user (verbatim or close):
 
-For each domain:
-1. Read domain's `key_facts` and `topics` from EXAM_DOMAINS.
-2. Generate questions in batches of 10:
-   - Each batch: specify domain, difficulty mix (roughly 3 easy + 4 medium + 3 hard), and a subset of topics to cover. Include the per-field length guidance in the prompt (schema guarantees shape, not length).
-   - Run 3 batches per domain → ~30 questions per domain.
-   - If a batch call returns NULL/fails, retry that batch with 5 questions.
-3. INSERT each question with `source = 'AI_GENERATED'`, `domain_id`, `domain_name`, `difficulty`.
+> "I'm skipping question-bank pre-generation — the app generates questions live via AI. A populated bank is still worth having, because:
+> - **resilience**: if an AI call fails (service interruption, cross-region issue, token limits), the app falls back to bank questions;
+> - **speed**: bank questions load instantly, no AI round-trip;
+> - **consistency**: a curated, repeatable question set.
+>
+> You can seed it anytime: (1) upload a CSV/JSON now or later (I'll run `$adapt-questions`), (2) use the **Generate batch** button on the app's Admin page, (3) run the worksheet SQL recipe from `docs/customization.md` (section: Seeding the question bank), or (4) schedule it as a recurring task / Automation."
 
-**Target**: ~30 questions per domain (150 total for 5 domains).
+If the user decides to upload a CSV after all → go back to 6a.
 
-For question format, char limits, and JSON schema: see `$quiz/questions` AI Question JSON Format section.
-
-Note: This pre-loaded bank is for the "From question bank" source mode. When users select "AI Generated" at runtime, questions are generated live (not from this bank).
+Note: the bank feeds the "From question bank" source mode and the AI-fallback path. Runtime "AI Generated" questions never come from the bank.
 
 ### 6c — Verify
 
@@ -419,7 +448,7 @@ SELECT COUNT(DISTINCT domain_id) FROM {database}.QUIZ_<CODE>.QUIZ_QUESTIONS;
 SELECT COUNT(*) FROM {database}.QUIZ_<CODE>.QUIZ_QUESTIONS WHERE domain_name IS NULL;
 ```
 
-If the user chose "No CSV" in Step 1c and 6b was skipped (e.g., user wants only runtime AI), QUIZ_QUESTIONS may legitimately be 0 rows. Confirm with the user before proceeding.
+Without a CSV, QUIZ_QUESTIONS legitimately has 0 rows (runtime-AI-only mode) — state this and proceed; do not treat it as an error.
 
 ## Step 7 — Update AGENTS.md
 
@@ -470,6 +499,7 @@ Use the Edit tool on `AGENTS.md`. Follow the edit boundaries strictly.
      pages/
        quiz.py            # QUIZ page: home -> quiz -> summary state machine
        review.py          # REVIEW page: wrong answers + learning dashboard
+       admin.py           # ADMIN page: app config, question manager, bank stats, spend, tools
      .streamlit/config.toml
      pyproject.toml       # container-runtime deps (default)
      snowflake.yml        # deploy descriptor (container)
@@ -487,6 +517,7 @@ Use the Edit tool on `AGENTS.md`. Follow the edit boundaries strictly.
      pages = [
          st.Page("pages/quiz.py", title="Quiz", default=True),
          st.Page("pages/review.py", title="Review"),
+         st.Page("pages/admin.py", title="Admin"),
      ]
      # append feature pages ONLY if that feature was generated, e.g.:
      # pages.append(st.Page("pages/exam_simulation.py", title="Exam Simulation"))
@@ -510,17 +541,26 @@ Use the Edit tool on `AGENTS.md`. Follow the edit boundaries strictly.
    ]
    ```
 
-6. Generate `.streamlit/config.toml` with exactly:
+6. Generate `.streamlit/config.toml`. The `[client]` block is fixed; the `[theme]` block comes from Step 1e — the user's custom choices mapped per the `$quiz/style` theming contract, or (default) the canonical theme below:
 
    ```toml
    [client]
    showErrorDetails = "none"     # "none", NOT false — the deprecated false maps to "stacktrace" and still leaks tracebacks
-   toolbarMode = "minimal"
 
    [theme]
    base = "light"
    primaryColor = "#29b5e8"
+   linkColor = "#1572a1"
+   baseRadius = "0.5rem"
+   borderColor = "#d6e4ec"
+   showWidgetBorder = true
+   chartCategoricalColors = ["#29b5e8", "#F1914C", "#36B37E", "#7C5CFC"]
+
+   [theme.sidebar]
+   secondaryBackgroundColor = "#eef6fa"
    ```
+
+   Rules: ONLY native `[theme]`/`[theme.sidebar]` keys (full key reference in `$quiz/style`); no CSS, no external `fontFaces` (CSP); `chartCategoricalColors[0..1]` MUST match the chart constants in `_config.py`.
 
 7. Generate `snowflake.yml` (deploy descriptor for Path B / Snowflake CLI) with exactly:
 
@@ -554,6 +594,20 @@ Use the Edit tool on `AGENTS.md`. Follow the edit boundaries strictly.
 9. **Run the pre-deploy scan from the `$sis/pre-deploy` skill across ALL generated app files (`main.py`, `_*.py`, `pages/*.py`) — every item must pass.** Fix any issues and re-scan until clean.
 
 All files are written into the current workspace under `app/` (not inside `.snowflake/cortex/skills/`). The user deploys them in Step 9.
+
+## Step 8.5 — Self-verify the generated modules (OPTIONAL — advanced mode)
+
+Run ONLY if the user enabled **self-verify** in Step 1d. Requires a CoCo session that can execute code (Cloud Agents — rolling out since Summit 26). If this session has no code-execution capability, say so explicitly, skip this step, and continue to Step 9.
+
+1. Byte-compile every generated module to catch syntax errors before the user ever clicks Run:
+   ```
+   python -m py_compile app/main.py app/_config.py app/_cortex.py app/_data.py app/_questions.py app/_ui.py app/pages/*.py
+   ```
+2. Snowflake-bound modules (`get_active_session`, `AI_COMPLETE`) cannot execute outside SiS — do NOT try to run them; compile/parse checks only.
+3. On any failure: fix the module, re-run the `$sis/pre-deploy` scan, then repeat 8.5.
+4. Report: list of files checked, PASS/FAIL per file.
+
+This step supplements the Step 8 scan with an execution-level syntax check — it never replaces it.
 
 ## Step 9 — Deploy Streamlit app
 
@@ -681,6 +735,7 @@ Present:
 - Streamlit app: `SNOWPRO_QUIZ`
 - **App URL**: (from 10b)
 - Any additional features implemented
+- Advanced options active, if any (model profile / self-verify result / Automations recipe handed over)
 
 ### 10d — Final checkpoint
 
@@ -705,10 +760,12 @@ All stopping points below use `ask_user_question` (if available) to present stru
 
 - ⚠️ After Step 1a: Halt if AGENTS.md env config still has `<...>` placeholders; resume when filled.
 - ⚠️ After Step 1c: Confirm PDF and ask about optional CSV.
+- ⚠️ After Step 1e: Default vs custom look; if custom, run the guided theming dialog and confirm the palette before Step 2.
 - ⚠️ After Step 4: Wait for manual upload confirmation; verify via `LIST @stage`.
 - ⚠️ After Step 5a.1 (conditional): If conflicting domain structures found, let user choose.
 - ⚠️ After Step 5d: Domain verification. Approve/Re-extract/Abort. Do NOT proceed until user responds.
 - ⚠️ After Step 8 scan: All items from `$sis/pre-deploy` must PASS across every app file. Do NOT deploy on any FAIL. (No `ask_user_question` — pass/fail gate.)
+- ⚠️ After Step 8.5 (only if self-verify enabled): all modules compile-clean; on FAIL fix → re-scan → re-verify. If the session cannot execute code, state it and proceed.
 - ⚠️ Step 9: Compute-pool check (`SHOW COMPUTE POOLS`), then Path A / B / C deploy choice; wait for "deployed" (Path A) or upload confirmation (Path B/C).
 - ⚠️ After Step 10b: Derive app URL from `CURRENT_ORGANIZATION_NAME()` + `CURRENT_ACCOUNT_NAME()`, NOT from `CURRENT_ACCOUNT()`.
 - ⚠️ After Step 10: Deployment report. Done/Review.

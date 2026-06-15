@@ -30,9 +30,12 @@ Navigation is native multipage (`st.Page` + `st.navigation`), built in `main.py`
 main.py  ->  st.navigation([
     pages/quiz.py      "Quiz"   (default)   home -> quiz -> summary  (internal state machine)
     pages/review.py    "Review"             WRONG ANSWERS | LEARNING DASHBOARD  (st.pills sub-tabs)
+    pages/admin.py     "Admin"              app config, question manager, bank stats, spend, tools
     pages/<feature>.py                      only when the feature was requested
 ])
 ```
+
+**Config layer**: runtime behavior toggles live in `QUIZ_CONFIG` (defaults in `_config.py` `CONFIG_DEFAULTS`, DB overrides; `load_config()` cached + `save_config()` in `_data.py`, both with `clear_caches()` on write). Gates used below: `hints_enabled`, `contrast_enabled`, `debrief_enabled`, `remedial_enabled`, `explanations_default`, `default_round_size`, `pass_threshold_override`.
 
 **Entry point (`main.py`)**: `st.set_page_config` (first `st.` call) -> `init_session_state()` -> shared sidebar title -> `st.navigation(pages).run()`. Pages share `st.session_state` (it persists across page switches).
 
@@ -66,7 +69,9 @@ Cross-page redirects (e.g. recommendations -> quiz): set the target state, then 
 
 **Answer input**: `st.radio()` for single-answer (index=None, disabled once answered). Independent `st.checkbox()` per option for multi-answer (see `$sis/patterns` Multi-Answer Checkboxes).
 
-**Submit**: Records result in `round_history`, increments counters, sets `answered=True`, reruns. Does NOT call Cortex.
+**Socratic hint (BEFORE answering; gate `hints_enabled`)**: a secondary "💡 Podpowiedź" button near the answer input, visible ONLY while `answered == False`. First click → `call_cortex_json(prompt, "hint")`, show `hint_1`; second click reveals `hint_2`. The prompt MUST instruct: hints narrow the concept space (level 1) or eliminate ONE distractor with reasoning (level 2) and must NEVER name or imply the correct option; embed question/options per the untrusted-content delimiting rule (`$cortex/patterns`). State: `hint` (None/{}/dict), `hint_level` (0/1/2); once answered, the button disappears (the explanation takes over); record `hint_used = hint_level > 0` in the history item; reset both on Next.
+
+**Submit**: Records result in `round_history` (incl. `hint_used`), increments counters, sets `answered=True`, reruns. Does NOT call Cortex.
 
 **After submission**: Shows result badge and correct answer info. Do NOT add per-option markup (✓, strikethrough) — let the AI explanation handle details.
 - Correct: `:green-badge[✅ CORRECT]`
@@ -109,6 +114,10 @@ If explanations enabled, generates explanation lazily (see Explanation Contract 
 
 On "Next": reset explanation to `None`.
 
+## Contrast "A vs C" (post-answer; gate `contrast_enabled`)
+
+Under the explanation block: a two-option picker (default pre-selection: the user's wrong choice vs the correct one; any pair selectable) + "⚖️ Porównaj" button → `call_cortex_json(prompt, "contrast")` → render a compact table (`aspect | A | B`) + `exam_trap` as a caption. Prompt embeds the two option texts + question context per the delimiting rule. State: `contrast` (None/{}/dict), reset on Next. Rationale: SnowPro questions are mostly discrimination tasks between similar features — this trains exactly that.
+
 ---
 
 # History Item Schema
@@ -127,6 +136,7 @@ Each submitted answer is appended to `round_history`:
 | `selected` | str | Comma-joined selected letters |
 | `selected_labels` | list | `["A) full text", ...]` |
 | `is_correct` | bool | |
+| `hint_used` | bool | True if any hint level was revealed |
 | `_topic` | str | From `_current_topic` session state |
 | `mnemonic` | str | Empty initially; filled after explanation |
 | `doc_url` | str | Empty initially; filled from `doc_search` |
@@ -144,7 +154,16 @@ Each submitted answer is appended to `round_history`:
 - Fail: `:orange-badge[NOT YET] {gap}% to go - keep practicing!` (include encouragement)
 - Wrong answers in `st.container(border=True)` cards with domain/difficulty badges
 - Perfect score: `:green-badge[PERFECT SCORE] No wrong answers this round.`
-- Two buttons: "Retry Same Config" (same settings, rebuilds topic schedule), "Configure New Round" (back to home). Both set `screen` and call `st.rerun()` to transition immediately.
+
+**AI debrief (gate `debrief_enabled`)**: when the round has ≥1 wrong answer, generate once on entering summary — `call_cortex_json(prompt, "debrief")` with per-question domain/topic/correctness/`hint_used` from `round_history`. Render: patterns as bullets, max 3 `priority_actions`, `one_thing` as a highlighted callout. Perfect round → no call, nothing rendered. State `debrief` (None/{}/dict), reset on round start.
+
+**Buttons (pass/fail dependent)**:
+- **Pass** (`score_pct >= threshold`): "Retry Same Config" (same settings, rebuilds topic schedule) + "Configure New Round" (back to home) — as before.
+- **Fail** AND `remedial_enabled`: "Runda poprawkowa" (primary) + "Configure New Round". NO "Retry Same Config" on fail.
+- Threshold = `pass_threshold_override` from config if set, else `PASS_THRESHOLD`.
+- All buttons set state and call `st.rerun()`.
+
+**Remedial round contract**: queue = the wrong items from `round_history` (order shuffled; `_shuffle_options` re-applied to every question so option letters move). Sets `_round_type="remedial"`, `_remedial_queue`, resets counters/q_index/history for the remedial pass. During remedial: hints/explanations behave normally; questions count toward nothing — **no `_write_back_results()`, no debrief, no logging** (a re-test of just-seen questions would inflate readiness stats and duplicate review entries). Remedial summary: score + only "Configure New Round" (no chained remedials). `_round_type` resets to `"practice"` on any new round.
 
 ---
 
@@ -188,7 +207,23 @@ Wrong answer cards: `st.container(border=True)` with domain badge + difficulty b
 
 # Optional Feature Pages
 
-Optional features (`$quiz/features`) are generated as **separate pages** (`pages/exam_simulation.py`, `pages/flashcards.py`, `pages/recommendations.py`) and appended to the `st.navigation` list in `main.py` only when requested. They read the same `_data.py` loaders and shared `_ui.py` helpers — no new tables except where a feature's spec says so.
+Optional features (`$quiz/features`) are generated as **separate pages** (`pages/exam_simulation.py`, `pages/flashcards.py`, `pages/recommendations.py`) and appended to the `st.navigation` list in `main.py` only when requested. Two features hook into existing pages instead: Feature 7 (misconception analysis) extends the Review page, Feature 8 (flag a question) adds a button to the quiz screen. They read the same `_data.py` loaders and shared `_ui.py` helpers — no new tables except where a feature's spec says so.
+
+---
+
+# Admin Page (`pages/admin.py` — core)
+
+Five sections, top to bottom. Single-user app → visible to the owner; when multi-user lands, gate via restricted caller's rights (fail-closed) — do NOT build RBAC now.
+
+**1. App configuration**: toggles for `hints_enabled`, `contrast_enabled`, `debrief_enabled`, `remedial_enabled`, `explanations_default`; slider `default_round_size` (5–50); `pass_threshold_override` slider with an "exam default (75%)" reset button + warning caption that the official exam threshold does not change. Every change → `save_config(key, value)` (MERGE by key, bind params) → `clear_caches()` → `st.toast`.
+
+**2. Question manager**: filter pills (domain / difficulty / source) → cached query → `st.dataframe(..., on_select="rerun", selection_mode="single-row")` → selected row loads into an edit form below (question `st.text_area`, options A–E inputs, `correct_answer` multiselect restricted to NON-EMPTY options, difficulty pills; `is_multi` derived = len(correct) > 1) → UPDATE by `question_id`. "Add new question" = the same form, empty → INSERT with `source='MANUAL'`. **Hard rules**: every write via bind params (NEVER f-string); length caps enforced in the form AND by truncation (question 2000, options 500); `correct_answer` ⊆ non-empty options; ≥2 options. **"Generate batch (AI)"** button: pick domain + difficulty mix → generates 10 questions via the `_questions.py` machinery (`response_format`, grounded on `key_facts`) → INSERT with `source='AI_GENERATED'` → report count; caption with an approximate-cost note. If Feature 8 is enabled, show OPEN flags next to their questions.
+
+**3. Bank stats**: cached coverage table — questions per domain × difficulty × source, plus flagged count (if Feature 8).
+
+**4. Cortex spend (graceful)**: `_cortex.py` sets a session `QUERY_TAG` (JSON: app, feature, model) and passes the feature per call. The dashboard reads `SNOWFLAKE.ACCOUNT_USAGE.CORTEX_FUNCTIONS_USAGE_HISTORY` inside try/except: on a permissions error render an info banner with the exact statement (`GRANT IMPORTED PRIVILEGES ON DATABASE SNOWFLAKE TO ROLE <role>;`) instead of crashing. Charts: spend by feature, spend by model (sonnet vs opus comparison). Caption: ACCOUNT_USAGE lags up to ~2h.
+
+**5. Tools**: "Refresh data" (`clear_caches()`); CSV export of `QUIZ_REVIEW_LOG` / `QUIZ_SESSION_LOG` (`st.download_button`); danger zone in an expander — "Reset logs" requires typing `DELETE` to confirm, runs `DELETE FROM` on the two log tables only (NEVER DROP, consistent with governance).
 
 ---
 
@@ -246,6 +281,12 @@ All keys initialized in `init_session_state()` in `main.py` (state is shared acr
 | `_rec_cache_key` | str\|None | `None` | Cache key = f"rec_{sessions}" |
 | `_pending_finish` | bool | `False` | Finish pending flag for deferred write-back |
 | `_op_clear_keys` | list | `[]` | Widget keys to pop at top of next run (flag-at-top reset) |
+| `hint` | None/{}/ dict | `None` | Socratic hint (None=not tried, {}=failed, dict=success) |
+| `hint_level` | int | `0` | 0=none, 1=hint_1 shown, 2=hint_2 shown |
+| `contrast` | None/{}/ dict | `None` | Contrast result for the current question |
+| `debrief` | None/{}/ dict | `None` | Round debrief (generated once per round end) |
+| `_round_type` | str | `"practice"` | practice / remedial |
+| `_remedial_queue` | list | `[]` | Wrong items queued for the remedial round |
 
 Page navigation state (`nav_pills`, `_current_page`, `_redirect_to_quiz`) is GONE — `st.navigation` owns the current page, and redirects use `st.switch_page("pages/quiz.py")` directly after setting the target state.
 

@@ -37,23 +37,27 @@ All sections reference these values. Never hardcode environment names elsewhere 
 
 ## Domain model
 
-Four tables, all in `{database}.{schema}`. Full DDL lives in `$setup-exam` Step 3.
+Five tables, all in `{database}.{schema}`. Full DDL lives in `$setup-exam` Step 3. (A sixth, QUIZ_FLAGS, exists only when the flag-a-question feature is enabled.)
 
 ### EXAM_DOMAINS
 Populated once per exam from the study guide PDF via `AI_PARSE_DOCUMENT` + `AI_COMPLETE`.
 columns: `domain_id`, `domain_name`, `weight_pct`, `topics`, `key_facts`.
 
 ### QUIZ_QUESTIONS
-Pre-loaded from CSV (if user has one) or AI-generated in `$setup-exam` Step 6 grounded on `key_facts`. Not to be confused with runtime AI generation, which bypasses this table.
+The optional question bank. Loaded from CSV in `$setup-exam` Step 6 if the user has one; otherwise stays empty and is seeded post-build (Admin "Generate batch", worksheet recipe, scheduled task/Automation). NEVER auto-generated during setup. Not to be confused with runtime AI generation, which bypasses this table.
 columns: `question_id`, `domain_id`, `domain_name`, `difficulty`, `question_text`, `is_multi`, `option_a..e`, `correct_answer`, `source`, `created_at`.
 
 ### QUIZ_REVIEW_LOG
-Per-question wrong-answer history, written by the app at round end. Drives the Review tab and domain error analysis.
-columns: `log_id`, `logged_at`, `domain_id`, `domain_name`, `difficulty`, `question_text`, `correct_answer`, `mnemonic`, `doc_url`.
+Per-question wrong-answer history, written by the app at round end. Drives the Review page, domain error analysis, and (optionally) misconception analysis.
+columns: `log_id`, `logged_at`, `domain_id`, `domain_name`, `difficulty`, `question_text`, `correct_answer`, `selected_answer`, `mnemonic`, `doc_url`, `misconception`.
 
 ### QUIZ_SESSION_LOG
-Per-round summary, written by the app at round end. Drives the Learning Dashboard progress metrics.
+Per-round summary, written by the app at round end. Drives the Learning Dashboard progress metrics. Remedial rounds write nothing (by design).
 columns: `session_id`, `session_ts`, `exam_code`, `round_size`, `correct_count`, `score_pct`, `domain_filter`, `difficulty`.
+
+### QUIZ_CONFIG
+Runtime app configuration (key-value, VARIANT), edited from the Admin page. Defaults live in `_config.py` `CONFIG_DEFAULTS`; DB values override them via the cached `load_config()`.
+columns: `config_key`, `config_value`, `updated_at`.
 
 ---
 
@@ -65,6 +69,20 @@ Accounts that cannot reach the chosen model in-region must enable cross-region i
 
 For calling patterns, dollar-quoting, structured outputs (`response_format`), and diagnostics: see `$cortex/patterns`.
 For prompt quality audit: see `$cortex/prompt-audit`.
+
+---
+
+## Advanced options (opt-in)
+
+All OFF by default. The user enables them in `$setup-exam` Step 1d (or later, by asking). Preview-dependent items must be verified in-account before relying on them. Full description: `docs/customization.md` section 5.
+
+| Option | Values | What it does |
+|--------|--------|--------------|
+| model_profile | `default` / `quality` | `default` = `claude-sonnet-4-6`. `quality` = `claude-opus-4-7` (newest GA opus as of 2026-06) as `CORTEX_MODEL` - stronger reasoning for hard distractors, slower and markedly more expensive. `claude-opus-4-8` is **Public Preview** (new Claude models land in Cortex same-day but in preview; GA follows) - only at the user's explicit request. |
+| self_verify | `off` / `on` | `$setup-exam` Step 8.5: the agent compile-checks the generated modules before deploy. Needs a CoCo session with code execution (Cloud Agents); skipped gracefully otherwise. |
+| automations | `off` / `on` | Recurring unattended maintenance (question-bank refresh, scan re-run) via CoCo Automations (**Preview**). Report-only recipe in `docs/customization.md` section 5c. |
+
+These never change the default pipeline - without an explicit request, behave exactly as if this section did not exist.
 
 ---
 
@@ -82,8 +100,9 @@ The generated app is a **decomposed multipage Streamlit project** under `app/`. 
 | `_data.py` | Cached loaders - `load_domains()`, `load_session_stats()`, `load_recent_sessions()`, `load_domain_errors()` (each calls `get_active_session()` inside) - plus `clear_caches()` invalidation |
 | `_questions.py` | `parse_topics`, `_build_topic_schedule`, `generate_ai_question`, `get_question`, answer shuffling, dedup via `_get_shown_texts` |
 | `_ui.py` | Shared render helpers: badges, cards, explanation expander, docs link |
-| `pages/quiz.py` | QUIZ page: home → quiz → summary state machine |
+| `pages/quiz.py` | QUIZ page: home → quiz → summary state machine (hints, contrast, debrief, remedial round) |
 | `pages/review.py` | REVIEW page: wrong-answer history + learning dashboard |
+| `pages/admin.py` | ADMIN page: app config (QUIZ_CONFIG), question manager + Generate batch, bank stats, Cortex spend, tools |
 | `pages/<feature>.py` | Generated ONLY when the user requests an optional feature (`$quiz/features`) - e.g. `exam_simulation.py`, `flashcards.py`, `recommendations.py` |
 
 ### Pages and navigation
