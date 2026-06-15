@@ -42,7 +42,7 @@ The pipeline starts after the user drops the PDF into `STAGE_QUIZ_DATA` via Snow
 
 At this point the user gets a checkpoint: approve the domain list, re-extract with a tweaked prompt, or abort. No write to `QUIZ_QUESTIONS` runs until approval.
 
-The next branch depends on whether the user has a question bank. If yes, the agent runs `COPY INTO QUIZ_QUESTIONS FROM @stage/file.csv` with `source='MANUAL'`. If the CSV/JSON schema differs from the target table, `$adapt-questions` is invoked to map columns (Strategies A-E, one of which uses `AI_COMPLETE` to classify rows by domain). If there's no CSV/JSON, the agent generates questions directly via `AI_COMPLETE`, batched per domain - typically ~30 questions per domain in groups of 10, grounded on the `key_facts` extracted earlier. These questions are inserted into `QUIZ_QUESTIONS` so the user can use them later as `question bank` for the fast rounds.
+The next branch depends on whether the user has a question bank. If yes, the agent runs `COPY INTO QUIZ_QUESTIONS FROM @stage/file.csv` with `source='MANUAL'`. If the CSV/JSON schema differs from the target table, `$adapt-questions` is invoked to map columns (Strategies A-E, one of which uses `AI_COMPLETE` to classify rows by domain). If there's no CSV/JSON, the bank deliberately stays **empty** — no build-time generation (slow, burns the user's token budget); the app runs on runtime AI questions, and the agent hands the user the seeding options instead (Admin "Generate batch", the worksheet recipe in customization.md section 6, a scheduled task/Automation).
 
 Once `QUIZ_QUESTIONS` is populated, the agent updates two lines in `AGENTS.md` (schema name and exam code), then reads the `$quiz/*` skills and writes the decomposed `app/` project (entry point, `_*.py` modules, `pages/`, configs) into the workspace. Before those files are considered final, the agent runs `$sis/pre-deploy` - a scan across all app files that catches dollar-quoting bugs, SQL-injection risks, missing `@st.cache_data` decorators, and other Streamlit-in-Snowflake pitfalls. The scan must fully pass.
 
@@ -56,7 +56,7 @@ The user then previews the app from the workspace (**Run** → a private dev app
 | Extract domains | Markdown | `EXAM_DOMAINS` rows | `AI_COMPLETE` |
 | Extract key facts | Markdown + each domain | `EXAM_DOMAINS.key_facts` | `AI_COMPLETE` (per-domain) |
 | User checkpoint | domain list | approval gate | `ask_user_question` |
-| Load questions | CSV or key_facts | `QUIZ_QUESTIONS` rows | `COPY INTO` or `AI_COMPLETE` |
+| Load questions (optional) | CSV, if provided | `QUIZ_QUESTIONS` rows (else empty) | `COPY INTO` (no build-time generation) |
 | Update context | `AGENTS.md` | schema + exam_code filled | file edit |
 | Generate app | `$quiz/*` skills | `app/` project | file write in workspace |
 | Scan | generated files | PASS gate | `$sis/pre-deploy` (all items) |
@@ -118,8 +118,10 @@ erDiagram
         varchar difficulty
         varchar question_text "snapshot"
         varchar correct_answer "snapshot"
+        varchar selected_answer "snapshot"
         varchar mnemonic "if explanations on"
         varchar doc_url "if explanations on"
+        varchar misconception "feature 7, write-once"
     }
     QUIZ_SESSION_LOG {
         int session_id PK
@@ -136,7 +138,9 @@ erDiagram
     EXAM_DOMAINS ||--o{ QUIZ_REVIEW_LOG : "snapshot ref"
 ```
 
-**Why four tables, not three.** `QUIZ_REVIEW_LOG` stores per-wrong-question data for the Review tab and per-domain error analysis. `QUIZ_SESSION_LOG` stores per-round aggregates needed for progress metrics. The tables must be separate because a round with zero wrong answers produces zero review rows but still needs a session row - merging the two would lose session data for perfect rounds, which is exactly the signal "am I ready for the exam?" depends on.
+(A fifth table, `QUIZ_CONFIG`, holds runtime app configuration for the Admin page — key-value, outside the ER above; the optional flag-a-question feature adds `QUIZ_FLAGS`.)
+
+**Why four learning tables, not three.** `QUIZ_REVIEW_LOG` stores per-wrong-question data for the Review tab and per-domain error analysis. `QUIZ_SESSION_LOG` stores per-round aggregates needed for progress metrics. The tables must be separate because a round with zero wrong answers produces zero review rows but still needs a session row - merging the two would lose session data for perfect rounds, which is exactly the signal "am I ready for the exam?" depends on.
 
 **Why `QUIZ_REVIEW_LOG` is not FK-linked to `QUIZ_QUESTIONS`.** Review rows are historical snapshots. They copy `question_text`, `correct_answer`, `domain_name` at the moment the answer was logged, so deleting or regenerating a question later doesn't orphan the history. The `domain_id` in `QUIZ_REVIEW_LOG` is a semantic reference to `EXAM_DOMAINS` (for grouping and dashboards), not an enforced FK.
 

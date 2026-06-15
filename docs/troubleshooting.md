@@ -89,17 +89,17 @@ AI_PARSE_DOCUMENT(..., {'mode': 'OCR'});
 
 ---
 
-## AI-generated questions come back with parse errors
+## Question-bank seeding fails / returns NULL
 
-**Cause:** `AI_COMPLETE` hit the output token limit on a batch of 10 questions. With structured outputs that surfaces as a failed/NULL call (not malformed JSON); the helper logs it to `session_state.last_cortex_error`.
+**Cause:** `AI_COMPLETE` hit the output token limit on a 10-question batch (Admin "Generate batch", the worksheet recipe, or an Automation run). With structured outputs that surfaces as a failed/NULL call (not malformed JSON).
 
-**Fix:** Reduce batch size (step 6b of `$setup-exam`) from 10 to 5 and rerun generation for that domain only:
+**Fix:** Reduce the batch to 5 questions and rerun for that domain only — in the worksheet recipe change "Generate 10" to "Generate 5"; from chat:
 
 ```
-rerun question generation for domain_id = 3 with batch_size = 5.
+seed the question bank for domain_id = 3 with batch_size = 5.
 ```
 
-The agent already has retry logic for exactly this case - usually one rerun is enough.
+Usually one rerun is enough.
 
 ---
 

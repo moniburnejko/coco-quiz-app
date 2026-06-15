@@ -74,17 +74,46 @@ Use `st.markdown(f"#### {text}")` (h4 heading) for question text display. NOT `s
 
 ---
 
-# Theme & CSS
+# Theming Contract (config.toml — the ONLY styling mechanism)
 
-NO `unsafe_allow_html` anywhere in the app (enforced by `$sis/pre-deploy`). Visual theming lives in `.streamlit/config.toml`:
+NO `unsafe_allow_html` anywhere in the app (enforced by `$sis/pre-deploy`). ALL visual styling = native Streamlit `[theme]` / `[theme.sidebar]` keys in `.streamlit/config.toml`. On the container runtime both sections are FULLY supported (verified vs Snowflake docs 2026-06).
+
+## Canonical default theme
 
 ```toml
 [theme]
 base = "light"
 primaryColor = "#29b5e8"
+linkColor = "#1572a1"
+baseRadius = "0.5rem"
+borderColor = "#d6e4ec"
+showWidgetBorder = true
+chartCategoricalColors = ["#29b5e8", "#F1914C", "#36B37E", "#7C5CFC"]
+
+[theme.sidebar]
+secondaryBackgroundColor = "#eef6fa"
 ```
 
-`layout="centered"` always — never `"wide"` (set once, in `main.py`'s `st.set_page_config`). Shared visual helpers (badges, cards, doc links) live in `_ui.py` as plain Streamlit components — no raw HTML.
+## Available knobs (for the Step 1e custom-look dialog)
+
+| User intent | Theme key(s) |
+|---|---|
+| Light/dark mode | `base` |
+| Brand/accent color | `primaryColor` (+ `linkColor` to match) |
+| Background tones | `backgroundColor`, `secondaryBackgroundColor` |
+| Corner roundness (sharp/soft/round) | `baseRadius`, `buttonRadius` ("none"/"small"/"medium"/"large"/"full"/rem) |
+| Borders on/off + color | `showWidgetBorder`, `borderColor`, `showSidebarBorder`, `dataframeBorderColor` |
+| Font stack | `font`, `headingFont`, `codeFont` — **built-in stacks only** ("sans-serif"/"serif"/"monospace"); NO `fontFaces`/external font URLs (CSP) |
+| Text sizing/weight | `baseFontSize`, `baseFontWeight`, `headingFontSizes`, `headingFontWeights` |
+| Badge palette (`:green-badge[]` etc.) | `greenColor`/`redColor`/`orangeColor`/`blueColor`/`grayColor` + their `*BackgroundColor`/`*TextColor` variants |
+| Chart series colors | `chartCategoricalColors` (array) |
+| Sidebar distinct look | any of the above under `[theme.sidebar]` |
+
+Rules:
+- Map dialog answers ONLY to these keys; if the user asks for something theming cannot do (animations, per-element CSS, custom layout), say so and offer the nearest theme-level effect.
+- **Charts ↔ theme alignment**: `chartCategoricalColors[0]` must equal the score-line constant and `[1]` the error-bar constant in `_config.py` (the Altair specs reference the constants explicitly).
+- SiS caveats: `st.set_page_config` `page_title`/`page_icon`/`menu_items` are NOT supported in SiS — do not set them; `layout="centered"` always, never `"wide"` (set once, in `main.py`).
+- Shared visual helpers (badges, cards, doc links) live in `_ui.py` as plain Streamlit components — no raw HTML.
 
 ---
 

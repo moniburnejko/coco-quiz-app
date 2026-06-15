@@ -1,6 +1,6 @@
 ---
 name: sis-pre-deploy
-description: "MANDATORY 20-item pre-deploy scan for the Streamlit-in-Snowflake app (container runtime). Run before EVERY deploy — catches SQL injection, runtime errors, cache and config pitfalls. Triggers: deploy, pre-deploy, scan, before deploying, push to snowflake, deploy checklist. Do NOT use for writing SiS code (sis-patterns) or Cortex call issues (cortex-patterns)."
+description: "MANDATORY 21-item pre-deploy scan for the Streamlit-in-Snowflake app (container runtime). Run before EVERY deploy — catches SQL injection, runtime errors, cache and config pitfalls, untrusted-input handling. Triggers: deploy, pre-deploy, scan, before deploying, push to snowflake, deploy checklist. Do NOT use for writing SiS code (sis-patterns) or Cortex call issues (cortex-patterns)."
 ---
 
 # When to Load
@@ -21,7 +21,7 @@ Parent skill `$sis` routes here for PRE-DEPLOY intent.
 
 # Pre-Deploy Scan
 
-Read ALL app files in full: `main.py`, every `_*.py` module, every `pages/*.py`, and `.streamlit/config.toml`. Then check each of the 20 items below across the whole project. For each item report PASS or FAIL. On FAIL: show the file, line number, and the offending code snippet.
+Read ALL app files in full: `main.py`, every `_*.py` module, every `pages/*.py`, and `.streamlit/config.toml`. Then check each of the 21 items below across the whole project. For each item report PASS or FAIL. On FAIL: show the file, line number, and the offending code snippet.
 
 ## Scan Items
 
@@ -137,11 +137,18 @@ All `.as_dict()` results must be normalized: `{k.upper(): v for k, v in row.as_d
 - PASS: normalization applied to every as_dict() call
 - FAIL: any as_dict() result accessed without uppercasing keys
 
+### Untrusted input hardening
+
+**21. Admin/flag inputs hardened**
+All Admin-page and flag writes (question edits, new questions, config saves, flags) use bind params; form values are length-capped before write (question 2000, options 500, comment 500); `correct_answer` is validated against non-empty options; any stored/user-editable text embedded in a prompt is wrapped in data delimiters per `$cortex/patterns` ("Untrusted content inside prompts").
+- PASS: all four conditions hold across `pages/admin.py` and every prompt that embeds bank questions
+- FAIL: any f-string write, uncapped input, unvalidated answer key, or undelimited stored text in a prompt
+
 ---
 
 ## Output
 
-After checking all 20 items, a summary table:
+After checking all 21 items, a summary table:
 
 | # | Item | Status | Notes |
 |---|------|--------|-------|
@@ -165,9 +172,10 @@ After checking all 20 items, a summary table:
 | 18 | date range query pattern | PASS/FAIL | |
 | 19 | slider date | PASS/FAIL | |
 | 20 | column name normalization | PASS/FAIL | |
+| 21 | admin/flag inputs hardened | PASS/FAIL | |
 
 **Final verdict:**
-- All 20 PASS -> "Clean. Proceed to deploy."
+- All 21 PASS -> "Clean. Proceed to deploy."
 - Any FAIL -> "Fix items [list] before deploying."
 
 For each FAIL item: show the exact file + line number and a 1-line fix suggestion.

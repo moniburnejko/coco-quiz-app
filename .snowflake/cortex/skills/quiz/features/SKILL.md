@@ -263,6 +263,73 @@ Sets `domain_filter`, `difficulty`, `round_size=10`, `screen="home"` (with the c
 
 ---
 
+# Feature 7: Misconception Analysis (Review page)
+
+**OPTIONAL** — implement only if user requests misconception analysis, error diagnosis, "why do I keep getting these wrong", or thinking-pattern analysis.
+
+## What
+
+Extends the **Review page** (no new page): per wrong answer, AI diagnoses the thinking error behind the user's specific selection; an aggregate section surfaces recurring error patterns.
+
+## Requirements
+
+`QUIZ_REVIEW_LOG.selected_answer` + `.misconception` columns (in the Step 3 DDL) — the write-back must populate `selected_answer` (resolved like `correct_answer`: `"{letter}) {full_text}"`).
+
+## Per-card diagnosis
+
+On each wrong-answer card: button "🧠 Diagnoza błędu" → `call_cortex_json(prompt, "misconception")` with question, all options, the user's selection, the correct answer — all wrapped per the untrusted-content delimiting rule (`$cortex/patterns`). Schema:
+
+```
+"misconception": "the likely thinking error behind choosing {selected} (1-2 sentences, names the confused concepts)",
+"contrast_with_correct": "the key distinction the user missed (1 sentence)",
+"how_to_avoid": "a practical check to apply next time (1 sentence)"
+```
+
+Render in a bordered container on the card. **Write-once**: persist `misconception` back to the row (UPDATE by `log_id`, bind params) — later visits read from the DB, no repeat call. Button shows only when the column is NULL; otherwise render the stored text.
+
+## Patterns section ("Twoje wzorce błędów")
+
+At the top of Wrong Answers, when ≥3 rows have `misconception IS NOT NULL`: button → one `call_cortex_json(..., "misconception_patterns")` over the collected diagnoses → `{recurring_patterns (array, max 3), advice (string)}`. Cache in session state keyed by diagnosis count; render as bullets + callout.
+
+## Session state keys
+
+`_misconception_{log_id}` transient render state only; persistence is the DB column.
+
+---
+
+# Feature 8: Flag a Question
+
+**OPTIONAL** — implement only if user requests question flagging, reporting bad questions, or bank quality control.
+
+## What
+
+A small "🚩 Zgłoś pytanie" button on the quiz screen (post-answer area) that records quality complaints; flags surface on the Admin page and in the Automations maintenance recipe.
+
+## DDL (generated ONLY when this feature is enabled; add to Step 3)
+
+```sql
+CREATE TABLE IF NOT EXISTS {database}.QUIZ_<CODE>.QUIZ_FLAGS (
+    flag_id        NUMBER AUTOINCREMENT PRIMARY KEY,
+    flagged_at     TIMESTAMP_LTZ DEFAULT CURRENT_TIMESTAMP(),
+    question_id    NUMBER,            -- NULL for runtime-AI questions
+    question_text  VARCHAR,           -- snapshot (AI questions have no id)
+    reason         VARCHAR,
+    comment        VARCHAR(500),
+    status         VARCHAR DEFAULT 'OPEN'
+);
+```
+
+## UI spec
+
+Post-answer, next to (not competing with) "Next": small secondary button → popover/expander with reason pills (`błędny klucz` / `niejasne` / `literówka` / `inne`) + optional comment (`st.text_input`, max 500 chars) → INSERT with bind params (question_id when the question came from the bank, text snapshot always) → toast "Zgłoszone". One flag per question per round (disable after submit).
+
+## Admin + Automations integration
+
+- Admin question manager shows OPEN flag count per question and lists flagged rows.
+- The customization.md §5c Automations recipe gains a step: regenerate flagged bank questions (`status='OPEN' AND question_id IS NOT NULL`) via the seeding machinery, set `status='REGENERATED'`, report.
+
+---
+
 ## Output
 
 Only the requested optional features implemented and integrated into quiz.py, following the UI patterns from `$quiz/style` and state management from `$quiz/screens`.

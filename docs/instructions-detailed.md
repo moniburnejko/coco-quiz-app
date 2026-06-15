@@ -11,7 +11,7 @@ You give CoCo a Snowflake certification **study guide PDF**. The agent:
 1. Creates a dedicated schema `QUIZ_<EXAM_CODE>` inside your database.
 2. Creates 2 stages (one for input data, one for the Streamlit app) and 4 tables (`EXAM_DOMAINS`, `QUIZ_QUESTIONS`, `QUIZ_REVIEW_LOG`, `QUIZ_SESSION_LOG`).
 3. Extracts domain list, weights, topics, and testable facts from the PDF using `AI_PARSE_DOCUMENT` + `AI_COMPLETE`.
-4. Either loads a question bank you provide, or generates ~30 questions per domain via AI.
+4. Loads a question bank if you provide one (CSV/JSON); otherwise the bank stays empty and questions are AI-generated at runtime (you can seed the bank later from the Admin page, a worksheet recipe, or a scheduled task).
 5. Generates the multipage `app/` Streamlit project in the workspace (`main.py`, `_*.py` modules, `pages/`, configs — container runtime).
 6. Runs a mandatory pre-deploy scan to catch Streamlit-in-Snowflake footguns.
 7. Deploys the app — by default via the Workspaces **Run + Deploy** flow (live preview, no stage upload), or via stage + `CREATE STREAMLIT` as the scripted fallback.
@@ -235,9 +235,10 @@ The agent will:
 
 1. Ask you for the exam name and exam code (e.g. "SnowPro Core" / "COF-C03").
 2. Ask for the PDF filename (required) and optionally the CSV filename.
-3. Ask about additional customisations (optional features from `$quiz/features` - exam simulation mode, flashcards, AI study recommendations, etc.).
-4. Create the schema, stages, tables, file format (SQL visible in the chat - approve or reject each step).
-5. Stop and ask you to upload the PDF.
+3. Ask about additional customisations (optional features from `$quiz/features` - exam simulation mode, flashcards, AI study recommendations, misconception analysis, question flagging, etc.).
+4. Ask whether you want the **default look or a custom one** - custom means a short style dialog (light/dark, accent color, roundness, fonts), applied via Streamlit theming only.
+5. Create the schema, stages, tables, file format (SQL visible in the chat - approve or reject each step).
+6. Stop and ask you to upload the PDF.
 
 Do **not** try to pre-empt the agent by creating objects manually. Let it drive.
 
@@ -299,15 +300,13 @@ If numbers look wrong (e.g. weights sum to 97 - AI missed a domain), choose **Re
 
 ---
 
-## Step 6 - load or generate the question bank
+## Step 6 - load the question bank (optional)
 
 Two paths depending on what you said in step 4:
 
-**CSV/JSON available** > `COPY INTO QUIZ_QUESTIONS FROM @STAGE_QUIZ_DATA/<filename>.csv FILE_FORMAT = FF_*;` then backfills `domain_name` from `EXAM_DOMAINS`. If the CSV columns don't match the target schema, the agent invokes `$adapt-questions` which maps columns.
+**CSV/JSON available** > `COPY INTO QUIZ_QUESTIONS FROM @STAGE_QUIZ_DATA/<filename>.csv FILE_FORMAT = FF_*;` then backfills `domain_name` from `EXAM_DOMAINS`. If the CSV columns don't match the target schema, the agent invokes `$adapt-questions` which maps columns. The agent reports row count, distinct domain count, and null-domain count.
 
-**AI generation only** > for each domain, the agent reads `key_facts` + `topics` and runs `AI_COMPLETE` in batches of 10 questions (JSON output). Target: ~30 questions per domain, mix of easy/medium/hard. For 5–6 domains that is 150–180 questions, takes a few minutes.
-
-Either way, the agent reports row count, distinct domain count, and null-domain count. If anything is zero it investigates before continuing.
+**No CSV/JSON** > the bank deliberately stays **empty** — the agent does NOT generate questions during setup (it's slow and would burn your token budget before you ever see the app). The app works fully on runtime AI questions. The agent explains why a populated bank is still worth having (resilience when AI calls fail, instant load, curated consistency) and how to seed it later: CSV upload, the Admin page **Generate batch** button, the worksheet recipe in [customization.md](customization.md) (section 6), or a scheduled task / Automation.
 
 ---
 
@@ -395,10 +394,11 @@ If the account has no usable compute pool, the agent generates `environment.yml`
 Snowsight > **Projects > Streamlit > SNOWPRO_QUIZ**.
 
 - On **Home**: pick 5 questions, medium difficulty, any domain, "AI Generated" source, explanations ON. Click **Start Round**.
-- On **Quiz**: wait a couple seconds for the first AI-generated question to load, answer it, submit, check the explanation.
+- On **Quiz**: wait a couple seconds for the first AI-generated question to load. Try the **💡 Podpowiedź** button *before* answering (two levels, never spoils). Answer, submit, check the explanation — and try **⚖️ Porównaj** on two options.
 - Click through all 5, then **Finish**.
-- **Summary**: score, pass/fail vs 75%, wrong-answer cards.
-- **Review** page: filter by domain; click **Learning Dashboard** - you should see your first session plotted.
+- **Summary**: score, pass/fail vs threshold, wrong-answer cards, the AI debrief. If you failed, you'll also see **Runda poprawkowa** — your wrong answers back, reshuffled (it doesn't write to stats).
+- **Review** page: filter by domain; click **Learning Dashboard** - you should see your first session plotted (remedial rounds excluded by design).
+- **Admin** page: check bank stats, flip a toggle (e.g. hints off/on), optionally **Generate batch (AI)** to start seeding the bank.
 
 Confirm:
 

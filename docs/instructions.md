@@ -128,10 +128,11 @@ After the agent finishes generation + passes the pre-deploy scan, the `app/` pro
 
 Snowsight > **Projects > Streamlit > SNOWPRO_QUIZ** (or whatever `app_name` is set in `AGENTS.md`).
 
-Walk through both pages (navigation is native multipage):
+Walk through the pages (navigation is native multipage):
 
-- **Quiz page** - home (round size, difficulty, domain, source, explanations toggle) → quiz (answer, submit, feedback + optional AI explanation) → summary (score, pass/fail vs 75% threshold, wrong-answer cards).
+- **Quiz page** - home (round size, difficulty, domain, source, explanations toggle) → quiz (try the 💡 hint *before* answering; after submitting: feedback, AI explanation, ⚖️ contrast between two options) → summary (score, pass/fail vs threshold, wrong-answer cards, AI debrief; fail a round to see the **Runda poprawkowa** button — your wrong answers, reshuffled).
 - **Review page** - wrong-answer history with filters + Learning Dashboard tab.
+- **Admin page** - flip a config toggle (e.g. round-size default), check bank stats, try **Generate batch (AI)** to seed the question bank.
 
 Complete at least one round so `QUIZ_SESSION_LOG` and `QUIZ_REVIEW_LOG` get data for dashboard charts.
 

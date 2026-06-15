@@ -44,33 +44,36 @@ Run `$cortex/prompt-audit` after the prompt change to catch JSON key mismatches.
 
 ## 2. Visual styling
 
-Invoke `$quiz/style` and describe what you want. The skill documents:
+Two moments to style the app:
 
-- **Badge colours** - pass / fail / warning / info palette.
-- **Section labels** - uppercase mini-headers above card groups.
-- **Chart colours** - currently `#29b5e8` (Snowflake blue) for the score line and `#F1914C` (orange) for domain errors. Swap to any hex.
-- **Card layout** - wrong-answer cards on Summary and Review tabs.
-- **Button style** - primary vs secondary vs ghost.
+**At build time** — `$setup-exam` Step 1e asks: default look or custom? Custom = a short guided dialog with CoCo (light/dark, accent color, roundness, font stack, sidebar tint), mapped to native Streamlit `[theme]` / `[theme.sidebar]` keys in `.streamlit/config.toml`. No CSS is ever used.
+
+**After build** — invoke `$quiz/style` and describe the change. Modern theming covers much more than colors:
+
+- **Badge palette** - `:green-badge[]` / `:red-badge[]` / `:orange-badge[]` colors are themable (`greenColor`, `redColor`, ... + `*BackgroundColor`/`*TextColor`).
+- **Chart colours** - `chartCategoricalColors` in the theme, aligned with the `_config.py` constants (`#29b5e8` score line, `#F1914C` error bars by default).
+- **Roundness / borders / fonts** - `baseRadius`, `buttonRadius`, `borderColor`, `showWidgetBorder`, built-in font stacks.
+- **Sidebar look** - any of the above under `[theme.sidebar]`.
 
 Example prompt:
 
 ```
-run $quiz/style. I want the score line chart in green (#36B37E) and the readiness score metric in the same green. Also change the review-tab "section labels" to be teal, not blue.
+run $quiz/style. I want a dark base, violet accent (#7C5CFC), round corners, and the score line chart in green (#36B37E).
 ```
 
-The agent updates the relevant constants (in `_config.py` / `_ui.py`), runs `$sis/pre-deploy`, and asks you to re-deploy.
+The agent updates `.streamlit/config.toml` (+ matching `_config.py` chart constants), runs `$sis/pre-deploy`, and asks you to re-deploy.
 
 ### Branding (title, exam name, logo)
 
-- `EXAM_NAME` constant in `_config.py`: affects the page title and the Exam Simulation results screen.
-- `st.set_page_config(page_title=..., page_icon=...)` in the header: change the browser-tab title and favicon. `page_icon` accepts an emoji, a URL to a hosted image, or (for SiS) a path in the app stage.
-- For a custom logo on the Home screen: `st.image(url_or_stage_path)` at the top of `render_home`.
+- `EXAM_NAME` constant in `_config.py`: affects the in-app title and the Exam Simulation results screen.
+- Note: `st.set_page_config` `page_title` / `page_icon` / `menu_items` are **not supported in Streamlit-in-Snowflake** — the browser tab is controlled by Snowsight. Don't fight it.
+- For a custom logo on the Home screen: `st.image(url_or_stage_path)` at the top of the home screen in `pages/quiz.py`.
 
 ---
 
 ## 3. Functional features
 
-`$quiz/features` lists 6 opt-in features. They are **not** enabled by default. Add any combination to your setup prompt, or ask the agent to bolt them onto an already-deployed app.
+`$quiz/features` lists 8 opt-in features. They are **not** enabled by default. Add any combination to your setup prompt, or ask the agent to bolt them onto an already-deployed app.
 
 | Feature | What it adds | New session-state / data |
 |---|---|---|
@@ -79,7 +82,9 @@ The agent updates the relevant constants (in `_config.py` / `_ui.py`), runs `$si
 | **Quick Stats Sidebar** | Persistent sidebar widget showing today's streak, questions answered this week, avg score last 5 rounds | reads from `QUIZ_SESSION_LOG` |
 | **Spaced Repetition (Smart Review)** | "Next-due" queue picks wrong answers from the Review log based on time since last seen (Leitner-style intervals). Integrates with the Review tab | new table: `QUIZ_REVIEW_SCHEDULE` (question_id, next_due_at, interval_days) |
 | **Achievement Badges** | Cumulative badges (5 sessions, 100 questions, 7-day streak, first perfect round, ...). Shown on Dashboard | `compute_badges()` reads from `QUIZ_SESSION_LOG` and `QUIZ_REVIEW_LOG` |
-| **AI Study Recommendation** | New Review sub-tab: AI reads your error history + domain weights and produces a study plan: "You are weak on Performance Tuning (2/8 correct). Focus on: ..." grounded on `key_facts` | reads from `QUIZ_REVIEW_LOG` + `EXAM_DOMAINS.key_facts`, writes nothing |
+| **AI Study Recommendation** | Own page: AI reads your error history + domain weights and produces a study plan: "You are weak on Performance Tuning (2/8 correct). Focus on: ..." grounded on `key_facts` | reads from `QUIZ_REVIEW_LOG` + `EXAM_DOMAINS.key_facts`, writes nothing |
+| **Misconception Analysis** | On the Review page: AI diagnoses the thinking error behind each wrong selection ("you conflated clustering keys with partitioning") + a "your recurring error patterns" section | uses `QUIZ_REVIEW_LOG.selected_answer`; writes diagnoses to `QUIZ_REVIEW_LOG.misconception` (write-once) |
+| **Flag a Question** | "🚩 Zgłoś pytanie" button on the quiz screen; flags surface in the Admin question manager and can be auto-regenerated by the weekly Automation | new table: `QUIZ_FLAGS` (reason, comment, status) |
 
 ### How to request features
 
@@ -183,6 +188,94 @@ Once on the new branch, run the setup prompt. The agent edits `AGENTS.md` and ge
 
 Cost: one manual branch-switch step per exam. 
 Benefit: clean history, easier diffs between exams, one fork can hold many exam configurations without any file churn on `main`.
+
+---
+
+## 5. Advanced mode (opt-in)
+
+Three extras for power users. All OFF by default — enable by asking for them in the setup prompt (Step 1d) or in any later chat. Items marked **Preview** depend on account/region availability; verify before relying on them. Summary table: `AGENTS.md` > `Advanced options`.
+
+### 5a - Quality model profile (opus-4-x)
+
+The default `CORTEX_MODEL` is `claude-sonnet-4-6` — the best balance of quality, speed, and cost for question generation. The **quality profile** swaps it for `claude-opus-4-7` (newest GA opus as of 2026-06): noticeably stronger on hard questions (plausible distractors, multi-concept trade-offs), but slower and markedly more expensive per token.
+
+Lifecycle note: thanks to the Anthropic partnership, new Claude models land in Cortex **same-day — but in Public Preview**; GA follows some weeks later (Snowflake marks preview models as not suitable for production). `claude-opus-4-8` is currently **Public Preview** — use only on explicit request; check the [models & regional availability page](https://docs.snowflake.com/en/user-guide/snowflake-cortex/aisql-regional-availability) for current status.
+
+Enable: say "use the quality model profile" in the setup prompt — the agent sets `CORTEX_MODEL = "claude-opus-4-7"` in `_config.py`. Cheaper hybrid worth considering: generate the pre-loaded question bank once on opus (`$setup-exam` Step 6b), keep runtime AI questions and explanations on sonnet.
+
+### 5b - Agent self-verify (Cloud Agents)
+
+With self-verify enabled, `$setup-exam` adds Step 8.5: before handing you the app, the agent byte-compiles every generated module (`py_compile` over `main.py`, `_*.py`, `pages/*.py`) and fixes whatever fails. Catches syntax errors before you ever click **Run**.
+
+Requires a CoCo session that can execute code (**Cloud Agents** — rolling out since Summit 26). If the session cannot execute code, the agent says so and skips the step — the Step 8 pre-deploy scan still runs either way.
+
+### 5c - Automations (Preview)
+
+CoCo **Automations** (Preview) run recurring, unattended jobs. A useful report-only recipe for this asset — weekly maintenance:
+
+```
+read AGENTS.md. then:
+1. run the $sis/pre-deploy scan over app/ and report any FAIL.
+2. check QUIZ_QUESTIONS: if any domain has fewer than 20 questions, generate one
+   batch (10) for that domain per the seeding recipe (docs/customization.md
+   section 6) and report counts.
+3. if QUIZ_FLAGS exists: regenerate flagged bank questions (status='OPEN' and
+   question_id is not null), set status='REGENERATED', report.
+4. summarize: scan verdict, rows added per domain, flags handled, anything
+   needing my attention.
+do not deploy anything; report only.
+```
+
+Schedule it weekly in CoCo's Automations UI once available in your account. Keep automations **report-only** — deploys stay a human decision (see the commit/deploy hygiene the whole asset follows).
+
+---
+
+## 6. Seeding the question bank
+
+`$setup-exam` deliberately does **not** pre-generate questions (slow, burns your token budget during setup, and runtime AI questions work without it). A populated bank is still worth having:
+
+- **Resilience** - if an AI call fails (service interruption, cross-region issue, exhausted token limits), the app falls back to bank questions instead of erroring;
+- **Speed** - bank questions load instantly, no AI round-trip;
+- **Consistency** - a curated, repeatable set (and the only thing the "From question bank" source mode uses).
+
+Four ways to seed it, cheapest-effort first:
+
+1. **CSV/JSON at (or after) build** - upload to `STAGE_QUIZ_DATA`, the agent runs `$adapt-questions`.
+2. **Admin page → "Generate batch (AI)"** - pick a domain, get 10 grounded questions inserted; repeat as needed.
+3. **Worksheet recipe** - run this in a Snowsight worksheet (per domain; adjust names):
+
+   ```sql
+   INSERT INTO <db>.QUIZ_<CODE>.QUIZ_QUESTIONS
+     (domain_id, domain_name, difficulty, question_text, is_multi,
+      option_a, option_b, option_c, option_d, option_e, correct_answer, source)
+   SELECT d.domain_id, d.domain_name,
+          q.value:difficulty::VARCHAR,
+          LEFT(q.value:question_text::VARCHAR, 2000),
+          q.value:is_multi::BOOLEAN,
+          LEFT(q.value:option_a::VARCHAR, 500), LEFT(q.value:option_b::VARCHAR, 500),
+          LEFT(q.value:option_c::VARCHAR, 500), LEFT(q.value:option_d::VARCHAR, 500),
+          LEFT(q.value:option_e::VARCHAR, 500),
+          q.value:correct_answer::VARCHAR, 'AI_GENERATED'
+   FROM <db>.QUIZ_<CODE>.EXAM_DOMAINS d,
+        LATERAL FLATTEN(PARSE_JSON(AI_COMPLETE(
+          model => 'claude-sonnet-4-6',
+          prompt => 'Generate 10 exam questions for the domain "' || d.domain_name ||
+                    '" with a 3 easy / 4 medium / 3 hard difficulty mix, grounded ONLY on these facts: ' || d.key_facts,
+          model_parameters => {},
+          response_format => {'type':'json','schema':{'type':'object','properties':{
+            'questions':{'type':'array','items':{'type':'object','properties':{
+              'difficulty':{'type':'string'},'question_text':{'type':'string'},
+              'is_multi':{'type':'boolean'},'option_a':{'type':'string'},'option_b':{'type':'string'},
+              'option_c':{'type':'string'},'option_d':{'type':'string'},'option_e':{'type':'string'},
+              'correct_answer':{'type':'string'}},
+              'required':['difficulty','question_text','is_multi','option_a','option_b','correct_answer']}}},
+            'required':['questions']}})):questions) q
+   WHERE d.domain_id = '1';   -- run per domain (or remove to do all at once)
+   ```
+
+4. **Scheduled** - wrap recipe 3 in a Snowflake `TASK` (weekly cron, UTC) or let the CoCo **Automation** from section 5c top up thin domains.
+
+Spot-check a few rows after seeding (`SELECT ... ORDER BY RANDOM() LIMIT 5`) — and consider the misconception/flag features for ongoing quality control.
 
 ---
 
