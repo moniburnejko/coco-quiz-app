@@ -76,20 +76,6 @@ For calling patterns, dollar-quoting, structured outputs (`response_format`), di
 
 ---
 
-## Advanced options (opt-in)
-
-All OFF by default. The user enables them in `$setup-exam` Step 1d (or later, by asking). Preview-dependent items must be verified in-account before relying on them. Full description: `docs/customization.md` section 5.
-
-| Option | Values | What it does |
-|--------|--------|--------------|
-| model_profile | `default` / `quality` | `default` = `claude-sonnet-4-6`. `quality` = `claude-opus-4-7` (newest GA opus as of 2026-06) as `CORTEX_MODEL` - stronger reasoning for hard distractors, slower and markedly more expensive. `claude-opus-4-8` is **Public Preview** (new Claude models land in Cortex same-day but in preview; GA follows) - only at the user's explicit request. |
-| self_verify | `off` / `on` | `$setup-exam` Step 8.5: the agent compile-checks the generated modules before deploy. Needs a CoCo session with code execution (Cloud Agents); skipped gracefully otherwise. |
-| automations | `off` / `on` | Recurring unattended maintenance (question-bank refresh, scan re-run) via CoCo Automations (**Preview**). Report-only recipe in `docs/customization.md` section 5c. |
-
-These never change the default pipeline - without an explicit request, behave exactly as if this section did not exist.
-
----
-
 ## App overview
 
 The generated app is a **decomposed multipage Streamlit project** under `app/`. Read the modules directly for HOW things work. This section describes WHAT the app does and where each responsibility lives.

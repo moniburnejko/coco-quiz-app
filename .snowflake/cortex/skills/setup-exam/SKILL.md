@@ -1,232 +1,130 @@
 ---
 name: setup-exam
-description: "Automated 10-step exam setup pipeline for Snowflake CoCo in Snowsight. Creates Snowflake schema, extracts domains from PDF, generates questions, builds the multipage `app/` Streamlit project, and deploys it on the container runtime. Works for first exam or adding a new one. Triggers: setup exam, new exam, new certification, new study guide PDF, add exam, switch exam, create exam"
+description: "Automated 10-step exam setup pipeline for Snowflake CoCo in Snowsight. Creates the schema, extracts domains from a study-guide PDF, loads an optional question bank, builds the multipage `app/` Streamlit project, and deploys it on the container runtime. First exam or adding another. Triggers: setup exam, new exam, new certification, new study guide PDF, add exam, switch exam, create exam"
 ---
 
 # When to Use
 
-Use this skill when setting up a new Snowflake certification exam or switching from one to another. Each exam gets its own Snowflake schema — nothing is overwritten.
+Setting up a new Snowflake (or any) certification exam, or switching to another. Each exam gets its own schema — nothing is overwritten.
 
-Example prompts:
-- "I have a new study guide - SnowProGenAIStudyGuide.pdf. Create a quiz app for this exam."
-- "Switch to the SnowPro Specialty: Gen AI exam."
+Example: *"I have SnowProGenAIStudyGuide.pdf — create a quiz app for this exam."* · *"Switch to the SnowPro Specialty: Gen AI exam."*
 
 # When NOT to Use
 
-- Do not use this skill if the exam schema is already set up (check `SHOW SCHEMAS LIKE 'QUIZ_<CODE>' IN DATABASE {database};`).
-- Do not use for fixing bugs in an existing quiz — use `$cortex` or `$sis` instead.
+- The exam schema already exists (`SHOW SCHEMAS LIKE 'QUIZ_<CODE>' IN DATABASE {database};`).
+- Fixing bugs in an existing quiz → `$cortex` or `$sis`.
 
 ---
 
-# Environment: Snowsight Workspace
+# Environment
 
-This skill runs inside **CoCo in Snowsight**. Assumptions:
-- No bash / shell / git / `snow` CLI.
-- No `PUT file://...` from this agent — the workspace cannot read local filesystem.
-- Files are uploaded **manually by the user** via Snowsight UI (Data » Databases » Stages » + Files, or Ingestion » Add Data » Load files into a Stage).
-- Generated artefacts (the `app/` Streamlit project — `main.py`, `_*.py` modules, `pages/`, configs) are written as **files in this workspace** by the agent. Deploy is via the Workspaces **Run + Deploy** flow (default) or by the user uploading `app/` to a stage for a scripted `CREATE STREAMLIT` (see Step 9).
-- Exam isolation is **schema-per-exam only** (`QUIZ_<CODE>`). No git branch.
+Runs inside **CoCo in Snowsight**: no bash/git/`snow` CLI, no `PUT` (the agent can't read the local filesystem). The user uploads files **manually** via Snowsight UI; the agent writes the `app/` project as workspace files and the user deploys via Workspaces **Run + Deploy** (or a stage + `CREATE STREAMLIT`). Isolation is **schema-per-exam** (`QUIZ_<CODE>`) — no git branch.
 
----
+Read `{database}`, `{warehouse}`, `{role}`, `{compute_pool}` from the `snowflake environment` table in `AGENTS.md`; every SQL placeholder below substitutes those. Never hardcode exam names/codes — extract the name from the PDF and ALWAYS confirm the code with the user.
 
-# Exam Identification
-
-Do NOT hardcode exam names or codes. Instead:
-1. Read the PDF study guide — extract the certification name from the document.
-2. ALWAYS ask the user to confirm: "I found exam: {exam_name}. What is the exam code? (e.g., COF-C03)"
-3. The user provides the definitive exam code.
-
-Snowflake certifications reference: https://learn.snowflake.com/en/certifications/
+**Tool — `ask_user_question`** (at STOP points): present fixed options, wait for the choice. If unavailable, present the same options as a numbered list and wait.
 
 ---
 
-# Prerequisites
+# Advanced options (opt-in)
 
-Read `{database}`, `{warehouse}`, and `{role}` from the environment table in `AGENTS.md`. All SQL in this skill uses these placeholders — substitute the actual values from that table. If any value is still `<your_...>`, Step 1a halts and prompts the user to fill AGENTS.md before continuing.
+All OFF by default — enabled only if the user asks in Step 1d. **Without an explicit request, behave exactly as if this section did not exist.** Preview-dependent items must be verified in-account.
 
----
-
-# Tools
-
-### ask_user_question
-
-**Description:** Present the user with a fixed list of options and wait for their selection.
-
-**When to use:** At mandatory stopping points where the user must choose between defined options (confirmations, approvals, strategy selections). Do NOT use for free-text input.
-
-**Fallback:** If `ask_user_question` is not available, present the same options as a numbered list and wait for the user's text response.
+| Option | Values | What it does |
+|--------|--------|--------------|
+| model_profile | `default` / `quality` | `default` = `claude-sonnet-4-6`. `quality` = `claude-opus-4-7` (newest GA opus as of 2026-06) set as `CORTEX_MODEL` in `_config.py` — stronger hard distractors, slower + markedly pricier. `claude-opus-4-8` is **Public Preview** (new Claude models land in Cortex same-day but in preview; GA follows) — only on explicit request. Do NOT change the AGENTS.md default. |
+| self_verify | `off` / `on` | Adds Step 8.5 (byte-compile the generated modules). Needs a CoCo session with code execution (Cloud Agents); skipped gracefully otherwise. |
+| automations | `off` / `on` | Recurring unattended maintenance via CoCo **Automations** (Preview) — report-only recipe in `docs/customization.md` §5c. |
 
 ---
 
 # Instructions
 
-> **Step 0 — Read this entire skill before acting.** Do not run any SQL, create any object, or generate any file until you have read every step below. This is a 10-step pipeline with mandatory STOP points; each STOP prevents a known, costly failure (stage without `SNOWFLAKE_SSE` → `AI_PARSE_DOCUMENT` fails; unfilled `<...>` placeholders → wrong/missing objects; container deploy without a compute pool + PyPI EAI → deploy fails at the package server). **Do NOT improvise this pipeline from the AGENTS.md overview** — follow these steps in order. You create nothing before Step 2.
+> **Step 0 — read this entire skill before acting.** Run no SQL, create no object, generate no file until you've read every step. Each STOP prevents a known costly failure (stage without `SNOWFLAKE_SSE` → `AI_PARSE_DOCUMENT` fails; unfilled `<...>` placeholders → wrong objects; container deploy without a compute pool + PyPI EAI → fails at the package server). **Do NOT improvise from the AGENTS.md overview.** You create nothing before Step 2.
 
 ## Step 1 — Collect inputs
 
-### 1a — Validate AGENTS.md environment config (mandatory guard)
+### 1a — Validate AGENTS.md config (mandatory guard)
 
-**Echo the full `snowflake environment` table values back to the user** (so the check is visible), then scan EVERY row for `<...>` placeholder syntax. Build a list of every value still containing angle brackets — `<your_database>`, `<your_warehouse>`, `<your_role>`, `<your_compute_pool>`, and any others.
+**Echo the full `snowflake environment` table back to the user**, then scan every row for `<...>` placeholders. If any remain (`<your_database>`, `<your_warehouse>`, `<your_role>`, `<your_compute_pool>`, …), **STOP immediately** — create nothing. Tell the user exactly which placeholders are unfilled and what each means (`<your_compute_pool>` may stay only if they'll use the warehouse fallback — checked in 1f). Wait, re-read AGENTS.md, re-scan. Do not proceed while any required `<...>` remains. *(Skipping this was a real failure — the pipeline ran with an unfilled `<your_compute_pool>` and broke at deploy.)*
 
-If that list is non-empty, **STOP immediately** — do not create anything, do not proceed. Show the user exactly which placeholders remain:
+Then confirm the session matches AGENTS.md: `SELECT CURRENT_ROLE(), CURRENT_WAREHOUSE(), CURRENT_DATABASE();` — if it differs, ask whether to `USE` the AGENTS.md values or update AGENTS.md.
 
-> "I can't start setup yet — the `snowflake environment` table in `AGENTS.md` still has these placeholders: **{list}**. Please replace:
-> - `<your_database>` → the database where the schema will live
-> - `<your_warehouse>` → the warehouse to use
-> - `<your_role>` → the role with `CREATE SCHEMA` on that database
-> - `<your_compute_pool>` → the compute pool for the container runtime (you may leave this only if you'll use the warehouse fallback — I'll check in Step 1f)
->
-> Leave `schema` and `exam_code` as is — I fill those once we know the exam code. Tell me when done and I'll re-read AGENTS.md."
+### 1b — Target exam
 
-Wait for confirmation, re-read AGENTS.md, and re-run the scan. **Do not proceed to 1b while any required `<...>` remains.** (This guard is not optional — skipping it was a real failure: the pipeline ran with an unfilled `<your_compute_pool>` and broke at deploy.)
+Extract the exam name from the prompt; ALWAYS ask for the code (no hardcoded mapping): *"Target exam is **{exam_name}** — what is the exam code? (e.g. COF-C03)"*. Wait for both.
 
-Verify session context matches:
-```sql
-SELECT CURRENT_ROLE(), CURRENT_WAREHOUSE(), CURRENT_DATABASE();
-```
-If the session is using a different role/warehouse/database than AGENTS.md declares, ask the user whether to `USE` the AGENTS.md values or update AGENTS.md to match the session.
+### 1c — Input files
 
-### 1b — Determine target exam
+The agent can't list the filesystem — ask:
+- **PDF (mandatory):** *"What's the study-guide PDF filename?"* No PDF → **STOP** (required for `AI_PARSE_DOCUMENT` → `EXAM_DOMAINS`).
+- **Question bank CSV/JSON (optional):** ask via `ask_user_question` (Yes → filename; No → `question_source` defaults to `'ai'`).
 
-Extract the exam name from the user's prompt (e.g., "set up SnowPro Core" → "SnowPro Core"). ALWAYS ask the user for the exam code — no hardcoded mapping:
+### 1d — Additional requirements + advanced mode
 
-> "I understand the target exam is: **{exam_name}**. What is the exam code? (e.g., COF-C03)"
+Ask: *"Any additional requirements? (optional features, AI study recommendations, different scoring — or advanced mode: quality model / self-verify / Automations)"*. Map advanced requests to the **Advanced options** section above (set at Step 8 / 8.5 / 10; never change AGENTS.md defaults). If the user names features not in AGENTS.md, clarify requirements before Step 2. Wait for the response.
 
-Wait for the user to confirm both name and code before proceeding.
+### 1e — Look & feel
 
-### 1c — Ask about input files
+`ask_user_question`: **Default look** (clean Snowflake-blue — no further questions) or **Custom**. Custom → a short one-question-at-a-time dialog (light/dark base; accent color; corner roundness; font stack; sidebar tint), mapped ONLY to native `[theme]`/`[theme.sidebar]` keys per the `$quiz/design` theming contract — **never CSS, `unsafe_allow_html`, or external fonts (CSP)**. Confirm the palette in words. Store the choice for Step 8.
 
-The agent cannot list local filesystem; ask the user directly what files they have.
+### 1f — Deploy prerequisites (container runtime = default)
 
-**Study guide PDF — MANDATORY:**
+The container runtime has TWO account-level prereqs; missing either makes deploy FAIL at the package server (`Failed to retrieve package… Have you enabled External Access Integration?`). Check BOTH now (early, so the user can fix while the pipeline runs), **STOP** if unresolved:
 
-> "I need the study guide PDF for {exam_name}. What is the filename (e.g., `SnowProCoreStudyGuide_c03.pdf`)?"
+1. **Compute pool** — `SHOW COMPUTE POOLS;` (role needs `USAGE` on one).
+2. **PyPI EAI** — the container installs `pandas`/`altair` from PyPI (NOT in the base image, which has only Python/Streamlit/Snowpark). If none exists, give the user this ACCOUNTADMIN DDL (Snowflake ships the managed rule — no custom rule):
+   ```sql
+   USE ROLE ACCOUNTADMIN;
+   CREATE OR REPLACE EXTERNAL ACCESS INTEGRATION pypi_access_integration
+     ALLOWED_NETWORK_RULES = (snowflake.external_access.pypi_rule)
+     ENABLED = TRUE;
+   GRANT USAGE ON INTEGRATION pypi_access_integration TO ROLE {role};
+   ```
+   Record the EAI name (`external_access_integration` in AGENTS.md) — attached at deploy (Step 9).
 
-If the user says no PDF is available → **STOP**. The study guide is required for `AI_PARSE_DOCUMENT` → `EXAM_DOMAINS`.
-
-**Question bank CSV/JSON — OPTIONAL:**
-
-**Use `ask_user_question` tool (if available):**
-
-> "Do you have a question bank file (CSV or JSON) for this exam?"
-
-| Option | Description |
-|--------|-------------|
-| **Yes, I have a file** | I will upload a CSV/JSON with pre-authored questions |
-| **No, generate via AI** | Skip question bank — questions will be generated by AI in Step 7 |
-
-**Routing logic:**
-- **Yes, I have a file** → ask for filename; continue to Step 1d.
-- **No, generate via AI** → continue to Step 1d; question_source default will be `'ai'` on the app's home screen.
-
-### 1d — Additional requirements
-
-Ask: "Any additional requirements or customizations? (e.g., specific UI features, AI study recommendations, different scoring — or advanced mode: quality model profile, self-verify, Automations)"
-
-Advanced options (see AGENTS.md `Advanced options` — all OFF unless explicitly requested here):
-- **quality model profile** → set `CORTEX_MODEL = "claude-opus-4-7"` in `_config.py` at Step 8 (do NOT change AGENTS.md defaults).
-- **self-verify** → run Step 8.5 after the scan.
-- **automations** → after Step 10, point the user to the report-only recipe in `docs/customization.md` section 5c (**Preview** — verify account availability).
-
-If the user mentions features not already in AGENTS.md, ask clarifying questions about requirements BEFORE proceeding to Step 2.
-
-Wait for the user's response before proceeding.
-
-### 1e — App look & feel
-
-**Use `ask_user_question` tool (if available):**
-
-> "Do you want to decide the app's look (colors, style), or use the default theme?"
-
-| Option | Description |
-|--------|-------------|
-| **Default look** | Clean Snowflake-blue theme (recommended) — no further questions |
-| **Custom look** | I'll ask a few quick style questions and theme the app to your taste |
-
-**Routing logic:**
-- **Default look** → use the canonical theme from `$quiz/design` in Step 8. Continue.
-- **Custom look** → run a short guided dialog (one question at a time): light or dark base; primary/accent color (name or hex); corner roundness (sharp / soft / round); font stack (sans-serif / serif / monospace); sidebar tint (same as app / subtle contrast). Map answers ONLY to native Streamlit `[theme]` / `[theme.sidebar]` keys per the `$quiz/design` theming contract — **never CSS, never `unsafe_allow_html`, no external font files (CSP)**. Confirm the resulting palette back to the user in words before Step 2.
-
-Store the choice for Step 8 (config.toml generation).
-
-### 1f — Deploy prerequisites (container runtime is the default)
-
-The default deploy target is the **container runtime** (Streamlit-in-Workspaces live preview). It has TWO account-level prerequisites that, if missing, make the deploy FAIL at the package server (`Failed to retrieve package... Have you enabled External Access Integration?`). Check BOTH now — early, so the user can fix them while the rest of the pipeline runs — and **STOP** if either is missing and unresolved.
-
-**1. Compute pool** (runs the container):
-```sql
-SHOW COMPUTE POOLS;
-```
-The role needs `USAGE` on at least one. If none exists, an admin must create/grant one.
-
-**2. PyPI external access integration** — the container installs `pandas`/`altair` from PyPI; they are NOT in the base image (only Python, Streamlit, Snowpark are), so an EAI is mandatory. Ask whether one exists and is granted to the role. If not, give the user this ACCOUNTADMIN DDL (Snowflake ships the managed network rule — no custom rule needed):
-```sql
-USE ROLE ACCOUNTADMIN;
-CREATE OR REPLACE EXTERNAL ACCESS INTEGRATION pypi_access_integration
-  ALLOWED_NETWORK_RULES = (snowflake.external_access.pypi_rule)
-  ENABLED = TRUE;
-GRANT USAGE ON INTEGRATION pypi_access_integration TO ROLE {role};
-```
-Record the EAI name (the `external_access_integration` value in AGENTS.md) — it is attached to the app at deploy (Step 9).
-
-**⚠️ STOP** if either prerequisite is missing and the user can't resolve it. Offer the **warehouse fallback** (Step 9 Path C): no compute pool, no EAI, `environment.yml` from the Snowflake Anaconda channel, Streamlit 1.52.2. Confirm container vs warehouse before continuing — it sets the deps file (`pyproject.toml` vs `environment.yml`) and the deploy path.
+**⚠️ STOP** if either is missing and unresolved — offer the **warehouse fallback** (Step 9 Path C: no pool, no EAI, `environment.yml`, Streamlit 1.52.2). Confirm container vs warehouse before continuing (it sets the deps file + deploy path).
 
 ### 1g — Doc grounding (optional, default-on when available)
 
-The app can ground question generation and explanations in the **Snowflake Documentation CKE** — a free Marketplace Cortex Search service (`SNOWFLAKE_DOCUMENTATION.SHARED.CKE_SNOWFLAKE_DOCS_SERVICE`) — and cite the exact doc page. Default-on with graceful fallback. Probe it once (one ad-hoc `SEARCH_PREVIEW` is fine here; the app itself uses the Python API — see `$cortex`):
-
+The app can ground generation/explanations in the **Snowflake Documentation CKE** (`SNOWFLAKE_DOCUMENTATION.SHARED.CKE_SNOWFLAKE_DOCS_SERVICE`) and cite exact pages. Probe once (one ad-hoc `SEARCH_PREVIEW` is fine here; the app uses the Python API — `$cortex`):
 ```sql
 SELECT SNOWFLAKE.CORTEX.SEARCH_PREVIEW(
   'SNOWFLAKE_DOCUMENTATION.SHARED.CKE_SNOWFLAKE_DOCS_SERVICE',
   '{"query": "virtual warehouse", "columns": ["DOCUMENT_TITLE"], "limit": 1}');
 ```
-
-- **Reachable** → leave `docs_grounding = 'auto'` (effectively on); tell the user grounding is active.
-- **Not reachable** → tell the user it's free and optional: "Get the **Snowflake Documentation** listing in Snowsight » Data Products » Marketplace (free; needs `IMPORT SHARE`/ACCOUNTADMIN), then turn on **Admin » docs grounding**." Continue with fallback (unchanged behavior).
-- **Non-Snowflake exam** (the CKE is Snowflake-docs only) → seed `'off'` so grounding never fires:
+- **Reachable** → leave `docs_grounding = 'auto'`; tell the user grounding is active.
+- **Not reachable** → tell them it's free/optional ("Data Products » Marketplace » Snowflake Documentation; needs `IMPORT SHARE`/ACCOUNTADMIN; then Admin » docs grounding"). Continue with fallback (unchanged behavior).
+- **Non-Snowflake exam** (CKE is Snowflake-docs only) → seed `'off'` so grounding never fires:
   ```sql
   MERGE INTO {database}.QUIZ_<CODE>.QUIZ_CONFIG t
   USING (SELECT 'docs_grounding' AS k, TO_VARIANT('off') AS v) s ON t.config_key = s.k
   WHEN NOT MATCHED THEN INSERT (config_key, config_value) VALUES (s.k, s.v);
   ```
 
-## Step 2 — Create Snowflake schema
+## Step 2 — Create the schema
 
-Each exam gets a dedicated schema. Replace `<EXAM_CODE>` with the mapped code, hyphens replaced by underscores (e.g. `COF-C03` → `QUIZ_COF_C03`).
-
+`<EXAM_CODE>` → hyphens to underscores (e.g. `COF-C03` → `QUIZ_COF_C03`). The configured role has full permissions on `{database}` — no grants.
 ```sql
 CREATE SCHEMA IF NOT EXISTS {database}.QUIZ_<EXAM_CODE>;
 USE SCHEMA {database}.QUIZ_<EXAM_CODE>;
 ```
 
-The configured role has full permissions on `{database}` — no grants needed.
+## Step 3 — Create stages, tables, file format (this skill is the sole owner of the data model)
 
-## Step 3 — Create stages, tables, file format
-
-**Stages** (STAGE_QUIZ_DATA MUST have encryption + directory for AI_PARSE_DOCUMENT):
+**Stages** — `STAGE_QUIZ_DATA` MUST have SSE + directory for `AI_PARSE_DOCUMENT`. **Copy this DDL verbatim — do NOT write `CREATE STAGE` from memory** (a bare `CREATE STAGE` defaults to client-side encryption → `AI_PARSE_DOCUMENT` fails "Client Side Encryption is not supported" — a real failure that cost a re-upload):
 ```sql
 CREATE STAGE IF NOT EXISTS {database}.QUIZ_<CODE>.STAGE_QUIZ_DATA
   ENCRYPTION = (TYPE = 'SNOWFLAKE_SSE')
   DIRECTORY = (ENABLE = TRUE);
-
 CREATE STAGE IF NOT EXISTS {database}.QUIZ_<CODE>.STAGE_SIS_APP;
 ```
-
-**Copy the stage DDL above verbatim — do NOT write `CREATE STAGE` from memory.** A bare `CREATE STAGE` defaults to client-side encryption, which makes `AI_PARSE_DOCUMENT` fail with "Client Side Encryption is not supported" (a real failure that cost a re-upload and several wrong syntaxes). Immediately verify:
-
+Verify immediately, and drop+recreate (with the exact DDL) if encryption isn't `SNOWFLAKE_SSE` before any upload:
 ```sql
-DESCRIBE STAGE {database}.QUIZ_<CODE>.STAGE_QUIZ_DATA;
--- confirm in the output: encryption TYPE = SNOWFLAKE_SSE, and DIRECTORY enabled = true
+DESCRIBE STAGE {database}.QUIZ_<CODE>.STAGE_QUIZ_DATA;  -- confirm TYPE = SNOWFLAKE_SSE and DIRECTORY enabled = true
 ```
 
-If encryption is not `SNOWFLAKE_SSE`, drop and recreate with the exact DDL before any upload:
-```sql
-DROP STAGE {database}.QUIZ_<CODE>.STAGE_QUIZ_DATA;
--- then re-run the CREATE STAGE ... ENCRYPTION = (TYPE = 'SNOWFLAKE_SSE') DIRECTORY = (ENABLE = TRUE);
-```
-
-**Tables** — all 5 with exact DDL below:
-
+**Tables** — all 5, exact DDL:
 ```sql
 CREATE TABLE IF NOT EXISTS {database}.QUIZ_<CODE>.EXAM_DOMAINS (
     domain_id    VARCHAR PRIMARY KEY,
@@ -277,17 +175,14 @@ CREATE TABLE IF NOT EXISTS {database}.QUIZ_<CODE>.QUIZ_SESSION_LOG (
     domain_filter  VARCHAR,
     difficulty     VARCHAR
 );
-```
 
-```sql
 CREATE TABLE IF NOT EXISTS {database}.QUIZ_<CODE>.QUIZ_CONFIG (
     config_key   VARCHAR PRIMARY KEY,
     config_value VARIANT,
     updated_at   TIMESTAMP_LTZ DEFAULT CURRENT_TIMESTAMP()
 );
 ```
-
-Rationale: QUIZ_REVIEW_LOG stores per-question wrong answers (Review page + domain error analysis; `selected_answer`/`misconception` feed the optional misconception-analysis feature). QUIZ_SESSION_LOG stores per-round summaries (score, round size — needed for progress metrics). Rounds with 0 wrong answers have no QUIZ_REVIEW_LOG rows, so merging would lose session data. QUIZ_CONFIG holds runtime app configuration edited from the Admin page (defaults live in `_config.py`; DB values override them). If the user enables the flag-a-question feature, `$quiz/features` Feature 8 adds a QUIZ_FLAGS table.
+`QUIZ_REVIEW_LOG` = per-wrong-answer history (`selected_answer`/`misconception` feed the optional misconception feature); `QUIZ_SESSION_LOG` = per-round summary (a perfect round writes a session row but no review rows, so they can't merge); `QUIZ_CONFIG` = runtime config (defaults in `_config.py`, DB overrides). The flag-a-question feature adds `QUIZ_FLAGS` (`$quiz/features`).
 
 **File format:**
 ```sql
@@ -295,563 +190,180 @@ CREATE FILE FORMAT IF NOT EXISTS {database}.QUIZ_<CODE>.FF_CSV
   TYPE = 'CSV' SKIP_HEADER = 1 FIELD_OPTIONALLY_ENCLOSED_BY = '"';
 ```
 
-## Step 4 — User uploads input files to stage (MANUAL)
+## Step 4 — User uploads files to the stage (MANUAL)
 
-Present clear instructions to the user. The agent cannot upload files; the user must do this in Snowsight UI.
-
-**PDF upload (required):**
-
-> "Please upload the study guide PDF to the stage:
-> 1. In Snowsight, go to **Data » Databases » {database} » QUIZ_<CODE> » Stages » STAGE_QUIZ_DATA**.
-> 2. Click **+ Files** (top-right).
-> 3. Drag-drop or browse to select `{pdf_filename}`.
-> 4. Click **Upload**.
->
-> Alternative: **Ingestion » Add Data » Load files into a Stage**.
->
-> Let me know when upload is complete."
-
-**CSV upload (only if user has one, from Step 1c):**
-
-> "Do the same for the CSV: upload `{csv_filename}` to the same stage."
-
-Wait for user confirmation. Then verify:
-
+The agent can't upload. Tell the user: **Data » Databases » {database} » QUIZ_<CODE> » Stages » STAGE_QUIZ_DATA » + Files** → upload `{pdf_filename}` (and `{csv_filename}` if they have one) → reply when done. Then verify and **STOP** until present:
 ```sql
 ALTER STAGE {database}.QUIZ_<CODE>.STAGE_QUIZ_DATA REFRESH;
 LIST @{database}.QUIZ_<CODE>.STAGE_QUIZ_DATA;
 ```
+If an expected file is missing, ask them to re-upload before proceeding.
 
-The file list must include the PDF (and CSV if provided). If any expected file is missing → ask the user to re-upload before proceeding.
+## Step 5 — Extract domains from the PDF
 
-## Step 5 — Extract domains from PDF
-
-### 5a — Parse PDF content
-
+**Parse once, reuse** — call `AI_PARSE_DOCUMENT` in LAYOUT mode and keep `doc_content` (session var / temp table / CTE); do NOT re-parse per domain:
 ```sql
 SELECT AI_PARSE_DOCUMENT(
     TO_FILE('@{database}.QUIZ_<CODE>.STAGE_QUIZ_DATA', '<pdf_filename>'),
-    {'mode': 'LAYOUT'}
-):content::VARCHAR AS doc_content;
+    {'mode': 'LAYOUT'}):content::VARCHAR AS doc_content;
 ```
 
-Save the result — reuse it for domain extraction AND key_facts. Do NOT re-call `AI_PARSE_DOCUMENT` per domain.
+**Before extracting**, scan `doc_content` for multiple/transition exam blueprints (effective dates, "old vs new"). If conflicting structures exist, `ask_user_question` to pick (default: the one effective today) — study guides published during transitions often contain both.
 
-### 5a.1 — Analyze document structure for date-based changes
+**Extract domains** with `AI_COMPLETE` (calling/structured-output patterns → `$cortex`): prompt for a JSON array of `{domain_id (sequential string), domain_name (exact), weight_pct (numbers summing to 100), topics (string array)}` over `doc_content`, and INSERT each into `EXAM_DOMAINS`. *(Messy PDF? `AI_EXTRACT` is a one-call keyed-JSON alternative — `$cortex` / bundled `cortex-ai-function-studio`. AI_COMPLETE stays the default.)*
 
-BEFORE extracting domains, analyze the full parsed PDF content for:
-1. Mentions of effective dates, transition dates, or "effective from" language
-2. Multiple conflicting domain structures (e.g., "old exam blueprint" vs "new exam blueprint")
-3. Version indicators or restructuring notices
+**Extract `key_facts` per domain** — reuse `doc_content`; one `AI_COMPLETE` per domain asking for a plain-text list of testable facts (definitions, limits, best practices, feature names), `UPDATE EXAM_DOMAINS … WHERE domain_id = …`. Verify each is non-null.
 
-If only one structure is found and there is no ambiguity, use it directly (no `ask_user_question` needed).
-
-If conflicting domain structures exist, **use `ask_user_question` tool (if available):**
-
-> "I found multiple domain structures in this study guide."
-
-| Option | Description |
-|--------|-------------|
-| **Structure A** | {structure_a_name} (effective {date_a}) — {N} domains |
-| **Structure B** | {structure_b_name} (effective {date_b}) — {N} domains |
-
-**Routing logic:**
-- Use the structure the user selects.
-- Default recommendation: the one effective as of today's date.
-
-This step is critical because study guides are sometimes published during exam transitions and contain both old and new structures.
-
-### 5b — Extract exam domains
-
-Use AI_COMPLETE on the parsed content. The prompt must ask for a JSON array:
-
+**Verify + ⚠️ STOP:**
 ```sql
-SELECT AI_COMPLETE(
-    'claude-sonnet-4-6',
-    $$Today's date is {current_date}. If multiple exam blueprints are shown, use only the one effective as of today.
-
-Extract ALL exam domains from this certification study guide.
-Return ONLY a valid JSON array. Each object must have:
-- domain_id (string, e.g. "1", "2", sequential)
-- domain_name (string, exact name from the guide)
-- weight_pct (number, percentage weight - must sum to 100 across all domains)
-- topics (JSON array of topic strings covered in this domain)
-
-Study guide content:
-{doc_content}$$
-)::VARCHAR;
+SELECT COUNT(*) , SUM(weight_pct) FROM {database}.QUIZ_<CODE>.EXAM_DOMAINS;
+SELECT domain_name, LENGTH(key_facts) FROM {database}.QUIZ_<CODE>.EXAM_DOMAINS ORDER BY domain_id;
 ```
-
-Parse the response and INSERT each domain into EXAM_DOMAINS.
-
-**Optional alternative — `AI_EXTRACT`** (one call, keyed JSON, no free-form prompt). Offer it only if the AI_COMPLETE extraction struggles (e.g. messy PDF structure); AI_COMPLETE stays the default:
-
-```sql
-SELECT AI_EXTRACT(
-  text => :doc_content,
-  responseFormat => {
-    'domains': 'List every exam domain name, in order',
-    'weights': 'List each domain percentage weight (numbers summing to 100), same order',
-    'topics' : 'For each domain, list the topics it covers, same order'
-  });
-```
-
-Map the keyed arrays into EXAM_DOMAINS rows (domain_id = position as string). The key_facts extraction (5c) still uses AI_COMPLETE either way.
-
-### 5c — Extract key_facts per domain
-
-**Reuse the `doc_content` from Step 5a.** Store it in a session variable, temporary table, or pass via CTE — do NOT re-call AI_PARSE_DOCUMENT for each domain.
-
-For each domain, run a separate AI_COMPLETE call to extract testable facts:
-
-```sql
-UPDATE {database}.QUIZ_<CODE>.EXAM_DOMAINS
-SET key_facts = (
-    SELECT AI_COMPLETE(
-        'claude-sonnet-4-6',
-        $$Extract the key testable facts for the "{domain_name}" domain from this study guide.
-Focus on facts that could appear as exam questions: definitions, limits, best practices, feature names, SQL syntax.
-Return a plain text list, one fact per line. No JSON, no markdown.
-
-Study guide content:
-{doc_content}$$
-    )::VARCHAR
-)
-WHERE domain_id = {id};
-```
-
-Run one UPDATE per domain. Verify each sets a non-null value before moving to the next.
-
-### 5d — Verify
-
-```sql
-SELECT COUNT(*) FROM {database}.QUIZ_<CODE>.EXAM_DOMAINS;
-SELECT SUM(weight_pct) FROM {database}.QUIZ_<CODE>.EXAM_DOMAINS;
-SELECT domain_name, LENGTH(key_facts) AS facts_len FROM {database}.QUIZ_<CODE>.EXAM_DOMAINS ORDER BY domain_id;
-```
-
-Expected: N domains (varies per exam), weights sum to 100, all facts_len > 0.
-
-**⚠️ MANDATORY STOPPING POINT — Use `ask_user_question` tool (if available):**
-
-Present the domain verification results, then ask:
-
-> "Domain extraction complete. {N} domains found, weights sum to {sum}."
-
-| Option | Description |
-|--------|-------------|
-| **Approve** | Domains look correct — proceed to question loading |
-| **Re-extract** | Something is wrong — re-run domain extraction |
-| **Abort** | Stop the pipeline — I need to review manually |
-
-**Routing logic:**
-- **Approve** → proceed to Step 6.
-- **Re-extract** → clear EXAM_DOMAINS and re-run Step 5b-5d.
-- **Abort** → **STOP**.
-
-⚠️ **STOP**: Do NOT proceed until user responds.
+Expected: N domains, weights sum to 100, all `key_facts` non-empty. Present the results, then `ask_user_question`: **Approve** (→ Step 6) / **Re-extract** (clear `EXAM_DOMAINS`, re-run) / **Abort** (STOP). Do not proceed until answered.
 
 ## Step 6 — Load the question bank (optional)
 
-### 6a — If user has a CSV (from Step 1c) already uploaded in Step 4
+**With a CSV** (uploaded in Step 4): if `SELECT COUNT(*) FROM QUIZ_QUESTIONS` already has rows (e.g. `$adapt-questions` ran), skip to verify. Else `COPY INTO QUIZ_QUESTIONS FROM @…STAGE_QUIZ_DATA/<csv> FILE_FORMAT = …FF_CSV;` then backfill `domain_name` from `EXAM_DOMAINS`. If columns/types differ from the target schema, run `$adapt-questions` first.
 
-Check if rows were already inserted (e.g., by `$adapt-questions`):
+**Without a CSV — the bank stays empty; do NOT generate questions now.** Build-time generation is slow, burns the user's token budget before they see the app, and confuses ("are these the only questions?"). The app is fully functional on runtime AI questions (`question_source` defaults to `'ai'`). Tell the user a bank is still worth seeding later — resilience (AI-call fallback), speed (instant load), consistency — via: CSV/JSON + `$adapt-questions`, the Admin **Generate batch** button, the worksheet recipe (`docs/customization.md` §6), or a scheduled task/Automation. Runtime "AI Generated" questions never touch the bank.
+
+Verify (0 rows without a CSV is legitimate — state it, don't treat as error):
 ```sql
-SELECT COUNT(*) FROM {database}.QUIZ_<CODE>.QUIZ_QUESTIONS;
+SELECT COUNT(*), COUNT(DISTINCT domain_id), COUNT(*) FILTER (WHERE domain_name IS NULL) FROM {database}.QUIZ_<CODE>.QUIZ_QUESTIONS;
 ```
-If rows exist, skip loading and go to Verify.
-
-Otherwise, load the CSV:
-```sql
-COPY INTO {database}.QUIZ_<CODE>.QUIZ_QUESTIONS
-FROM @{database}.QUIZ_<CODE>.STAGE_QUIZ_DATA/<csv_filename>
-FILE_FORMAT = {database}.QUIZ_<CODE>.FF_CSV;
-```
-
-If column order/types differ from the target schema, invoke `$adapt-questions` first.
-
-Backfill `domain_name`:
-```sql
-UPDATE {database}.QUIZ_<CODE>.QUIZ_QUESTIONS q
-SET q.domain_name = d.domain_name
-FROM {database}.QUIZ_<CODE>.EXAM_DOMAINS d
-WHERE q.domain_id = d.domain_id AND q.domain_name IS NULL;
-```
-
-### 6b — If no CSV — the bank stays empty (do NOT generate questions now)
-
-**Do NOT generate a question bank during setup.** Build-time generation is slow, burns the user's token budget before they ever see the app, and confuses users ("are these the only questions?"). The app is fully functional without a bank: `question_source` defaults to `'ai'` (runtime generation, one question at a time).
-
-Inform the user (verbatim or close):
-
-> "I'm skipping question-bank pre-generation — the app generates questions live via AI. A populated bank is still worth having, because:
-> - **resilience**: if an AI call fails (service interruption, cross-region issue, token limits), the app falls back to bank questions;
-> - **speed**: bank questions load instantly, no AI round-trip;
-> - **consistency**: a curated, repeatable question set.
->
-> You can seed it anytime: (1) upload a CSV/JSON now or later (I'll run `$adapt-questions`), (2) use the **Generate batch** button on the app's Admin page, (3) run the worksheet SQL recipe from `docs/customization.md` (section: Seeding the question bank), or (4) schedule it as a recurring task / Automation."
-
-If the user decides to upload a CSV after all → go back to 6a.
-
-Note: the bank feeds the "From question bank" source mode and the AI-fallback path. Runtime "AI Generated" questions never come from the bank.
-
-### 6c — Verify
-
-```sql
-SELECT COUNT(*) FROM {database}.QUIZ_<CODE>.QUIZ_QUESTIONS;
-SELECT COUNT(DISTINCT domain_id) FROM {database}.QUIZ_<CODE>.QUIZ_QUESTIONS;
-SELECT COUNT(*) FROM {database}.QUIZ_<CODE>.QUIZ_QUESTIONS WHERE domain_name IS NULL;
-```
-
-Without a CSV, QUIZ_QUESTIONS legitimately has 0 rows (runtime-AI-only mode) — state this and proceed; do not treat it as an error.
 
 ## Step 7 — Update AGENTS.md
 
-Use the Edit tool on `AGENTS.md`. Follow the edit boundaries strictly.
+Edit `AGENTS.md` within these boundaries.
+**CAN edit:** schema name + exam code (env table), the title line, and append a new subsection if the user requested a feature not already documented.
+**MUST NOT edit:** database/warehouse/role (user preconditions), the Environment section, the data-model summary, the Cortex-LLM section, the skills index, or Security & governance.
 
-### AGENTS.md Edit Boundaries
+## Step 8 — Build the `app/` project in the workspace
 
-**CAN edit:**
-- Schema name in the environment table (e.g., `QUIZ_COF_C03` → `QUIZ_GES_C01`)
-- Exam code in the environment table (e.g., `COF-C03` → `GES-C01`)
-- Title line (exam name)
-- New feature specification sections (append to end of relevant section if user requested optional features not in AGENTS.md)
+1. Read the updated `AGENTS.md`.
+2. **MANDATORY — read these skills BEFORE writing any code** (they're generation rules, not a post-hoc linter; reading first is what makes the scan pass first-try — skipping it produced 10+ scan failures in a real run):
+   - `$sis` — gotchas (no-`ttl` cache + `clear_caches()`, widget lifecycle, SQL safety) + the pre-deploy scan your code must ALREADY pass
+   - `$cortex` — `call_cortex_json` + `response_format` (no fence parsing), injection delimiting, and the `_search.py` CKE helper (generate it when grounding is in play — Step 1g)
+   - `$quiz/screens` (flow, state, learning-loop contracts, write-back), `$quiz/questions` (`DIFFICULTY_GUIDE`, shuffling, validation, retry), `$quiz/design` (`EXAM_NAME`, the theming contract + chart rules), and `$quiz/features` only if a feature was requested
+   - For general Streamlit / AISQL, the bundled `developing-with-streamlit-in-snowflake` / `cortex-ai-function-studio`. `$sis`/`$cortex` carry only the project deltas.
 
-**MUST NOT edit:**
-- Database, warehouse, role (user-set values in env table — preconditions)
-- Environment: Snowsight Workspace section (platform constraints)
-- Domain model section (4 tables named — the column details live in this skill)
-- Cortex LLM section (model constant + cross-region note)
-- App overview section (screen flow, function list)
-- Available skills index
-- Security and governance principles
+   **Generation rules — apply WHILE writing** (the actual first-pass failures): bind params (only `DATABASE`/`SCHEMA`/`CORTEX_MODEL`/`RESPONSE_FORMATS` in f-strings); `@st.cache_data` with no `ttl` + `clear_caches()` after every write; NO `unsafe_allow_html`; every JSON AI call via `call_cortex_json` + `response_format`; `config.toml` `showErrorDetails = "none"` (string); `st.set_page_config(layout="centered")` first `st.` call in `main.py` and nowhere else.
 
-### What to update
-
-1. **Schema and exam code**: update both rows in the environment table.
-2. **Title**: update to new exam name.
-3. **Additional requirements**: if user requested features not in AGENTS.md, append new subsections. Do not modify existing subsections.
-
-## Step 8 — Build the `app/` Streamlit project in workspace
-
-1. Read the updated AGENTS.md fully.
-2. **MANDATORY: read these skills BEFORE writing any code.** They are generation rules, not a post-hoc linter — reading them first is what makes the pre-deploy scan pass on the first try. (Skipping this step produced 10+ scan failures and a costly fix pass in a real run.)
-   - `$sis` — container-runtime gotchas (no-`ttl` cache + `clear_caches()`, widget lifecycle, SQL safety) AND the pre-deploy scan your generated code must ALREADY pass
-   - `$cortex` — `call_cortex_json` + `response_format` structured outputs (no fence parsing), untrusted-content delimiting, and the **Cortex Search (CKE) retrieval** helper `_search.py` (generate it when grounding is in play — Step 1g)
-   - `$quiz/screens` — page flow, session state, explanation/hint/contrast/debrief/remedial contracts, write-back + `clear_caches()`
-   - `$quiz/questions` — DIFFICULTY_GUIDE (REQUIRED constant), answer shuffling, validation, retry logic
-   - `$quiz/design` — EXAM_NAME constant, theming contract (config.toml keys), chart colors (#29b5e8 blue, #F1914C orange)
-   - If the user requested optional features: also read `$quiz/features`
-   - For general Streamlit patterns consult the bundled `developing-with-streamlit`; for AISQL, `cortex-ai-functions`. This project's `$sis`/`$cortex` carry only the project deltas.
-
-   **Generation rules — apply WHILE writing (these were the actual first-pass failures):**
-   - SQL uses bind params (`:1, :2, …`); only `DATABASE`/`SCHEMA`/`CORTEX_MODEL`/`RESPONSE_FORMATS` constants may be f-string-interpolated.
-   - `@st.cache_data` loaders have **no `ttl`**; every DB write calls `clear_caches()`.
-   - **NO `unsafe_allow_html`** anywhere — styling lives in `.streamlit/config.toml`.
-   - Every JSON AI call uses `call_cortex_json(prompt, fmt_key)` with a `response_format` schema — no markdown-fence parsing.
-   - `.streamlit/config.toml` has `showErrorDetails = "none"` (the string, NOT `false`).
-   - `st.set_page_config(layout="centered")` is the FIRST `st.` call in `main.py`, and appears nowhere else.
-3. Generate a decomposed multipage project under `app/` (NOT a single-file `quiz.py`):
-
+3. Generate the decomposed project (file responsibilities → `$quiz`; the app module map is in `$quiz`):
    ```
    app/
-     main.py              # entry point: st.set_page_config + init_session_state + st.navigation
-     _config.py           # EXAM_NAME, EXAM_CODE, CORTEX_MODEL, PASS_THRESHOLD, DIFFICULTY_GUIDE, color constants
-     _cortex.py           # call_cortex() and the JSON-returning Cortex helpers
-     _data.py             # cached loaders (domains, session stats, recent sessions, domain errors) + clear_caches()
-     _questions.py        # topic schedule, get_question, AI generation, answer shuffling, dedup
-     _ui.py               # shared render helpers: badges, cards, explanation expander, docs link
-     _search.py           # Docs CKE retrieval: search_docs/docs_available/grounding_on (optional grounding)
-     pages/
-       quiz.py            # QUIZ page: home -> quiz -> summary state machine
-       review.py          # REVIEW page: wrong answers + learning dashboard
-       admin.py           # ADMIN page: app config, question manager, bank stats, spend, tools
-     .streamlit/config.toml
-     pyproject.toml       # container-runtime deps (default)
-     snowflake.yml        # deploy descriptor (container)
+     main.py            _config.py   _cortex.py   _data.py   _questions.py   _ui.py   _search.py
+     pages/  quiz.py   review.py   admin.py        # + <feature>.py ONLY for requested features
+     .streamlit/config.toml   pyproject.toml   snowflake.yml
+   ```
+   **Generate `snowflake.yml` + `.streamlit/config.toml` FIRST** — `snowflake.yml` at the project root is what makes the Workspace recognize the folder as a Streamlit app (no "Convert to Streamlit app" click). If the user chose "No CSV", default `question_source = 'ai'`.
+
+4. **`main.py`**: `st.set_page_config(layout="centered", …)` first; `init_session_state()`; shared sidebar title; build navigation explicitly (with `st.navigation` the `pages/` dir is NOT auto-discovered):
+   ```python
+   pages = [st.Page("pages/quiz.py", title="Quiz", default=True),
+            st.Page("pages/review.py", title="Review"),
+            st.Page("pages/admin.py", title="Admin")]
+   # append st.Page("pages/<feature>.py", ...) ONLY for generated features
+   st.navigation(pages).run()
    ```
 
-   - Generate `pages/<feature>.py` (e.g. `exam_simulation.py`, `flashcards.py`, `recommendations.py`) ONLY for features the user requested in Step 1d.
-   - If the user chose "No CSV" in Step 1c → default `question_source = 'ai'` on the home screen.
-
-   **Generation order: create `snowflake.yml` and `.streamlit/config.toml` FIRST** (items 6–7 below), before the code modules. The Workspace recognizes the folder as a Streamlit app via `snowflake.yml` at the project root — generate it first and the app is recognized immediately; you never need the user to click "Convert to Streamlit app". (The Workspace scaffold's default entry file is `streamlit_app.py`; we use `main.py` and point `main_file: main.py` at it.)
-
-4. **`main.py` responsibilities** (entry point):
-   - `st.set_page_config(layout="centered", ...)` MUST be the very first `st.` call.
-   - `init_session_state()` — defaults for all session-state keys. `st.session_state` persists across pages; pages share it.
-   - Build the page list and run navigation:
-
-     ```python
-     pages = [
-         st.Page("pages/quiz.py", title="Quiz", default=True),
-         st.Page("pages/review.py", title="Review"),
-         st.Page("pages/admin.py", title="Admin"),
-     ]
-     # append feature pages ONLY if that feature was generated, e.g.:
-     # pages.append(st.Page("pages/exam_simulation.py", title="Exam Simulation"))
-     st.navigation(pages).run()
-     ```
-
-   - Shared sidebar content (app title) renders in `main.py`; each page adds its own widgets.
-   - With `st.navigation` in the entry point, the `pages/` directory is NOT auto-discovered — navigation is fully controlled by this list. Do not rely on filename-based auto-pages.
-
-5. Generate `pyproject.toml` (container runtime, PyPI deps) with exactly:
-
+5. **`pyproject.toml`** (container deps):
    ```toml
    [project]
    name = "snowpro_quiz"
    version = "1.0.0"
    requires-python = "==3.11.*"
-   dependencies = [
-     "streamlit[snowflake]",
-     "pandas",
-     "altair",
-   ]
+   dependencies = ["streamlit[snowflake]", "pandas", "altair"]
    ```
 
-6. Generate `.streamlit/config.toml`. The `[client]` block is fixed; the `[theme]` block comes from Step 1e — the user's custom choices mapped per the `$quiz/design` theming contract, or (default) the canonical theme below:
+6. **`.streamlit/config.toml`** — `[client] showErrorDetails = "none"` (the string, NOT `false`, which leaks tracebacks) + `toolbarMode = "minimal"`. The `[theme]`/`[theme.sidebar]` block comes from **`$quiz/design`** (the canonical default theme lives there; or the user's Step 1e custom palette) — never author theme values here from memory.
 
-   ```toml
-   [client]
-   showErrorDetails = "none"     # "none", NOT false — the deprecated false maps to "stacktrace" and still leaks tracebacks
-
-   [theme]
-   base = "light"
-   primaryColor = "#29b5e8"
-   linkColor = "#1572a1"
-   baseRadius = "0.5rem"
-   borderColor = "#d6e4ec"
-   showWidgetBorder = true
-   chartCategoricalColors = ["#29b5e8", "#F1914C", "#36B37E", "#7C5CFC"]
-
-   [theme.sidebar]
-   secondaryBackgroundColor = "#eef6fa"
-   ```
-
-   Rules: ONLY native `[theme]`/`[theme.sidebar]` keys (full key reference in `$quiz/design`); no CSS, no external `fontFaces` (CSP); `chartCategoricalColors[0..1]` MUST match the chart constants in `_config.py`.
-
-7. Generate `snowflake.yml` — **this is what makes the Workspace treat the folder as a Streamlit app** (also drives Path B / Snowflake CLI). Use `identifier` = the `app_name` from AGENTS.md, attach the PyPI EAI, and **list EVERY generated file in `artifacts`** (an incomplete `artifacts` list = a broken/partial deploy — this was an observed bug):
-
+7. **`snowflake.yml`** — `identifier` = `app_name` from AGENTS.md; attach the PyPI EAI; **list EVERY generated file in `artifacts`** (an incomplete list = a partial/broken deploy — an observed bug):
    ```yaml
    definition_version: 2
    entities:
      quiz_app:
        type: streamlit
-       identifier: SNOWPRO_QUIZ              # = app_name in AGENTS.md
+       identifier: SNOWPRO_QUIZ
        stage: STAGE_SIS_APP
        query_warehouse: {warehouse}
        compute_pool: {compute_pool}
        runtime_name: SYSTEM$ST_CONTAINER_RUNTIME_PY3_11
-       external_access_integrations:
-         - pypi_access_integration           # required: lets the container install pandas/altair from PyPI
+       external_access_integrations: [pypi_access_integration]
        main_file: main.py
-       artifacts:                            # MUST list every generated file (+ each optional-feature page)
-         - main.py
-         - _config.py
-         - _cortex.py
-         - _data.py
-         - _questions.py
-         - _ui.py
-         - _search.py
-         - pages/
-         - pyproject.toml
-         - .streamlit/config.toml
+       artifacts: [main.py, _config.py, _cortex.py, _data.py, _questions.py, _ui.py, _search.py, pages/, pyproject.toml, .streamlit/config.toml]
    ```
+   Add each `pages/<feature>.py` to `artifacts`. Do NOT set `pages_dir` (navigation is `st.navigation`-controlled) or `execute_as`/`run_mode` (caller's-rights Preview; this app is owner-rights). **Warehouse fallback (Path C):** drop `compute_pool`/`runtime_name`/`external_access_integrations` and swap `pyproject.toml` → `environment.yml` in `artifacts`.
 
-   Add `pages/<feature>.py` to `artifacts` for each generated optional-feature page. Do NOT set `pages_dir` (navigation is `st.navigation`-controlled). Do NOT set `execute_as`/`run_mode` (caller's-rights Preview fields; this app uses owner-rights default). **Warehouse fallback (Path C):** omit `compute_pool`, `runtime_name`, and `external_access_integrations`, and swap `pyproject.toml` → `environment.yml` in `artifacts`.
+8. **Run the `$sis` pre-deploy scan across ALL app files as a final confirmation.** If you applied the item-2 rules it reports 0 failures — that's the target; >0 means a rule was skipped during generation (fix + re-scan). ⚠️ Do NOT deploy on any FAIL.
 
-8. `environment.yml` is generated ONLY for the warehouse fallback (Step 9 Path C). Do not emit it on the container path.
+## Step 8.5 — Self-verify (OPTIONAL — advanced mode)
 
-9. **Run the `$sis` scan across ALL app files as a FINAL CONFIRMATION** (`main.py`, `_*.py`, `pages/*.py`, `.streamlit/config.toml`). If you read item 2's skills and applied the generation rules, this reports **0 failures** — that is the target. More than 0 means a rule was skipped during generation; fix and re-scan, but treat repeated failures as a sign you didn't internalize item 2.
+Only if **self-verify** was enabled (Step 1d) and the session can execute code (Cloud Agents). Byte-compile every module (`python -m py_compile app/main.py app/_*.py app/pages/*.py`) — Snowflake-bound modules can't run outside SiS, so compile/parse only; on failure fix → re-run the `$sis` scan → repeat. If the session can't execute code, say so and skip. Supplements the Step 8 scan, never replaces it.
 
-All files are written into the current workspace under `app/` (not inside `.snowflake/cortex/skills/`). The user deploys them in Step 9.
+## Step 9 — Deploy
 
-## Step 8.5 — Self-verify the generated modules (OPTIONAL — advanced mode)
+Three paths; **Path A is the default**. The agent instructs + verifies with SQL (it can't click UI or `PUT`). Container deploy needs the compute pool + PyPI EAI from Step 1f — if unresolved, fix now or use Path C. Offer the choice via `ask_user_question`.
 
-Run ONLY if the user enabled **self-verify** in Step 1d. Requires a CoCo session that can execute code (Cloud Agents — rolling out since Summit 26). If this session has no code-execution capability, say so explicitly, skip this step, and continue to Step 9.
-
-1. Byte-compile every generated module to catch syntax errors before the user ever clicks Run:
-   ```
-   python -m py_compile app/main.py app/_config.py app/_cortex.py app/_data.py app/_questions.py app/_ui.py app/pages/*.py
-   ```
-2. Snowflake-bound modules (`get_active_session`, `AI_COMPLETE`) cannot execute outside SiS — do NOT try to run them; compile/parse checks only.
-3. On any failure: fix the module, re-run the `$sis` scan, then repeat 8.5.
-4. Report: list of files checked, PASS/FAIL per file.
-
-This step supplements the Step 8 scan with an execution-level syntax check — it never replaces it.
-
-## Step 9 — Deploy Streamlit app
-
-Three supported deploy paths. **Path A (Workspaces) is the default.** The agent cannot click the UI or execute `PUT`; it instructs the user and verifies with SQL.
-
-### Prerequisites (Paths A and B — already verified in Step 1f)
-
-Container deploy needs BOTH a **compute pool** and the **PyPI external access integration** (`pypi_access_integration`) — both checked in Step 1f. If either is still unresolved, fix it now (Step 1f has the DDL) or fall back to Path C.
-
-### Path A — Workspaces live preview + Deploy (default; Streamlit-in-Workspaces is Public Preview)
-
-1. Present instructions to the user:
-
-   > "The app is generated under `app/` in this workspace. To preview and deploy:
-   > 1. Open `app/main.py` and click **Run** (or press Cmd/Ctrl+Enter). This starts a private **dev app** preview in the browser — no stage upload needed. Iterate until it looks right.
-   > 2. Click **Deploy** in the project toolbar. In the dialog set: app title `SNOWPRO_QUIZ` (the `app_name` from AGENTS.md), database `{database}`, schema `QUIZ_<CODE>`, **compute pool** `{compute_pool}`, query warehouse `{warehouse}`, and under **Network → External Access Integrations** add `pypi_access_integration` (without it the deploy fails fetching pandas from PyPI — the exact error you'd otherwise hit).
-   > 3. Reply 'deployed'."
-
-2. Verify:
-   ```sql
-   SHOW STREAMLITS LIKE 'SNOWPRO_QUIZ' IN SCHEMA {database}.QUIZ_<CODE>;
-   ```
-
-Note: dev-app changes are visible only to the developing user. Other users see the app only after **Deploy** — and after every later edit, only after a re-Deploy.
-
-### Path B — Scripted: stage + CREATE STREAMLIT (container runtime)
-
-1. Ask the user to upload the `app/` files to the stage (**Data » Databases » {database} » QUIZ_<CODE> » Stages » STAGE_SIS_APP » + Files**), preserving the folder layout (`pages/`, `.streamlit/`). Then verify:
-   ```sql
-   LIST @{database}.QUIZ_<CODE>.STAGE_SIS_APP;
-   ```
-2. Execute:
-   ```sql
-   CREATE OR REPLACE STREAMLIT {database}.QUIZ_<CODE>.SNOWPRO_QUIZ
-     FROM '@{database}.QUIZ_<CODE>.STAGE_SIS_APP'
-     MAIN_FILE = 'main.py'
-     RUNTIME_NAME = 'SYSTEM$ST_CONTAINER_RUNTIME_PY3_11'
-     COMPUTE_POOL = {compute_pool}
-     QUERY_WAREHOUSE = {warehouse}
-     EXTERNAL_ACCESS_INTEGRATIONS = (pypi_access_integration);
-   ```
-   The `EXTERNAL_ACCESS_INTEGRATIONS` clause is required on the container runtime — without it the app can't install pandas/altair from PyPI. (Equivalent from a machine with the Snowflake CLI: `snow streamlit deploy`, driven by the generated `snowflake.yml`.)
-
-### Path C — Warehouse-runtime fallback (no compute pool or no PyPI EAI)
-
-Use when the account has no usable compute pool OR no PyPI external access integration (the warehouse runtime needs neither — it installs from the Snowflake Anaconda channel). Generate `environment.yml` (instead of `pyproject.toml`):
-
-```yaml
-name: snowpro_quiz
-channels:
-  - snowflake
-dependencies:
-  - streamlit
-  - pandas
-  - altair
-```
-
-Then deploy via the Path B stage flow, but without the container parameters:
-
-```sql
-CREATE OR REPLACE STREAMLIT {database}.QUIZ_<CODE>.SNOWPRO_QUIZ
-  FROM '@{database}.QUIZ_<CODE>.STAGE_SIS_APP'
-  MAIN_FILE = 'main.py'
-  QUERY_WAREHOUSE = {warehouse};
-```
-
-Note: the warehouse runtime caps Streamlit at 1.52.2 — flag to the user that container-only guidance in `$sis` does not all apply on this path.
-
-### Choosing between paths
-
-**Use `ask_user_question` tool (if available):**
-
-> "Ready to deploy. Which path do you prefer?"
-
-| Option | Description |
-|--------|-------------|
-| **Path A — Workspaces (default)** | Run `app/main.py` for a live dev-app preview, then one-click Deploy (compute pool + warehouse). |
-| **Path B — scripted via stage** | You upload `app/` to STAGE_SIS_APP, I run `CREATE STREAMLIT` on the container runtime. Fully reproducible. |
-| **Path C — warehouse fallback** | No compute pool available: `environment.yml` + warehouse runtime (Streamlit 1.52.2). |
-
-Default: Path A.
-
-## Step 10 — Verify and report
-
-### 10a — Verify deployment
-
+**Path A — Workspaces preview + Deploy** (Public Preview): tell the user → open `app/main.py`, **Run** (private dev-app preview, no stage), iterate; then **Deploy** in the toolbar setting app title `SNOWPRO_QUIZ`, database `{database}`, schema `QUIZ_<CODE>`, compute pool `{compute_pool}`, warehouse `{warehouse}`, and **Network → External Access Integrations → `pypi_access_integration`** (without it the PyPI fetch fails). Reply "deployed". Verify:
 ```sql
 SHOW STREAMLITS LIKE 'SNOWPRO_QUIZ' IN SCHEMA {database}.QUIZ_<CODE>;
 ```
+(Dev-app changes are private until **Deploy** — and after every later edit, until re-Deploy.)
 
-Must return 1 row. Confirm the previous exam schema (if any) is untouched.
-
-### 10b — Derive the app URL
-
-**Do NOT construct the URL from `CURRENT_ACCOUNT()`** - that returns the account locator (e.g. `jr65399`), which is not what Snowsight uses in URLs. The correct URL uses the **organization name** + **account name**:
-
+**Path B — scripted via stage** (reproducible): user uploads `app/` to `STAGE_SIS_APP` (preserving `pages/`, `.streamlit/`); verify with `LIST`; then:
 ```sql
-SELECT
-  LOWER(CURRENT_ORGANIZATION_NAME()) AS org,
-  LOWER(CURRENT_ACCOUNT_NAME())      AS account;
+CREATE OR REPLACE STREAMLIT {database}.QUIZ_<CODE>.SNOWPRO_QUIZ
+  FROM '@{database}.QUIZ_<CODE>.STAGE_SIS_APP' MAIN_FILE = 'main.py'
+  RUNTIME_NAME = 'SYSTEM$ST_CONTAINER_RUNTIME_PY3_11'
+  COMPUTE_POOL = {compute_pool} QUERY_WAREHOUSE = {warehouse}
+  EXTERNAL_ACCESS_INTEGRATIONS = (pypi_access_integration);
 ```
+The `EXTERNAL_ACCESS_INTEGRATIONS` clause is required on the container runtime. (CLI equivalent: `snow streamlit deploy`, driven by `snowflake.yml`.)
 
-Construct the URL as:
+**Path C — warehouse fallback** (no pool / no EAI — needs neither, installs from the Snowflake Anaconda channel): generate `environment.yml` (`channels: [snowflake]`, deps `streamlit`/`pandas`/`altair`), then deploy via the Path B stage flow without the container params (`CREATE OR REPLACE STREAMLIT … MAIN_FILE = 'main.py' QUERY_WAREHOUSE = {warehouse};`). Streamlit is capped at 1.52.2 — flag that the container-only guidance in `$sis` doesn't all apply.
 
+## Step 10 — Verify + report
+
+Confirm `SHOW STREAMLITS LIKE 'SNOWPRO_QUIZ' IN SCHEMA {database}.QUIZ_<CODE>;` returns 1 row and the previous exam's schema is untouched.
+
+**App URL — do NOT use `CURRENT_ACCOUNT()`** (that's the account locator, not the URL slug). Use org + account name:
+```sql
+SELECT LOWER(CURRENT_ORGANIZATION_NAME()) AS org, LOWER(CURRENT_ACCOUNT_NAME()) AS account;
 ```
-https://app.snowflake.com/{org}/{account}/#/streamlit-apps/{database}.QUIZ_<CODE>.SNOWPRO_QUIZ
-```
+→ `https://app.snowflake.com/{org}/{account}/#/streamlit-apps/{database}.QUIZ_<CODE>.SNOWPRO_QUIZ`. If either function is NULL, ask the user for their Snowsight base URL (the part up to `/#/`).
 
-Example: `https://app.snowflake.com/000000/xxxxxxx/#/streamlit-apps/CORTEX_DB.QUIZ_COF_C03.SNOWPRO_QUIZ`
-
-If either function returns NULL (older Snowflake edition or missing privilege), fall back to asking the user: "What is your Snowsight base URL? Open any Snowsight tab and copy the part up to `/#/` from the address bar."
-
-### 10c — Report to the user
-
-Present:
-- Exam: {exam_name} ({exam_code})
-- Schema: `{database}.QUIZ_<CODE>`
-- Domains extracted: N
-- Questions loaded: N (or 0 if AI-only)
-- Streamlit app: `SNOWPRO_QUIZ`
-- **App URL**: (from 10b)
-- Any additional features implemented
-- Advanced options active, if any (model profile / self-verify result / Automations recipe handed over)
-
-### 10d — Final checkpoint
-
-**Use `ask_user_question` tool (if available):**
-
-> "Deployment complete. All resources created successfully."
-
-| Option | Description |
-|--------|-------------|
-| **Done** | Looks good - no further action needed |
-| **Review** | I want to review something before finalizing |
-
-**Routing logic:**
-- **Done** → end skill execution.
-- **Review** → ask what they want to review.
+Report: exam name + code, schema, domains extracted (N), questions loaded (N or 0=AI-only), app name, **app URL**, features implemented, advanced options active. Then `ask_user_question`: **Done** / **Review**.
 
 ---
 
 # Stopping Points
 
-All stopping points below use `ask_user_question` (if available) to present structured options. If the tool is not available, present the same options as a numbered list and wait for the user's text response.
+`ask_user_question` (or numbered-list fallback) at each:
+- **1a** — halt on unfilled `<...>` placeholders; resume when filled.
+- **1c** — confirm PDF; ask about optional CSV.
+- **1e** — default vs custom look; if custom, run the dialog + confirm palette before Step 2.
+- **1f** — compute pool + PyPI EAI; STOP-or-warehouse-fallback if missing.
+- **4** — wait for upload; verify via `LIST`.
+- **5 (conditional)** — pick among conflicting domain structures.
+- **5 verify** — Approve / Re-extract / Abort.
+- **8 scan** — every `$sis` item must PASS; do NOT deploy on any FAIL.
+- **8.5** (if self-verify) — modules compile-clean, else fix → re-scan.
+- **9** — deploy path A/B/C; wait for "deployed" / upload confirmation.
+- **10** — report; Done / Review.
 
-- ⚠️ After Step 1a: Halt if AGENTS.md env config still has `<...>` placeholders; resume when filled.
-- ⚠️ After Step 1c: Confirm PDF and ask about optional CSV.
-- ⚠️ After Step 1e: Default vs custom look; if custom, run the guided theming dialog and confirm the palette before Step 2.
-- ⚠️ After Step 4: Wait for manual upload confirmation; verify via `LIST @stage`.
-- ⚠️ After Step 5a.1 (conditional): If conflicting domain structures found, let user choose.
-- ⚠️ After Step 5d: Domain verification. Approve/Re-extract/Abort. Do NOT proceed until user responds.
-- ⚠️ After Step 8 scan: All items from `$sis` must PASS across every app file. Do NOT deploy on any FAIL. (No `ask_user_question` — pass/fail gate.)
-- ⚠️ After Step 8.5 (only if self-verify enabled): all modules compile-clean; on FAIL fix → re-scan → re-verify. If the session cannot execute code, state it and proceed.
-- ⚠️ Step 9: Compute-pool check (`SHOW COMPUTE POOLS`), then Path A / B / C deploy choice; wait for "deployed" (Path A) or upload confirmation (Path B/C).
-- ⚠️ After Step 10b: Derive app URL from `CURRENT_ORGANIZATION_NAME()` + `CURRENT_ACCOUNT_NAME()`, NOT from `CURRENT_ACCOUNT()`.
-- ⚠️ After Step 10: Deployment report. Done/Review.
-
-**Resume rule:** Upon user approval, proceed directly to next step without re-asking.
+**Resume rule:** on approval, proceed without re-asking.
 
 ---
 
 # Important Notes
 
-- **Never drop or modify the previous exam's schema.** Both exams coexist in separate schemas.
-- **All SQL uses the new schema.** Double-check every query references `{database}.QUIZ_<CODE>`.
-- **Dollar-quoting for AI_COMPLETE prompts.** Sanitize any `$$` in interpolated content to `$ $`.
-- **If any step fails**, diagnose the issue, fix it, and retry. Do not skip steps.
-- **Manual upload is the only way to get files onto stages in Snowsight** — the agent cannot execute `PUT`. Always wait for user confirmation + `LIST @stage` check. (Stages are needed for input files in Step 4 and for deploy Paths B/C; deploy Path A needs no stage.)
-- **Schema-per-exam** is the only isolation mechanism in this variant. No git, no branches.
-- **If a question bank needs schema adaptation**, invoke `$adapt-questions` before Step 6 loading.
-
----
+- **Never drop or modify the previous exam's schema** — exams coexist in separate schemas (`QUIZ_<CODE>` is the only isolation; no git here).
+- **Every query references `{database}.QUIZ_<CODE>`** — double-check.
+- **Manual upload is the only way onto a stage in Snowsight** (no `PUT`) — always wait for confirmation + `LIST`.
+- **If a step fails**, diagnose, fix, retry — don't skip.
+- **Bank needs schema adaptation?** → `$adapt-questions` before Step 6.
 
 ## Output
 
-A fully deployed quiz app in a dedicated schema, with domains extracted from the PDF, questions loaded (from CSV if provided, otherwise AI-generated), and passing pre-deploy scan.
+A deployed quiz app in a dedicated schema: domains extracted from the PDF, the bank loaded (CSV) or empty (AI-only), the `app/` project generated and passing the `$sis` scan.
