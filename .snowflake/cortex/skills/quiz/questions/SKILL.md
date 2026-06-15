@@ -14,8 +14,8 @@ Parent skill `$quiz` routes here for QUESTIONS intent.
 
 # When NOT to Use
 
-- Prompt audit checklist -> use `$cortex/prompt-audit`
-- Cortex connectivity/errors -> use `$cortex/patterns`
+- Prompt audit checklist -> use `$cortex`
+- Cortex connectivity/errors -> use `$cortex`
 - Quiz screen UI -> use `$quiz/screens`
 
 ---
@@ -53,7 +53,7 @@ DIFFICULTY_GUIDE = {
 }
 ```
 
-Each tier has CONSTRAINT (what the question must do) and STYLE (how the question reads). The prompt validator (`$cortex/prompt-audit` item 4) checks for these multi-sentence descriptions.
+Each tier has CONSTRAINT (what the question must do) and STYLE (how the question reads). The prompt validator (`$cortex` item 4) checks for these multi-sentence descriptions.
 
 ---
 
@@ -141,7 +141,7 @@ Reference: see `_get_db_question()` in `_questions.py`
 
 # Validation
 
-Generation goes through `call_cortex_json(prompt, "question")` — the `RESPONSE_FORMATS["question"]` schema (see `$cortex/patterns`) **guarantees** the required keys and types (`question_text`, `is_multi`, `option_a`, `option_b`, `correct_answer`), so there is no key-stripping or shape-checking step.
+Generation goes through `call_cortex_json(prompt, "question")` — the `RESPONSE_FORMATS["question"]` schema (see `$cortex`) **guarantees** the required keys and types (`question_text`, `is_multi`, `option_a`, `option_b`, `correct_answer`), so there is no key-stripping or shape-checking step.
 
 What the code still does:
 - **Length — two mechanisms** (the schema guarantees shape, not length):
@@ -209,7 +209,7 @@ Reference: see `generate_ai_question()` in `_questions.py`
 
 # Doc grounding (hybrid — optional, default-on when the CKE is available)
 
-When `$search.search_docs()` is active (see `$cortex/patterns` — Docs CKE), ground generation in real Snowflake documentation:
+When `$search.search_docs()` is active (see `$cortex` — Docs CKE), ground generation in real Snowflake documentation:
 
 ```python
 chunks = search_docs(f"{domain_name}: {topic}")   # [] when grounding off / unavailable
@@ -236,7 +236,7 @@ This is **hybrid**: docs are preferred, `key_facts` keep coverage when a topic i
 
 # AI Question Format
 
-The response shape is enforced by `RESPONSE_FORMATS["question"]` (see `$cortex/patterns`) — `question_text`, `is_multi`, `option_a..e`, `correct_answer`. The prompt's job is **content**: it MUST still include the max-length guidance alongside the keys (`question_text` max 500 chars, options max 200 chars each), the topic constraint, the full `DIFFICULTY_GUIDE` text, and the dedup block — the schema cannot express any of that.
+The response shape is enforced by `RESPONSE_FORMATS["question"]` (see `$cortex`) — `question_text`, `is_multi`, `option_a..e`, `correct_answer`. The prompt's job is **content**: it MUST still include the max-length guidance alongside the keys (`question_text` max 500 chars, options max 200 chars each), the topic constraint, the full `DIFFICULTY_GUIDE` text, and the dedup block — the schema cannot express any of that.
 
 Some SnowPro questions have 5 options. `option_e` is in the schema as optional. After the call, set `OPTION_E` from `option_e` if present.
 

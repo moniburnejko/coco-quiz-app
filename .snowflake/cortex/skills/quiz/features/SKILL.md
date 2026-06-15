@@ -279,7 +279,7 @@ Extends the **Review page** (no new page): per wrong answer, AI diagnoses the th
 
 ## Per-card diagnosis
 
-On each wrong-answer card: button "🧠 Diagnoza błędu" → `call_cortex_json(prompt, "misconception")` with question, all options, the user's selection, the correct answer — all wrapped per the untrusted-content delimiting rule (`$cortex/patterns`). Schema:
+On each wrong-answer card: button "🧠 Diagnoza błędu" → `call_cortex_json(prompt, "misconception")` with question, all options, the user's selection, the correct answer — all wrapped per the untrusted-content delimiting rule (`$cortex`). Schema:
 
 ```
 "misconception": "the likely thinking error behind choosing {selected} (1-2 sentences, names the confused concepts)",

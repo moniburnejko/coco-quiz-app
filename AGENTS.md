@@ -61,7 +61,7 @@ Per-round summary, written by the app at round end. Drives the Learning Dashboar
 columns: `session_id`, `session_ts`, `exam_code`, `round_size`, `correct_count`, `score_pct`, `domain_filter`, `difficulty`.
 
 ### QUIZ_CONFIG
-Runtime app configuration (key-value, VARIANT), edited from the Admin page. Defaults live in `_config.py` `CONFIG_DEFAULTS`; DB values override them via the cached `load_config()`. Keys include the learning-loop toggles and `docs_grounding` (`auto`/`on`/`off` — grounding in the Snowflake Documentation CKE; see `$cortex/patterns`).
+Runtime app configuration (key-value, VARIANT), edited from the Admin page. Defaults live in `_config.py` `CONFIG_DEFAULTS`; DB values override them via the cached `load_config()`. Keys include the learning-loop toggles and `docs_grounding` (`auto`/`on`/`off` — grounding in the Snowflake Documentation CKE; see `$cortex`).
 columns: `config_key`, `config_value`, `updated_at`.
 
 ---
@@ -72,8 +72,7 @@ Preferred model: `claude-sonnet-4-6`. Store as constant `CORTEX_MODEL` in `_conf
 
 Accounts that cannot reach the chosen model in-region must enable cross-region inference (once per account, as ACCOUNTADMIN): `ALTER ACCOUNT SET CORTEX_ENABLED_CROSS_REGION = 'ANY_REGION';` (`'AWS_GLOBAL'` is a narrower alternative; the legacy `'AWS_US'` still works but is narrowest). Accounts created after 2026-03-09 default to `ANY_REGION` and may need no change.
 
-For calling patterns, dollar-quoting, structured outputs (`response_format`), and diagnostics: see `$cortex/patterns`.
-For prompt quality audit: see `$cortex/prompt-audit`.
+For calling patterns, dollar-quoting, structured outputs (`response_format`), diagnostics, and prompt-quality audit: see `$cortex`.
 
 ---
 
@@ -127,7 +126,7 @@ For UI styling, badges, section labels, and chart colors: see `$quiz/design`.
 
 | Skill | Invoke | Purpose | Sub-skills |
 |-------|--------|---------|------------|
-| `$cortex` | Cortex AI work | Calling patterns, diagnostics, prompt auditing | `$cortex/patterns`, `$cortex/prompt-audit` |
+| `$cortex` | Cortex AI work | Structured outputs, injection delimiting, CKE grounding, diagnostics, prompt audit | (standalone) |
 | `$sis` | SiS code or deploy | Container-runtime gotchas + mandatory pre-deploy scan | (standalone) |
 | `$quiz` | app code work | Screen contracts, question generation, UI styling, optional features | `$quiz/screens`, `$quiz/questions`, `$quiz/design`, `$quiz/features` |
 | `$setup-exam` | new exam | Full 10-step pipeline (schema, stages, tables, domains, questions, app build, deploy) | (standalone) |
@@ -136,9 +135,9 @@ For UI styling, badges, section labels, and chart colors: see `$quiz/design`.
 ### Skill dependencies
 
 - `$setup-exam` uses `$sis` (pre-deploy scan), `$quiz/*` (app generation), optionally `$adapt-questions` (CSV/JSON schema mismatch)
-- `$adapt-questions` depends on `$cortex/patterns` (if Strategy D uses AI_COMPLETE)
-- `$sis` depends on `$cortex/patterns` (dollar-quoting, JSON parsing)
-- `$cortex/prompt-audit` validates prompts authored during `$setup-exam`
+- `$adapt-questions` depends on `$cortex` (if Strategy D uses AI_COMPLETE)
+- `$sis` depends on `$cortex` (dollar-quoting, JSON parsing)
+- `$cortex` validates prompts authored during `$setup-exam`
 
 ### Global skills
 

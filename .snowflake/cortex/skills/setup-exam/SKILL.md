@@ -14,7 +14,7 @@ Example prompts:
 # When NOT to Use
 
 - Do not use this skill if the exam schema is already set up (check `SHOW SCHEMAS LIKE 'QUIZ_<CODE>' IN DATABASE {database};`).
-- Do not use for fixing bugs in an existing quiz — use `$cortex/patterns`, `$cortex/prompt-audit`, or `$sis` instead.
+- Do not use for fixing bugs in an existing quiz — use `$cortex` or `$sis` instead.
 
 ---
 
@@ -173,7 +173,7 @@ Record the EAI name (the `external_access_integration` value in AGENTS.md) — i
 
 ### 1g — Doc grounding (optional, default-on when available)
 
-The app can ground question generation and explanations in the **Snowflake Documentation CKE** — a free Marketplace Cortex Search service (`SNOWFLAKE_DOCUMENTATION.SHARED.CKE_SNOWFLAKE_DOCS_SERVICE`) — and cite the exact doc page. Default-on with graceful fallback. Probe it once (one ad-hoc `SEARCH_PREVIEW` is fine here; the app itself uses the Python API — see `$cortex/patterns`):
+The app can ground question generation and explanations in the **Snowflake Documentation CKE** — a free Marketplace Cortex Search service (`SNOWFLAKE_DOCUMENTATION.SHARED.CKE_SNOWFLAKE_DOCS_SERVICE`) — and cite the exact doc page. Default-on with graceful fallback. Probe it once (one ad-hoc `SEARCH_PREVIEW` is fine here; the app itself uses the Python API — see `$cortex`):
 
 ```sql
 SELECT SNOWFLAKE.CORTEX.SEARCH_PREVIEW(
@@ -537,7 +537,7 @@ Use the Edit tool on `AGENTS.md`. Follow the edit boundaries strictly.
 1. Read the updated AGENTS.md fully.
 2. **MANDATORY: read these skills BEFORE writing any code.** They are generation rules, not a post-hoc linter — reading them first is what makes the pre-deploy scan pass on the first try. (Skipping this step produced 10+ scan failures and a costly fix pass in a real run.)
    - `$sis` — container-runtime gotchas (no-`ttl` cache + `clear_caches()`, widget lifecycle, SQL safety) AND the pre-deploy scan your generated code must ALREADY pass
-   - `$cortex/patterns` — `call_cortex_json` + `response_format` structured outputs (no fence parsing), untrusted-content delimiting, and the **Cortex Search (CKE) retrieval** helper `_search.py` (generate it when grounding is in play — Step 1g)
+   - `$cortex` — `call_cortex_json` + `response_format` structured outputs (no fence parsing), untrusted-content delimiting, and the **Cortex Search (CKE) retrieval** helper `_search.py` (generate it when grounding is in play — Step 1g)
    - `$quiz/screens` — page flow, session state, explanation/hint/contrast/debrief/remedial contracts, write-back + `clear_caches()`
    - `$quiz/questions` — DIFFICULTY_GUIDE (REQUIRED constant), answer shuffling, validation, retry logic
    - `$quiz/design` — EXAM_NAME constant, theming contract (config.toml keys), chart colors (#29b5e8 blue, #F1914C orange)
