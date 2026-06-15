@@ -14,13 +14,15 @@ Parent skill `$quiz` routes here for FEATURES intent.
 
 - Core quiz screens (home, quiz, summary) -> use `$quiz/screens`
 - Question generation logic -> use `$quiz/questions`
-- UI styling/badges -> use `$quiz/style`
+- UI styling/badges -> use `$quiz/design`
 
 ---
 
 # IMPORTANT
 
 This skill contains **OPTIONAL** features. Do NOT implement any feature unless the user explicitly requests it in their prompt. Each feature is self-contained — implement only the requested ones. Core quiz functionality (home, quiz, summary, wrong answers, learning dashboard) does NOT require this skill.
+
+All **visual rendering** (badges, cards, callouts, buttons, charts) follows `$quiz/design`, the single source for styling. Each feature below specifies *what* it shows and *where* in the flow — it never defines colors, theme keys, or chart formatting.
 
 ---
 
@@ -332,4 +334,4 @@ Post-answer, next to (not competing with) "Next": small secondary button → pop
 
 ## Output
 
-Only the requested optional features implemented and integrated into quiz.py, following the UI patterns from `$quiz/style` and state management from `$quiz/screens`.
+Only the requested optional features implemented and integrated into quiz.py, following the UI patterns from `$quiz/design` and state management from `$quiz/screens`.

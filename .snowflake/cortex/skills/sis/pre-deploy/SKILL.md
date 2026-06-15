@@ -14,7 +14,7 @@ Parent skill `$sis` routes here for PRE-DEPLOY intent.
 # When NOT to Use
 
 - Coding patterns (session, cache, widgets) -> use `$sis/patterns`
-- UI styling/badges -> use `$quiz/style`
+- UI styling/badges -> use `$quiz/design`
 - Cortex AI issues -> use `$cortex/patterns`
 
 ---

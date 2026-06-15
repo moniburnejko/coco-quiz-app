@@ -166,7 +166,7 @@ Dispatches across four sub-skills depending on what you are working on: **screen
 $setup-exam ----┬--> $adapt-questions -> $cortex/patterns (if AI-assisted mapping)
                 ├--> $cortex/patterns (AI_PARSE_DOCUMENT, AI_COMPLETE structured outputs)
                 ├--> $sis/pre-deploy -> $cortex/patterns (dollar-quoting, response_format)
-                └--> $quiz/screens, $quiz/questions, $quiz/style, $quiz/features
+                └--> $quiz/screens, $quiz/questions, $quiz/design, $quiz/features
 
 $cortex/prompt-audit - runs against prompts produced by $setup-exam and $quiz/questions
 

@@ -242,7 +242,7 @@ Save. CoCo re-reads `AGENTS.md` on the next message. If you forget to fill any r
 
 ## Step 3 - run the setup prompt
 
-Copy the **setup prompt** from [prompts.md](prompts.md) and paste it into CoCo. The prompt is intentionally short - it just tells the agent to run `$setup-exam` end-to-end and stop at each manual upload.
+Copy the **setup prompt** from [prompts.md](prompts.md) and paste it into CoCo. The prompt is intentionally short — it attaches `@AGENTS.md` (always-on context) and invokes `/setup-exam`; the skill itself carries every step and stop. You don't re-describe the procedure in the prompt.
 
 The agent will:
 

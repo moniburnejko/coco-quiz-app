@@ -1,94 +1,62 @@
 # Prompts - Snowflake CoCo in Snowsight
 
-A **single** end-to-end prompt drives the whole pipeline via `$setup-exam`. No phase splitting - Snowsight's CoCo auto-routes through skill descriptions, and the skill itself builds in stopping points for manual uploads and approvals.
+Two short prompts. They stay short **on purpose**: all the procedure lives in the skills, all the project context in `AGENTS.md`. The prompt just attaches the context and invokes the skill — it never re-describes the steps.
 
-A second prompt covers the fix-session path when something breaks post-deploy.
+How to invoke in Snowsight CoCo:
+- **`@AGENTS.md`** attaches the context file (kept in view for the whole session).
+- **`/setup-exam`** (also `/cortex`, `/sis`, `/quiz`, `/adapt-questions`) invokes a skill — type `/` to pick it. The skill carries every step, stop, and check.
 
 ---
 
 ## Setup prompt - paste to build the app
 
+Attach the context, then invoke the skill (type `/` and pick `setup-exam`):
+
 ```
-FIRST open and read .snowflake/cortex/skills/setup-exam/SKILL.md in full, then execute it step by step, in order, honoring every mandatory STOP. Do NOT improvise the pipeline from the AGENTS.md overview.
+@AGENTS.md
 
-verify the session context matches AGENTS.md (role, warehouse, database). validate that AGENTS.md has no <...> placeholders left (echo the env table and list any) before creating anything.
-
-run the Step 1f deploy preflight: confirm a compute pool exists (SHOW COMPUTE POOLS) and a PyPI external access integration is available; if either is missing, give me the exact DDL and STOP — or switch me to the warehouse fallback.
-
-stop at the manual upload (pdf study guide to STAGE_QUIZ_DATA) and wait for me to confirm with "uploaded". after creating the stage, DESCRIBE it and confirm SNOWFLAKE_SSE before parsing.
-
-stop at the domain-extraction checkpoint - show me the domain list, weights sum, and key_facts lengths; ask for approve / re-extract / abort.
-
-read $sis/patterns and $sis/pre-deploy BEFORE generating any code, and generate snowflake.yml + .streamlit/config.toml first. the pre-deploy scan is a final confirmation - aim for zero failures, not a cleanup pass.
-
-at deploy time default to the workspaces flow: i will run main.py for the dev preview and click Deploy (with the PyPI EAI attached in the Network field) myself, then confirm with "deployed". offer the stage path only as fallback. name the app per app_name in AGENTS.md.
-
-after deploy, run SHOW STREAMLITS to confirm and report: exam name, exam code, schema, domain count, question count, app URL.
-
-i am setting up: [exam name + any optional features or advanced options you want, e.g. "SnowPro Core COF-C03, add a timed exam simulation mode, use the quality model profile"].
+/setup-exam  —  I'm setting up: SnowPro Core (COF-C03).
 ```
+
+Add anything optional on that line — features ("add exam simulation and flashcards"), advanced mode ("use the quality model profile"), or look ("let me pick the colors"). That's the whole prompt; `/setup-exam` drives the rest and stops at each checkpoint.
 
 ### When to paste
-
 - First use of the workspace - before anything is created.
-- Adding a second exam - same prompt, different exam name at the bottom. The agent spins up a fresh `QUIZ_<NEW_CODE>` schema, does not touch the previous one.
+- Adding another exam - same prompt, different exam name. A fresh `QUIZ_<NEW_CODE>` schema is created; the previous one is untouched.
 
-### What the agent will ask you during the run
-
-1. Exam name + exam code (e.g. "SnowPro Core", "COF-C03").
-2. PDF filename (required) - the study guide you will upload.
-3. CSV/JSON question-bank filename - optional; without one the bank stays empty (runtime AI questions only; seed the bank later from Admin / a worksheet recipe / an Automation).
-4. Any additional customisations (optional features, advanced mode — quality model profile / self-verify / Automations, alternative scoring, etc.).
-5. Default look or custom — custom runs a short theming dialog (Streamlit theme keys only, no CSS).
-5. "uploaded" confirmation after the input-file stage upload.
-6. Approve / Re-extract / Abort after domain extraction.
-7. Deploy path: Path A (workspace **Run + Deploy**, default), Path B (scripted stage + `CREATE STREAMLIT`, container runtime), or Path C (warehouse fallback, no compute pool).
-8. "Done / Open app / Review" at the end.
+### What the skill will ask you during the run (in order)
+1. Exam name + code (e.g. "SnowPro Core", "COF-C03").
+2. PDF filename (required) — the study guide you'll upload.
+3. CSV/JSON question-bank filename — optional; without one the bank starts empty (runtime AI questions; seed it later from Admin / worksheet / Automation).
+4. Optional features + advanced mode (quality model / self-verify / Automations).
+5. Default look, or a short custom-theming dialog.
+6. Deploy prerequisites (compute pool + PyPI EAI) — with the exact DDL if missing, or the warehouse fallback.
+7. "uploaded" after the PDF stage upload → Approve/Re-extract/Abort after domain extraction → deploy → final report.
 
 ---
 
 ## Fix prompt - paste when something breaks
 
 ```
-read AGENTS.md, then triage the following:
+@AGENTS.md
 
-[describe the symptom - error message from Snowsight, wrong behaviour on a screen, parse error in logs, etc.]
-
-routing:
-- if the error mentions AI_COMPLETE, AI_PARSE_DOCUMENT, "model not found", "file not accessible", or is about cross-region → run the 5-step diagnostic from $cortex/patterns first, report pass/fail, then propose a fix.
-- if the app crashes in the browser or shows a python traceback → re-run $sis/pre-deploy on the current app files, fix all fails, then ask me to re-deploy (workspace Deploy, or re-upload to STAGE_SIS_APP on the scripted path).
-- if AI explanations or questions look wrong or come back incomplete → run the 7-item audit from $cortex/prompt-audit on the offending prompt.
-- if screen transitions misbehave (stuck on a button, duplicate renders, stale widget values) → re-read $quiz/screens and propose a patch.
-
-never redeploy on a failing pre-deploy scan. always stop and ask me to re-deploy after a fix.
+Something broke: [paste the error text / describe the wrong behaviour].
+Triage with the relevant skill (/cortex, /sis, or /quiz) and propose a fix before changing anything. Never redeploy on a failing pre-deploy scan.
 ```
 
+The parent skills route by intent: Cortex/AI errors → `/cortex`; app crash, deploy, or pre-deploy scan → `/sis`; page or generation behaviour → `/quiz`.
+
 ### When to paste
-
-- `AI_COMPLETE` returns `NULL` or an endpoint error.
-- PDF upload looks fine but `AI_PARSE_DOCUMENT` says "file not accessible".
-- Streamlit app fails to load / shows a Python traceback.
-- Explanations in the Quiz screen are empty or truncated.
-- Dashboard shows wrong numbers (weights, counts, percentages).
+- `AI_COMPLETE` / `AI_PARSE_DOCUMENT` errors (NULL, "model not found", "file not accessible", cross-region).
+- Deploy fails (e.g. the PyPI/EAI package error) or the app shows a Python traceback.
+- Explanations/questions look wrong, or the dashboard shows wrong numbers.
 
 ---
 
-## Tips for keeping prompts short
+## Why the prompts are short
 
-The reason a single prompt works in Snowsight is that:
+- **`AGENTS.md` is always in context** (`@AGENTS.md`) — project constraints, env table, data model, skill index. Don't repeat them in the prompt.
+- **Skills carry the procedure** — `/setup-exam` has its own Step 0–10 with mandatory stops (placeholder guard, stage verify, deploy preflight, domain approval, pre-deploy scan, deploy). You don't re-specify them.
+- **Invoking `/setup-exam` loads the skill** — far more reliable than describing the steps in prose. If the agent drifts, nudge it: "what did `/sis/pre-deploy` return?" or "show me the `EXAM_DOMAINS` rows".
 
-- **AGENTS.md is always in context** - you don't need to repeat project constraints.
-- **Skills auto-route** - mentioning `$setup-exam`, `$cortex`, `$sis` triggers the corresponding skill description and the agent knows what to do.
-- **Checkpoints live in the skill**, not in the prompt - `$setup-exam` has its own stopping points (step 1b, 4, 5d, 8 scan, 9 deploy, 10 report). You don't re-specify them.
-
-If the agent skips a checkpoint or goes off-track, just say "wait - what did `$sis/pre-deploy` return?" or "before you proceed, show me the `EXAM_DOMAINS` rows". It will back up.
-
----
-
-## What we intentionally did NOT do
-
-- No "phase 1 / phase 2 / phase 3" breakdown - in Snowsight there is no shell session to lose, and the agent can keep a 10-step skill coherent in one go.
-- No separate prompt for "load PDF" vs "parse PDF" vs "extract domains" - that is all inside `$setup-exam` step 4–5.
-- No separate deploy prompt - step 9 of the skill handles it.
-
-If you want that granularity, invoke sub-skills directly: `$cortex/patterns`, `$sis/pre-deploy`, `$quiz/questions`. They work standalone.
+Invoke sub-skills directly when you want just one piece: `/cortex/patterns`, `/sis/pre-deploy`, `/quiz/questions`.

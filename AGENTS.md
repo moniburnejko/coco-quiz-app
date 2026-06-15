@@ -119,7 +119,7 @@ Navigation is native multipage via `st.Page` + `st.navigation`, built in `main.p
 **REVIEW page** (sub-tabs): Wrong Answers shows filtered history with domain/date filters. Learning Dashboard shows session metrics and charts (score trend, error distribution). Optional features from `$quiz/features` add their own pages, not tabs.
 
 For screen contracts, session state, history schema, and write-back: see `$quiz/screens`.
-For UI styling, badges, section labels, and chart colors: see `$quiz/style`.
+For UI styling, badges, section labels, and chart colors: see `$quiz/design`.
 
 ---
 
@@ -129,7 +129,7 @@ For UI styling, badges, section labels, and chart colors: see `$quiz/style`.
 |-------|--------|---------|------------|
 | `$cortex` | Cortex AI work | Calling patterns, diagnostics, prompt auditing | `$cortex/patterns`, `$cortex/prompt-audit` |
 | `$sis` | SiS code or deploy | Coding patterns, mandatory pre-deploy scan | `$sis/patterns`, `$sis/pre-deploy` |
-| `$quiz` | app code work | Screen contracts, question generation, UI styling, optional features | `$quiz/screens`, `$quiz/questions`, `$quiz/style`, `$quiz/features` |
+| `$quiz` | app code work | Screen contracts, question generation, UI styling, optional features | `$quiz/screens`, `$quiz/questions`, `$quiz/design`, `$quiz/features` |
 | `$setup-exam` | new exam | Full 10-step pipeline (schema, stages, tables, domains, questions, app build, deploy) | (standalone) |
 | `$adapt-questions` | question bank import | Schema mapping, loading strategies, domain coverage | (standalone) |
 

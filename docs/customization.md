@@ -3,7 +3,7 @@
 The quiz app has four layers you can tweak, from "one-line change" to "fork the pipeline":
 
 1. **Model and runtime defaults** (edit `AGENTS.md`).
-2. **Visual styling** (edit the app modules or tell the agent what to change via `$quiz/style`).
+2. **Visual styling** (edit the app modules or tell the agent what to change via `$quiz/design`).
 3. **Functional features** (opt-in via `$quiz/features`: exam simulation, flashcards, AI study recommendations, ...).
 4. **Target exam** (swap the PDF for a different SnowPro cert, or with a little bit more work, any non-Snowflake exam like AWS / GCP / Azure).
 
@@ -48,7 +48,7 @@ Two moments to style the app:
 
 **At build time** — `$setup-exam` Step 1e asks: default look or custom? Custom = a short guided dialog with CoCo (light/dark, accent color, roundness, font stack, sidebar tint), mapped to native Streamlit `[theme]` / `[theme.sidebar]` keys in `.streamlit/config.toml`. No CSS is ever used.
 
-**After build** — invoke `$quiz/style` and describe the change. Modern theming covers much more than colors:
+**After build** — invoke `$quiz/design` and describe the change. Modern theming covers much more than colors:
 
 - **Badge palette** - `:green-badge[]` / `:red-badge[]` / `:orange-badge[]` colors are themable (`greenColor`, `redColor`, ... + `*BackgroundColor`/`*TextColor`).
 - **Chart colours** - `chartCategoricalColors` in the theme, aligned with the `_config.py` constants (`#29b5e8` score line, `#F1914C` error bars by default).
@@ -58,7 +58,7 @@ Two moments to style the app:
 Example prompt:
 
 ```
-run $quiz/style. I want a dark base, violet accent (#7C5CFC), round corners, and the score line chart in green (#36B37E).
+run $quiz/design. I want a dark base, violet accent (#7C5CFC), round corners, and the score line chart in green (#36B37E).
 ```
 
 The agent updates `.streamlit/config.toml` (+ matching `_config.py` chart constants), runs `$sis/pre-deploy`, and asks you to re-deploy.

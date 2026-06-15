@@ -144,8 +144,8 @@ Wait for the user's response before proceeding.
 | **Custom look** | I'll ask a few quick style questions and theme the app to your taste |
 
 **Routing logic:**
-- **Default look** → use the canonical theme from `$quiz/style` in Step 8. Continue.
-- **Custom look** → run a short guided dialog (one question at a time): light or dark base; primary/accent color (name or hex); corner roundness (sharp / soft / round); font stack (sans-serif / serif / monospace); sidebar tint (same as app / subtle contrast). Map answers ONLY to native Streamlit `[theme]` / `[theme.sidebar]` keys per the `$quiz/style` theming contract — **never CSS, never `unsafe_allow_html`, no external font files (CSP)**. Confirm the resulting palette back to the user in words before Step 2.
+- **Default look** → use the canonical theme from `$quiz/design` in Step 8. Continue.
+- **Custom look** → run a short guided dialog (one question at a time): light or dark base; primary/accent color (name or hex); corner roundness (sharp / soft / round); font stack (sans-serif / serif / monospace); sidebar tint (same as app / subtle contrast). Map answers ONLY to native Streamlit `[theme]` / `[theme.sidebar]` keys per the `$quiz/design` theming contract — **never CSS, never `unsafe_allow_html`, no external font files (CSP)**. Confirm the resulting palette back to the user in words before Step 2.
 
 Store the choice for Step 8 (config.toml generation).
 
@@ -541,7 +541,7 @@ Use the Edit tool on `AGENTS.md`. Follow the edit boundaries strictly.
    - `$cortex/patterns` — `call_cortex_json` + `response_format` structured outputs (no fence parsing), untrusted-content delimiting, and the **Cortex Search (CKE) retrieval** helper `_search.py` (generate it when grounding is in play — Step 1g)
    - `$quiz/screens` — page flow, session state, explanation/hint/contrast/debrief/remedial contracts, write-back + `clear_caches()`
    - `$quiz/questions` — DIFFICULTY_GUIDE (REQUIRED constant), answer shuffling, validation, retry logic
-   - `$quiz/style` — EXAM_NAME constant, theming contract (config.toml keys), chart colors (#29b5e8 blue, #F1914C orange)
+   - `$quiz/design` — EXAM_NAME constant, theming contract (config.toml keys), chart colors (#29b5e8 blue, #F1914C orange)
    - If the user requested optional features: also read `$quiz/features`
    - For general Streamlit patterns consult the bundled `developing-with-streamlit`; for AISQL, `cortex-ai-functions`. This project's `$sis`/`$cortex` carry only the project deltas.
 
@@ -610,7 +610,7 @@ Use the Edit tool on `AGENTS.md`. Follow the edit boundaries strictly.
    ]
    ```
 
-6. Generate `.streamlit/config.toml`. The `[client]` block is fixed; the `[theme]` block comes from Step 1e — the user's custom choices mapped per the `$quiz/style` theming contract, or (default) the canonical theme below:
+6. Generate `.streamlit/config.toml`. The `[client]` block is fixed; the `[theme]` block comes from Step 1e — the user's custom choices mapped per the `$quiz/design` theming contract, or (default) the canonical theme below:
 
    ```toml
    [client]
@@ -629,7 +629,7 @@ Use the Edit tool on `AGENTS.md`. Follow the edit boundaries strictly.
    secondaryBackgroundColor = "#eef6fa"
    ```
 
-   Rules: ONLY native `[theme]`/`[theme.sidebar]` keys (full key reference in `$quiz/style`); no CSS, no external `fontFaces` (CSP); `chartCategoricalColors[0..1]` MUST match the chart constants in `_config.py`.
+   Rules: ONLY native `[theme]`/`[theme.sidebar]` keys (full key reference in `$quiz/design`); no CSS, no external `fontFaces` (CSP); `chartCategoricalColors[0..1]` MUST match the chart constants in `_config.py`.
 
 7. Generate `snowflake.yml` — **this is what makes the Workspace treat the folder as a Streamlit app** (also drives Path B / Snowflake CLI). Use `identifier` = the `app_name` from AGENTS.md, attach the PyPI EAI, and **list EVERY generated file in `artifacts`** (an incomplete `artifacts` list = a broken/partial deploy — this was an observed bug):
 

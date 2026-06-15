@@ -17,7 +17,7 @@ Parent skill `$quiz` routes here for SCREENS intent.
 - Cortex AI issues -> use `$cortex/patterns`
 - SiS rendering patterns -> use `$sis/patterns`
 - Prompt quality audit -> use `$cortex/prompt-audit`
-- UI styling/badges -> use `$quiz/style`
+- UI styling/badges -> use `$quiz/design`
 - Question generation logic -> use `$quiz/questions`
 
 ---
@@ -196,18 +196,7 @@ Wrong answer cards: `st.container(border=True)` with domain badge + difficulty b
 
 **Readiness metric**: `st.metric("Readiness", f"{avg_score:.1f}%", delta=f"{delta_val:+.1f}% vs pass")`. Value is a numeric percentage, NOT a badge — `st.metric()` does not render Markdown badges. Hide delta when at threshold: `delta=... if abs(delta_val) >= 0.1 else None`.
 
-**MANDATORY: read `$quiz/style` Color Scheme section before building any chart.** All chart colors, axis formatting, and label limits are defined there.
-
-**Score per Session chart**:
-- X-axis: `LABEL:N` (NOMINAL, NOT quantitative) with `sort=None` to preserve chronological order. Labels format: `#{session_id} · {date}` (e.g., `#1 · 06/04`). Do NOT use `:Q` — it causes float interpolation (1.0, 1.1, 1.2...).
-- Y-axis: `SCORE_PCT:Q` with `scale=alt.Scale(domain=[0, 100])`
-- Line: `mark_line(point=True, color="#29b5e8")` (Snowflake blue from `$quiz/style`)
-- Threshold rule: dashed gray line at PASS_THRESHOLD
-
-**Errors by Domain chart**:
-- X-axis: `ERROR_COUNT:Q` with `axis=alt.Axis(tickMinStep=1, title=None)` (integer ticks, no title)
-- Y-axis: `DOMAIN_NAME:N` with `sort="-x", axis=alt.Axis(labelLimit=500, title=None)` (full domain names, no title)
-- Color: `#F1914C` (orange from `$quiz/style`, NOT red)
+**Charts:** build every chart (colors, axis types/formatting, label limits, threshold rules) per `$quiz/design` — that skill is the single source for all visual rules; reference the `_config.py` color constants and never hardcode hexes or axis specs here. Two charts on this dashboard: **Score per Session** (from `load_recent_sessions()`) and **Errors by Domain** (from `load_domain_errors()`).
 
 ---
 

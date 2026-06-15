@@ -16,7 +16,7 @@ Parent skill `$sis` routes here for PATTERNS intent.
 
 # When NOT to Use
 
-- UI styling/badges/colors -> use `$quiz/style`
+- UI styling/badges/colors -> use `$quiz/design`
 - Cortex AI function issues -> use `$cortex/patterns`
 - Pre-deploy scan checklist -> use `$sis/pre-deploy`
 
@@ -127,7 +127,7 @@ No fixed `st.rerun()` budget on the container runtime. The rule is per-handler: 
 
 These remain true on the container runtime:
 
-- **`unsafe_allow_html=True` / CSP** — inline HTML/CSS is fine, but the platform CSP blocks external `<script src>`, dynamic code evaluation, and external iframes. The app uses NO `unsafe_allow_html` (theme lives in `.streamlit/config.toml`; see `$quiz/style`).
+- **`unsafe_allow_html=True` / CSP** — inline HTML/CSS is fine, but the platform CSP blocks external `<script src>`, dynamic code evaluation, and external iframes. The app uses NO `unsafe_allow_html` (theme lives in `.streamlit/config.toml`; see `$quiz/design`).
 - **`.applymap(`** — removed in pandas 3.0; use `.map(` / `.map_index(`.
 - **`config.toml`:** `showErrorDetails = "none"` — the string `"none"`, NOT `false` (the deprecated `false` maps to "stacktrace" and still leaks tracebacks to viewers).
 

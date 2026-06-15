@@ -1,11 +1,11 @@
 ---
-name: quiz-style
-description: "UI styling conventions for the quiz app — badge colors, section labels, chart colors, theme (config.toml), button style. Use for any visual or layout work in the app. Triggers: badge, styling, color, theme, chart, section label, button style, card, UI, layout. Do NOT use for behavior/state contracts (quiz-screens) or platform constraints (sis-patterns)."
+name: quiz-design
+description: "THE single source for every visual rule in the quiz app — theme/config.toml keys, badge palette, chart colors + axis formatting, cards, buttons, titles, docs-link style. Use for any visual, color, theme, or chart work. Triggers: theme, color, badge, chart, config.toml, styling, layout, card, button, section label, docs link. Do NOT use for screen behavior/state (quiz-screens), question generation (quiz-questions), or platform constraints (sis)."
 ---
 
 # When to Load
 
-Parent skill `$quiz` routes here for STYLE intent.
+Parent skill `$quiz` routes here for DESIGN intent.
 
 - Any UI work — styling, layout, new components
 - Reviewing visual consistency across screens
@@ -119,13 +119,13 @@ Rules:
 
 # Color Scheme
 
-**Charts:**
-- Score line: `#29b5e8` (Snowflake blue), `mark_line(point=True)`
-- Error bars: `#F1914C` (orange), `mark_bar()`
-- Threshold rules: gray dashed (`strokeDash=[4, 4]`)
-- Integer axes (e.g., error counts): use `axis=alt.Axis(tickMinStep=1)` — never show fractional ticks for count data
-- Suppress axis titles with `title=None` when meaning is obvious from the section header and data labels (e.g., domain names on Y-axis, error counts on X-axis)
-- Y-axis with long domain names: use `axis=alt.Axis(labelLimit=500)` to prevent truncation
+**Charts** (the single source — `$quiz/screens` and `$quiz/features` reference this, never restate chart rules):
+
+*Score per Session* (line): X = `LABEL:N` (NOMINAL, `sort=None` to keep chronological order; label `#{session_id} · {date}`) — never `:Q`, which interpolates floats (1.0, 1.1, …); Y = `SCORE_PCT:Q`, `scale=alt.Scale(domain=[0, 100])`; `mark_line(point=True, color="#29b5e8")` (Snowflake blue); threshold = dashed gray rule (`strokeDash=[4, 4]`) at `PASS_THRESHOLD`.
+
+*Errors by Domain* (bar): X = `ERROR_COUNT:Q`, `axis=alt.Axis(tickMinStep=1, title=None)` (integer ticks, no fractional counts); Y = `DOMAIN_NAME:N`, `sort="-x"`, `axis=alt.Axis(labelLimit=500, title=None)` (full names, no truncation); `mark_bar(color="#F1914C")` (orange, NOT red).
+
+*General*: suppress axis titles (`title=None`) when the section header + labels make meaning obvious; chart colors must match the `_config.py` constants (see the theming contract above).
 
 **Callouts:**
 - `st.info()` ONLY for mnemonic box (`🧠`). Never for pass/fail, readiness, or error counts.

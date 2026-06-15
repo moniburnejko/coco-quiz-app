@@ -98,7 +98,7 @@ Open `AGENTS.md` in the workspace, find the `snowflake environment` table. Repla
 
 ## Step 3 - run the setup prompt
 
-Paste the **setup prompt** from [prompts.md](prompts.md) into the CoCo chat. The agent will run `$setup-exam` end-to-end and stop at three checkpoints:
+Paste the **setup prompt** from [prompts.md](prompts.md) into the CoCo chat — it attaches `@AGENTS.md` and invokes `/setup-exam`. The agent runs the skill end-to-end and stops at three checkpoints:
 
 - After asking you to upload the study guide PDF (and optionally a CSV) → you upload via Snowsight UI (step 4).
 - After extracting domains → approve / re-extract / abort.
