@@ -1,9 +1,9 @@
 ---
 name: sis
-description: "Streamlit-in-Snowflake container-runtime deltas for this app + the MANDATORY pre-deploy scan. Use when writing app code that touches caching/widgets/session, or before any deploy. Triggers: SiS, streamlit in snowflake, get_active_session, cache_data, clear_caches, ttl, widget reset, showErrorDetails, config.toml, pre-deploy, scan, before deploying, deploy checklist. Do NOT use for general Streamlit authoring (bundled developing-with-streamlit-in-snowflake), app screen/state contracts (quiz-screens), or visual styling (quiz-design)."
+description: "Streamlit-in-Snowflake runtime deltas for this app (warehouse runtime is the default; container is an opt-in) + the MANDATORY pre-deploy scan. Use when writing app code that touches caching/widgets/session, or before any deploy. Triggers: SiS, streamlit in snowflake, get_active_session, cache_data, clear_caches, ttl, widget reset, showErrorDetails, config.toml, pre-deploy, scan, before deploying, deploy checklist. Do NOT use for general Streamlit authoring (bundled developing-with-streamlit-in-snowflake), app screen/state contracts (quiz-screens), or visual styling (quiz-design)."
 ---
 
-> **Thin wrapper.** For general Streamlit authoring (widgets, layout, caching, theming) use the bundled CoCo skill **`developing-with-streamlit-in-snowflake`**; for deploy mechanics, **`deploy-to-spcs`** / **`snowflake-apps`**. This skill keeps only the project deltas for the **container runtime** (`SYSTEM$ST_CONTAINER_RUNTIME_PY3_11`, Streamlit ≥1.50, Python 3.11) plus the mandatory pre-deploy scan. The warehouse fallback (Path C) caps Streamlit at 1.52.2 — the gotchas still apply, but PyPI-only packages do not.
+> **Thin wrapper.** For general Streamlit authoring (widgets, layout, caching, theming) use the bundled CoCo skill **`developing-with-streamlit-in-snowflake`**; for deploy mechanics, **`deploy-to-spcs`** / **`snowflake-apps`**. This skill keeps only the project deltas for **Streamlit-in-Snowflake** plus the mandatory pre-deploy scan. The **default `warehouse` runtime** pins a supported Streamlit (currently ~1.52.2) and installs deps from the Snowflake Anaconda channel — no compute pool, no EAI; works on trial accounts. The **container** runtime (`SYSTEM$ST_CONTAINER_RUNTIME_PY3_11`) is an opt-in for custom PyPI packages / GPU (needs a pool + EAI). The gotchas below apply to both.
 
 # When to Use
 
@@ -19,9 +19,9 @@ description: "Streamlit-in-Snowflake container-runtime deltas for this app + the
 
 ---
 
-# Container-runtime gotchas
+# SiS runtime gotchas
 
-The SiS-specific traps that bite — what CoCo's general Streamlit knowledge doesn't cover. Everything else, defer to the bundled skill.
+The SiS-specific traps that bite — what CoCo's general Streamlit knowledge doesn't cover (they hold on both the default warehouse runtime and the container opt-in). Everything else, defer to the bundled skill.
 
 ## Sessions and caching
 
@@ -69,13 +69,13 @@ if difficulty is None:
 
 ## Rerun discipline
 
-No fixed `st.rerun()` budget on the container runtime. Per handler: a button doing slow work (DB write, AI call) wraps it in `st.spinner()`, sets new state, ends with a **single** `st.rerun()` — never mid-handler, never twice. `st.experimental_rerun()` is deprecated; always `st.rerun()`. `@st.fragment` is supported and preferred for self-contained interactive regions (reruns only the fragment), but it doesn't fix state bugs — inputs feeding stateful widgets must still be constant across reruns (see caching).
+No fixed `st.rerun()` budget. Per handler: a button doing slow work (DB write, AI call) wraps it in `st.spinner()`, sets new state, ends with a **single** `st.rerun()` — never mid-handler, never twice. `st.experimental_rerun()` is deprecated; always `st.rerun()`. `@st.fragment` is supported and preferred for self-contained interactive regions (reruns only the fragment), but it doesn't fix state bugs — inputs feeding stateful widgets must still be constant across reruns (see caching).
 
 ## Multipage state
 
 `st.session_state` is scoped to the browser session, so it **persists across `st.navigation` page switches** — all keys are initialized once in `main.py` (`init_session_state()`); pages share them. A filter set on one page is still set when the user returns; clear stale state explicitly if that surprises the flow. Cross-page redirect: set the target state, then `st.switch_page("pages/quiz.py")`.
 
-## Still-constrained on the container runtime
+## Still-constrained on SiS
 
 - **No `unsafe_allow_html`.** Inline HTML/CSS is blocked by platform CSP (no external `<script src>`, no dynamic eval, no external iframes). Visual styling lives in `.streamlit/config.toml` (`$quiz/design`) and native components.
 - **`.applymap(`** — removed in pandas 3.0; use `.map(` / `.map_index(`.
@@ -134,4 +134,4 @@ Only `DATABASE`, `SCHEMA`, `CORTEX_MODEL`, and `RESPONSE_FORMATS` constants may 
 
 ## Output
 
-SiS-compatible code following the container-runtime gotchas, or a pre-deploy scan report with PASS/FAIL per item and a clear deploy / no-deploy verdict.
+SiS-compatible code following the runtime gotchas, or a pre-deploy scan report with PASS/FAIL per item and a clear deploy / no-deploy verdict.

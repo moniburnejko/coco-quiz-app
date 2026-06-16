@@ -138,8 +138,8 @@ You can absolutely use this scaffolding for AWS Certified AI Practitioner, Googl
 
 #### What you should review
 
-- **Domain extraction prompt** (`$setup-exam` step 5b): the prompt says "extract ALL exam domains from this certification study guide" which is generic, but AWS / Azure study guides sometimes mix "domains" with "subject areas" or "task statements". Spot-check the extracted `EXAM_DOMAINS` rows against the official blueprint.
-- **Key facts grounding** (`$setup-exam` step 5c): for Snowflake, facts are SQL-heavy (DDL, function names, limits). For AWS, they are service-heavy (API names, quotas, pricing tiers). The extraction prompt is generic enough that both work, but the agent will extract whatever is in the PDF. Snowflake-specific hints in the current prompt (e.g. "feature names, SQL syntax") are suggestive examples - not exclusive filters. Edit the prompt in the skill if the output leans Snowflake-ish on a non-Snowflake PDF.
+- **Domain extraction prompt** (`$setup-exam` Step 5): the prompt says "extract ALL exam domains from this certification study guide" which is generic, but AWS / Azure study guides sometimes mix "domains" with "subject areas" or "task statements". Spot-check the extracted `EXAM_DOMAINS` rows against the official blueprint.
+- **Key facts grounding** (`$setup-exam` Step 5): for Snowflake, facts are SQL-heavy (DDL, function names, limits). For AWS, they are service-heavy (API names, quotas, pricing tiers). The extraction prompt is generic enough that both work, but the agent will extract whatever is in the PDF. Snowflake-specific hints in the current prompt (e.g. "feature names, SQL syntax") are suggestive examples - not exclusive filters. Edit the prompt in the skill if the output leans Snowflake-ish on a non-Snowflake PDF.
 - **Question difficulty guide** (`$quiz/questions`): `DIFFICULTY_GUIDE` is Snowflake-flavoured ("easy = surface feature recognition; hard = cross-feature architecture trade-offs"). Tweak the wording for AWS / Azure but keep the 3-tier structure.
 - **Explanation doc_url**: the explanation contract asks for a `doc_url`. For Snowflake it points at docs.snowflake.com. For AWS, the AI agent will happily produce `docs.aws.amazon.com/...` URLs - verify it is actually reaching the web-search tool (Snowsight > AI & ML > Agents > Settings > Tools and connectors > Web search).
 
@@ -160,7 +160,7 @@ For a first pass on, say, "AWS Solutions Architect Associate":
 3. The agent extracts AWS domains (4 domains), generates ~30 questions per domain grounded on AWS key facts, deploys.
 4. Verify: `EXAM_DOMAINS` has 4 rows, weights sum to 100, a couple of sample questions mention AWS services correctly.
 
-Expect 1-2 rounds of refinement on the extraction prompt (`$cortex`) before the question quality is where you want it. The Snowflake pipeline had this too - the difference is that for Snowflake it was pre-tuned over several iterations.
+Expect 1-2 rounds of refinement on the extraction prompt (`$cortex`) before the question quality is where you want it.
 
 ### 4c - Maintain multiple cert providers in one database
 
@@ -197,11 +197,11 @@ Three extras for power users. All OFF by default — enable by asking for them i
 
 ### 5a - Quality model profile (opus-4-x)
 
-The default `CORTEX_MODEL` is `claude-sonnet-4-6` — the best balance of quality, speed, and cost for question generation. The **quality profile** swaps it for `claude-opus-4-7` (newest GA opus as of 2026-06): noticeably stronger on hard questions (plausible distractors, multi-concept trade-offs), but slower and markedly more expensive per token.
+The default `CORTEX_MODEL` is `claude-sonnet-4-6` — the best balance of quality, speed, and cost for question generation. The **quality profile** swaps it for `claude-opus-4-7`: noticeably stronger on hard questions (plausible distractors, multi-concept trade-offs), but slower and markedly more expensive per token.
 
-Lifecycle note: thanks to the Anthropic partnership, new Claude models land in Cortex **same-day — but in Public Preview**; GA follows some weeks later (Snowflake marks preview models as not suitable for production). `claude-opus-4-8` is currently **Public Preview** — use only on explicit request; check the [models & regional availability page](https://docs.snowflake.com/en/user-guide/snowflake-cortex/aisql-regional-availability) for current status.
+`claude-opus-4-8` is **Public Preview** — use only on explicit request (preview models aren't production-ready). Check the [models & regional availability page](https://docs.snowflake.com/en/user-guide/snowflake-cortex/aisql-regional-availability) for current status.
 
-Enable: say "use the quality model profile" in the setup prompt — the agent sets `CORTEX_MODEL = "claude-opus-4-7"` in `_config.py`. Cheaper hybrid worth considering: generate the pre-loaded question bank once on opus (`$setup-exam` Step 6b), keep runtime AI questions and explanations on sonnet.
+Enable: say "use the quality model profile" in the setup prompt — the agent sets `CORTEX_MODEL = "claude-opus-4-7"` in `_config.py`. Cheaper hybrid worth considering: seed the question bank once on opus (Admin "Generate batch" or the worksheet recipe in §6), keep runtime AI questions and explanations on sonnet.
 
 ### 5b - Agent self-verify (Cloud Agents)
 

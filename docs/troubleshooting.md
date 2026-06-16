@@ -8,7 +8,7 @@ If none of these match: paste the **fix prompt** from [prompts.md](prompts.md) w
 
 ## App deploy fails: "Failed to retrieve package… Have you enabled External Access Integration (EAI)?"
 
-**Cause:** The container runtime (the default deploy target) installs `pandas`/`altair` from PyPI, which needs an External Access Integration. The base image ships only Python, Streamlit, and Snowpark — so without an EAI the package fetch fails (DNS/connect error to `pypi.org`).
+**Cause:** You're on the **container runtime** (the advanced opt-in) — it installs `pandas`/`altair` from PyPI, which needs an External Access Integration. The **default `warehouse` runtime never hits this** (it installs from the Snowflake Anaconda channel). The container base image ships only Python, Streamlit, and Snowpark — so without an EAI the package fetch fails (DNS/connect error to `pypi.org`).
 
 **Fix (as `ACCOUNTADMIN`, once per account):**
 
@@ -26,7 +26,7 @@ ALTER STREAMLIT <your_database>.QUIZ_<CODE>.SNOWPRO_QUIZ
   SET EXTERNAL_ACCESS_INTEGRATIONS = (pypi_access_integration);
 ```
 
-**No EAI / no ACCOUNTADMIN?** Switch to the warehouse fallback (`$setup-exam` Step 9 Path C): `environment.yml` from the Snowflake Anaconda channel — no EAI, no compute pool, Streamlit 1.52.2.
+**No EAI / no ACCOUNTADMIN (e.g. a trial account)?** Use the **default `warehouse` runtime** — `environment.yml` from the Snowflake Anaconda channel, no EAI, no compute pool (Streamlit ~1.52.2). It's the default; just tell the agent to deploy on warehouse.
 
 ---
 
@@ -53,15 +53,15 @@ If you cannot get `ACCOUNTADMIN`, change the model in `AGENTS.md` > `cortex llm`
 
 ## Deploy dialog shows no compute pool / "compute pool not found"
 
-**Cause:** The container runtime (default) needs a compute pool your role can use. The account has none, or your role lacks `USAGE` on it.
+**Cause:** Only relevant if you opted into the **container runtime** — the default `warehouse` runtime needs no compute pool. Even for container it's rare: every account ships **`SYSTEM_COMPUTE_POOL_CPU`** with `USAGE` granted to `PUBLIC`. You hit it only if an admin revoked that `USAGE`, or there's no usable pool.
 
 **Fix:** Check what exists:
 
 ```sql
-SHOW COMPUTE POOLS;
+SHOW COMPUTE POOLS;   -- expect SYSTEM_COMPUTE_POOL_CPU (use the CPU one, not GPU)
 ```
 
-If the list is empty or unusable, ask an admin to create/grant one - or tell the agent to use the **warehouse fallback** (`$setup-exam` Step 9 Path C): it generates `environment.yml` and deploys without `RUNTIME_NAME`/`COMPUTE_POOL` (Streamlit capped at 1.52.2).
+If `SYSTEM_COMPUTE_POOL_CPU` is present, point the app at it. If it's absent or `USAGE` was revoked — or you simply don't want the container runtime — use the **default `warehouse` runtime** (no pool, no EAI; `environment.yml` from the Snowflake Anaconda channel, Streamlit ~1.52.2).
 
 ---
 

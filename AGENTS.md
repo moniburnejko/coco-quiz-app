@@ -25,16 +25,16 @@ Do not touch any database or schema other than the one configured below:
 | app stage | `STAGE_SIS_APP`                      |
 | app_name  | `SNOWPRO_QUIZ`                       |
 | main_file | `main.py`                            |
-| compute_pool | `<your_compute_pool>` (container runtime) |
-| external_access_integration | `pypi_access_integration` (container runtime — lets it install pandas/altair from PyPI) |
-| runtime   | `container` (default) / `warehouse` (fallback) |
-| deps_file | `pyproject.toml` (container) / `environment.yml` (warehouse) |
+| runtime   | `warehouse` (default — no compute pool, no EAI; works on trial accounts) / `container` (advanced opt-in) |
+| deps_file | `environment.yml` (warehouse, Snowflake Anaconda channel) / `pyproject.toml` (container) |
+| compute_pool | `SYSTEM_COMPUTE_POOL_CPU` — **container opt-in only**; the default warehouse runtime needs no pool |
+| external_access_integration | `pypi_access_integration` — **container opt-in only** (installs pandas/altair from PyPI); **not available on trial accounts** |
 
-**Preconditions** (user-set before running `$setup-exam`): replace `<your_database>`, `<your_warehouse>`, `<your_role>` with actual object names; replace `<your_compute_pool>` too unless you plan the warehouse fallback (`$setup-exam` Step 9 Path C). The role must have `CREATE SCHEMA` on `database`. **The default container runtime needs TWO extra things — a compute pool (`USAGE`) and a PyPI external access integration** (so it can install pandas/altair; the base image has only Python/Streamlit/Snowpark). `$setup-exam` Step 1f checks both up front and gives you the DDL if missing. The warehouse fallback needs neither. `$setup-exam` stops if any required `<...>` placeholder remains unfilled.
+**Preconditions** (user-set before running `$setup-exam`): replace `<your_database>`, `<your_warehouse>`, `<your_role>` with actual object names. The role must have `CREATE SCHEMA` on `database`. **The default `warehouse` runtime needs nothing else** — no compute pool, no external access integration; `pandas`/`altair` come from the Snowflake Anaconda channel, so it works on **trial accounts** out of the box. The **`container` runtime is an advanced opt-in** (Step 1d) for users who want custom PyPI packages/GPU — it needs a compute pool *and* a PyPI EAI, and **the EAI is not available on trial accounts**. `$setup-exam` stops if any required `<...>` placeholder remains unfilled.
 
 **Outputs** (populated in the table above by `$setup-exam`): `schema` (= `<database>.QUIZ_<EXAM_CODE>`) and `exam_code` (from the study guide PDF). `$setup-exam` is idempotent (`IF NOT EXISTS`) and never drops. Each exam gets its own schema - never share a schema between exams.
 
-**Project defaults** (customizable but have working values): stages, `app_name`, `main_file`, `runtime`, `deps_file`. Change only if you need to.
+**Project defaults** (customizable but have working values): stages, `app_name`, `main_file`, `runtime` (`warehouse`), `deps_file` (`environment.yml`). Change only if you need to. (`compute_pool` / `external_access_integration` apply only to the container opt-in.)
 
 All sections reference these values. Never hardcode environment names elsewhere in this file.
 

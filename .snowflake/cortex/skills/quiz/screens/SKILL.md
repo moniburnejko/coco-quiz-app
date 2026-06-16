@@ -295,7 +295,7 @@ All keys initialized in `init_session_state()` in `main.py` (state is shared acr
 | `_round_type` | str | `"practice"` | practice / remedial |
 | `_remedial_queue` | list | `[]` | Wrong items queued for the remedial round |
 
-Page navigation state (`nav_pills`, `_current_page`, `_redirect_to_quiz`) is GONE — `st.navigation` owns the current page, and redirects use `st.switch_page("pages/quiz.py")` directly after setting the target state.
+Navigation is owned by `st.navigation` (no `nav_pills` / `_current_page` / `_redirect_to_quiz` keys); cross-page redirects set the target state, then call `st.switch_page("pages/quiz.py")`.
 
 ---
 

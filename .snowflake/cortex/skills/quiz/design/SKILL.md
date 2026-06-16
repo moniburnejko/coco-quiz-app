@@ -76,7 +76,7 @@ Use `st.markdown(f"#### {text}")` (h4 heading) for question text display. NOT `s
 
 # Theming Contract (config.toml — the ONLY styling mechanism)
 
-NO `unsafe_allow_html` anywhere in the app (enforced by `$sis`). ALL visual styling = native Streamlit `[theme]` / `[theme.sidebar]` keys in `.streamlit/config.toml`. On the container runtime both sections are FULLY supported (verified vs Snowflake docs 2026-06).
+NO `unsafe_allow_html` anywhere in the app (enforced by `$sis`). ALL visual styling = native Streamlit `[theme]` / `[theme.sidebar]` keys in `.streamlit/config.toml`; any key the pinned Streamlit doesn't recognize is ignored gracefully.
 
 ## Canonical default theme
 

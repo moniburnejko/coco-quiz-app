@@ -12,22 +12,19 @@ As `ACCOUNTADMIN`, once per account — only if your account cannot reach the mo
 ALTER ACCOUNT SET CORTEX_ENABLED_CROSS_REGION = 'ANY_REGION';
 ```
 
-The default container runtime needs TWO things (the warehouse fallback needs neither):
+The **default `warehouse` runtime needs nothing extra** (no compute pool, no external access integration) — `pandas`/`altair` come from the Snowflake Anaconda channel, so it works on **trial accounts**.
 
-1. A **compute pool** (your role needs `USAGE`):
-   ```sql
-   SHOW COMPUTE POOLS;
-   ```
-2. A **PyPI external access integration** — the container installs pandas/altair from PyPI (they aren't in the base image), so as `ACCOUNTADMIN`:
+*Advanced opt-in — the **container runtime*** (custom PyPI packages / GPU) needs two things the default doesn't:
+1. A **compute pool** (`SHOW COMPUTE POOLS;` — `SYSTEM_COMPUTE_POOL_CPU` is present on most accounts, `USAGE` to `PUBLIC`).
+2. A **PyPI external access integration** (as `ACCOUNTADMIN`; **not available on trial accounts**):
    ```sql
    CREATE OR REPLACE EXTERNAL ACCESS INTEGRATION pypi_access_integration
      ALLOWED_NETWORK_RULES = (snowflake.external_access.pypi_rule)   -- Snowflake's managed rule; no custom rule needed
      ENABLED = TRUE;
    GRANT USAGE ON INTEGRATION pypi_access_integration TO ROLE <your_role>;
    ```
-   Attach it at deploy (Deploy dialog → Network, or `EXTERNAL_ACCESS_INTEGRATIONS = (pypi_access_integration)`). **Without it, the deploy fails with "Failed to retrieve package… Have you enabled External Access Integration?"**
 
-No compute pool / no admin for the EAI? The warehouse fallback (deploy Path C) works without either.
+Can't create the EAI (e.g. trial account)? Just use the default warehouse runtime — it runs the same app.
 
 In Snowsight: **AI & ML > Agents > Settings > Tools and connectors > Web search → enable**.
 
@@ -92,7 +89,7 @@ Clone the repo locally. In Snowsight: **Projects > Workspaces > + Workspace** (e
 
 ## Step 2 - edit the environment table in AGENTS.md
 
-Open `AGENTS.md` in the workspace, find the `snowflake environment` table. Replace the `<your_...>` placeholders (`<your_database>`, `<your_warehouse>`, `<your_role>`, and `<your_compute_pool>` — the last one is skippable only if you plan the warehouse fallback) with the actual object names. Leave `schema` and `exam_code` as is — `$setup-exam` fills those once the exam code is known. `$setup-exam` halts if it finds unfilled required placeholders, so replace them before running the setup prompt.
+Open `AGENTS.md` in the workspace, find the `snowflake environment` table. Replace the `<your_...>` placeholders (`<your_database>`, `<your_warehouse>`, `<your_role>`) with the actual object names. Leave `schema`, `exam_code`, and `compute_pool` as is — `$setup-exam` fills `schema`/`exam_code` once the exam code is known, and `compute_pool` defaults to `SYSTEM_COMPUTE_POOL_CPU` (usable by any role; change it only if your account uses a different pool). `$setup-exam` halts if it finds unfilled required placeholders, so replace them before running the setup prompt.
 
 ---
 
@@ -126,12 +123,10 @@ After the agent finishes generation + passes the pre-deploy scan, the `app/` pro
 **Path A — Workspaces (default):**
 
 1. Open `app/main.py`, click **Run** (or Cmd/Ctrl+Enter). A private **dev app** preview opens in the browser — only you see it. Iterate with the agent until it looks right.
-2. Click **Deploy** (project toolbar). Set: app title `SNOWPRO_QUIZ`, database + schema `QUIZ_<CODE>`, **compute pool**, query warehouse.
+2. Click **Deploy** (project toolbar). Set: app title `SNOWPRO_QUIZ`, database + schema `QUIZ_<CODE>`, query warehouse. *(Container opt-in only: also set a compute pool and add the PyPI EAI under **Network**.)*
 3. Reply "deployed" — the agent verifies with `SHOW STREAMLITS`.
 
-**Path B — scripted via stage (reproducible fallback):** Snowsight > **Data > Databases > `<your_db>` > `QUIZ_<CODE>` > Stages > STAGE_SIS_APP** > **+ Files** > upload the `app/` files (keep the `pages/` and `.streamlit/` folder layout) > reply "uploaded" — the agent runs `CREATE OR REPLACE STREAMLIT ... RUNTIME_NAME = 'SYSTEM$ST_CONTAINER_RUNTIME_PY3_11' COMPUTE_POOL = ...`.
-
-**Path C — no compute pool:** the agent generates `environment.yml` instead of `pyproject.toml` and deploys on the warehouse runtime (Streamlit 1.52.2) via the Path B stage flow, without the container parameters.
+**Path B — scripted via stage (reproducible):** Snowsight > **Data > Databases > `<your_db>` > `QUIZ_<CODE>` > Stages > STAGE_SIS_APP** > **+ Files** > upload the `app/` files (keep the `pages/` and `.streamlit/` folder layout) > reply "uploaded" — the agent runs `CREATE OR REPLACE STREAMLIT ... MAIN_FILE = 'main.py' QUERY_WAREHOUSE = ...` (default warehouse runtime). *(Container opt-in: add `RUNTIME_NAME` / `COMPUTE_POOL` / `EXTERNAL_ACCESS_INTEGRATIONS`.)*
 
 ---
 

@@ -35,22 +35,21 @@ ALTER ACCOUNT SET CORTEX_ENABLED_CROSS_REGION = 'ANY_REGION';
 
 Without this, every `AI_COMPLETE` call will fail with "not allowed to access this endpoint". Accounts created after 2026-03-09 already default to `ANY_REGION`; `'AWS_GLOBAL'` is a narrower alternative, the legacy `'AWS_US'` still works but is narrowest.
 
-The container runtime (default deploy target) needs TWO account-level things:
+The **default `warehouse` runtime needs nothing extra** — no compute pool, no external access integration; `pandas`/`altair` come from the Snowflake Anaconda channel, so it works on **trial accounts**.
 
-1. A **compute pool**:
-   ```sql
-   SHOW COMPUTE POOLS;   -- at least one, with USAGE for your role
-   ```
-2. A **PyPI external access integration** (the container installs pandas/altair from PyPI — they are NOT in the base image, which has only Python/Streamlit/Snowpark):
+*Advanced opt-in — the **container runtime*** (custom PyPI packages / GPU) needs two things the default doesn't:
+
+1. A **compute pool** (`SHOW COMPUTE POOLS;` — `SYSTEM_COMPUTE_POOL_CPU` is present on most accounts, `USAGE` to `PUBLIC`).
+2. A **PyPI external access integration** (the container installs pandas/altair from PyPI; **not available on trial accounts**), as `ACCOUNTADMIN`:
    ```sql
    CREATE OR REPLACE EXTERNAL ACCESS INTEGRATION pypi_access_integration
      ALLOWED_NETWORK_RULES = (snowflake.external_access.pypi_rule)   -- managed rule, no custom network rule needed
      ENABLED = TRUE;
    GRANT USAGE ON INTEGRATION pypi_access_integration TO ROLE <your_role>;
    ```
-   You attach it to the app at deploy time (Deploy dialog → **Network**, or `EXTERNAL_ACCESS_INTEGRATIONS=(pypi_access_integration)`). Skipping it is the cause of the "Failed to retrieve package… EAI?" deploy error.
+   Attach it at deploy (Deploy dialog → **Network**, or `EXTERNAL_ACCESS_INTEGRATIONS=(pypi_access_integration)`). Skipping it causes the "Failed to retrieve package… EAI?" error.
 
-`$setup-exam` Step 1f checks both up front. No pool / no admin for the EAI? Use the warehouse fallback (step 9, Path C) — neither is needed.
+`$setup-exam` Step 1f checks these **only if you opted into the container runtime**. Can't create the EAI (trial)? The default warehouse runtime needs neither.
 
 ### Optional — doc grounding (recommended)
 
@@ -61,7 +60,7 @@ Get the free **Snowflake Documentation** listing (Snowsight » Data Products » 
 The role you will use needs, on the target database:
 - `USAGE`, `CREATE SCHEMA`;
 - On a warehouse - `USAGE`, `OPERATE`;
-- On a compute pool (container runtime) - `USAGE`;
+- On a compute pool — only for the container opt-in (the default warehouse runtime needs none) - `USAGE`;
 - Cortex AI functions are usable by any role with `USAGE` on the `SNOWFLAKE.CORTEX_USER` database role.
 
 ### Snowsight feature flags
@@ -231,10 +230,9 @@ Replace the `<your_...>` placeholders with actual object names:
 
 - `<your_database>` - the database in which you want `QUIZ_<CODE>` schemas created;
 - `<your_warehouse>` - the warehouse that will power the Streamlit app and Cortex AI calls;
-- `<your_role>` - the role you will be using (must be active in your Snowsight session, and must have `CREATE SCHEMA` on the database above);
-- `<your_compute_pool>` - the compute pool for the container runtime (skippable only if you plan the warehouse fallback, step 9 Path C).
+- `<your_role>` - the role you will be using (must be active in your Snowsight session, and must have `CREATE SCHEMA` on the database above).
 
-Leave `schema` and `exam_code` as is - `$setup-exam` will fill those in once you tell it which exam you want. `stage`, `app stage`, `app_name`, `main_file`, `runtime`, `deps_file` have working defaults - change them only if you need different names.
+Leave `schema` and `exam_code` as is - `$setup-exam` will fill those in once you tell it which exam you want. `compute_pool` (defaults to `SYSTEM_COMPUTE_POOL_CPU`, usable by any role), `stage`, `app stage`, `app_name`, `main_file`, `runtime`, `deps_file` have working defaults - change them only if you need different names.
 
 Save. CoCo re-reads `AGENTS.md` on the next message. If you forget to fill any required placeholder, `$setup-exam` halts in Step 1a and prompts you to finish the edit.
 
@@ -343,7 +341,7 @@ The agent reads the updated `AGENTS.md` plus all `$quiz/*` skills (screens, ques
 - `app/main.py` - entry point: `st.set_page_config`, session-state init, `st.navigation`;
 - `app/_config.py`, `app/_cortex.py`, `app/_data.py`, `app/_questions.py`, `app/_ui.py` - constants, Cortex calls, cached loaders, question engine, shared UI helpers;
 - `app/pages/quiz.py` + `app/pages/review.py` - the two pages (plus one page per requested optional feature);
-- `app/.streamlit/config.toml` + `app/pyproject.toml` + `app/snowflake.yml` - app config, container-runtime dependencies (PyPI), deploy descriptor.
+- `app/.streamlit/config.toml` + `app/environment.yml` + `app/snowflake.yml` - app config, warehouse-runtime dependencies (Snowflake Anaconda channel), deploy descriptor. *(Container opt-in uses `pyproject.toml` instead.)*
 
 Everything appears in the workspace file tree under `app/`.
 
@@ -368,12 +366,12 @@ Streamlit-in-Workspaces (Public Preview) runs the app straight from the workspac
 
 1. Open `app/main.py` in the workspace and click **Run** (or press Cmd/Ctrl+Enter).
 2. A private **dev app** preview opens in the browser - only you can see it. Iterate with the agent until it looks right (agent edits, you Run again).
-3. Click **Deploy** in the project toolbar. In the dialog set: app title `SNOWPRO_QUIZ`, database `<your_db>`, schema `QUIZ_<CODE>`, **compute pool**, query warehouse.
+3. Click **Deploy** in the project toolbar. In the dialog set: app title `SNOWPRO_QUIZ`, database `<your_db>`, schema `QUIZ_<CODE>`, query warehouse. *(Container opt-in only: also set a compute pool + the PyPI EAI under **Network**.)*
 4. Reply "deployed" - the agent verifies with `SHOW STREAMLITS`.
 
 Remember: after later edits, the published app updates only when you **Deploy** again - **Run** refreshes only your private dev app.
 
-### Path B - scripted: stage + CREATE STREAMLIT (container runtime)
+### Path B - scripted: stage + CREATE STREAMLIT (default warehouse runtime)
 
 For a fully scripted, reproducible flow:
 
@@ -387,18 +385,18 @@ The agent runs:
 CREATE OR REPLACE STREAMLIT <your_database>.QUIZ_<CODE>.SNOWPRO_QUIZ
   FROM '@<your_database>.QUIZ_<CODE>.STAGE_SIS_APP'
   MAIN_FILE = 'main.py'
-  RUNTIME_NAME = 'SYSTEM$ST_CONTAINER_RUNTIME_PY3_11'
-  COMPUTE_POOL = <your_compute_pool>
   QUERY_WAREHOUSE = <your_warehouse>;
+-- Container opt-in: also add RUNTIME_NAME = 'SYSTEM$ST_CONTAINER_RUNTIME_PY3_11',
+--   COMPUTE_POOL = SYSTEM_COMPUTE_POOL_CPU, EXTERNAL_ACCESS_INTEGRATIONS = (pypi_access_integration)
 
 SHOW STREAMLITS LIKE 'SNOWPRO_QUIZ' IN SCHEMA <your_database>.QUIZ_<CODE>;
 ```
 
 (From a machine with the Snowflake CLI, `snow streamlit deploy` does the same, driven by the generated `snowflake.yml`.)
 
-### Path C - warehouse fallback (no compute pool)
+### Container runtime (advanced opt-in)
 
-If the account has no usable compute pool, the agent generates `environment.yml` instead of `pyproject.toml` and deploys via the Path B stage flow **without** `RUNTIME_NAME`/`COMPUTE_POOL`. The warehouse runtime caps Streamlit at 1.52.2.
+Paths A and B above use the **default `warehouse` runtime** (no pool, no EAI; works on trial). Only if you opted into the **container runtime** does the agent emit `pyproject.toml` instead of `environment.yml` and add `RUNTIME_NAME`/`COMPUTE_POOL`/`EXTERNAL_ACCESS_INTEGRATIONS` — it needs a compute pool **and** a PyPI EAI (**EAI not available on trial accounts**).
 
 ---
 

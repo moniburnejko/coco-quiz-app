@@ -12,7 +12,7 @@ Load a study guide PDF, and the agent creates the schema, extracts exam domains,
 
 ## What you get
 
-- **A multipage Streamlit app** (decomposed `app/` project, native `st.navigation`, container runtime):
+- **A multipage Streamlit app** (decomposed `app/` project, native `st.navigation`):
   - **Quiz** - configure round, answer single-/multi-select questions, see score + pass/fail (75% threshold) with wrong-answer cards.
   - **Review** - filterable history of every mistake + learning dashboard (score trend, per-domain error distribution, session history).
   - **Admin** - app configuration (toggles/sliders), question manager with one-click AI batch generation, bank stats, Cortex spend dashboard, maintenance tools.
@@ -35,7 +35,7 @@ Load a study guide PDF, and the agent creates the schema, extracts exam domains,
 | isolation | Git branch per exam + schema (agent-automated) | schema per exam always; optional branch per exam if workspace is Git-backed (user creates the branch manually) |
 | custom skills path | `.cortex/skills/` | `.snowflake/cortex/skills/` |
 | global skills | `~/.snowflake/cortex/skills/` | built into CoCo |
-| app code | tracked in repo | generated `app/` project (multi-file, container runtime), not committed |
+| app code | tracked in repo | generated `app/` project (multi-file), not committed |
 | input data (`data/`) | tracked in repo | user uploads PDF/CSV directly to stage |
 
 ---
@@ -43,7 +43,7 @@ Load a study guide PDF, and the agent creates the schema, extracts exam domains,
 ## Prerequisites
 
 - Snowflake account with a role that has `USAGE`+`CREATE SCHEMA` on a database, `USAGE` on a warehouse, and access to Cortex AI functions.
-- For the default **container runtime**, two things (the warehouse fallback needs neither): a **compute pool** with `USAGE` for your role (`SHOW COMPUTE POOLS;`), and a **PyPI external access integration** so it can install pandas/altair (`CREATE EXTERNAL ACCESS INTEGRATION … ALLOWED_NETWORK_RULES = (snowflake.external_access.pypi_rule)`, ACCOUNTADMIN). `$setup-exam` checks both up front (Step 1f) and gives you the DDL.
+- The **default `warehouse` runtime needs nothing extra** — no compute pool, no external access integration; `pandas`/`altair` install from the Snowflake Anaconda channel, so it **works on trial accounts**. *(Advanced opt-in: the **container runtime** — custom PyPI packages / GPU — needs a compute pool + a PyPI external access integration, and the **EAI is not available on trial accounts**.)*
 - One-time as `ACCOUNTADMIN`, only if the model is not reachable in-region: `ALTER ACCOUNT SET CORTEX_ENABLED_CROSS_REGION = 'ANY_REGION';` (accounts created after 2026-03-09 default to it).
 - Snowsight > AI & ML > Agents > Settings > Tools and connectors > Web search > enable.
 - A study guide PDF for your target exam - [Snowflake certifications catalog](https://learn.snowflake.com/en/certifications/).

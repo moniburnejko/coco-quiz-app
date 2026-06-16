@@ -32,21 +32,22 @@ All OFF by default — enabled only if the user asks in Step 1d. **Without an ex
 
 | Option | Values | What it does |
 |--------|--------|--------------|
-| model_profile | `default` / `quality` | `default` = `claude-sonnet-4-6`. `quality` = `claude-opus-4-7` (newest GA opus as of 2026-06) set as `CORTEX_MODEL` in `_config.py` — stronger hard distractors, slower + markedly pricier. `claude-opus-4-8` is **Public Preview** (new Claude models land in Cortex same-day but in preview; GA follows) — only on explicit request. Do NOT change the AGENTS.md default. |
+| model_profile | `default` / `quality` | `default` = `claude-sonnet-4-6`. `quality` = `claude-opus-4-7` set as `CORTEX_MODEL` in `_config.py` — stronger reasoning for hard distractors, slower + markedly pricier. `claude-opus-4-8` is **Public Preview** — use only on explicit request. Do NOT change the AGENTS.md default. |
 | self_verify | `off` / `on` | Adds Step 8.5 (byte-compile the generated modules). Needs a CoCo session with code execution (Cloud Agents); skipped gracefully otherwise. |
 | automations | `off` / `on` | Recurring unattended maintenance via CoCo **Automations** (Preview) — report-only recipe in `docs/customization.md` §5c. |
+| runtime | `warehouse` (default) / `container` | **`warehouse`** runs on a virtual warehouse — no compute pool, no EAI, `environment.yml` from the Snowflake Anaconda channel; works on **trial accounts**. **`container`** (opt-in) unlocks custom PyPI packages/GPU but needs a compute pool *and* a PyPI EAI — **the EAI is not available on trial accounts**. Sets the deps file + deploy path (Steps 8–9). |
 
 ---
 
 # Instructions
 
-> **Step 0 — read this entire skill before acting.** Run no SQL, create no object, generate no file until you've read every step. Each STOP prevents a known costly failure (stage without `SNOWFLAKE_SSE` → `AI_PARSE_DOCUMENT` fails; unfilled `<...>` placeholders → wrong objects; container deploy without a compute pool + PyPI EAI → fails at the package server). **Do NOT improvise from the AGENTS.md overview.** You create nothing before Step 2.
+> **Step 0 — read this entire skill before acting.** Run no SQL, create no object, generate no file until you've read every step. Each STOP prevents a known costly failure (stage without `SNOWFLAKE_SSE` → `AI_PARSE_DOCUMENT` fails; unfilled `<...>` placeholders → wrong objects). **Do NOT improvise from the AGENTS.md overview.** You create nothing before Step 2.
 
 ## Step 1 — Collect inputs
 
 ### 1a — Validate AGENTS.md config (mandatory guard)
 
-**Echo the full `snowflake environment` table back to the user**, then scan every row for `<...>` placeholders. If any remain (`<your_database>`, `<your_warehouse>`, `<your_role>`, `<your_compute_pool>`, …), **STOP immediately** — create nothing. Tell the user exactly which placeholders are unfilled and what each means (`<your_compute_pool>` may stay only if they'll use the warehouse fallback — checked in 1f). Wait, re-read AGENTS.md, re-scan. Do not proceed while any required `<...>` remains. *(Skipping this was a real failure — the pipeline ran with an unfilled `<your_compute_pool>` and broke at deploy.)*
+**Echo the full `snowflake environment` table back to the user**, then scan every row for `<...>` placeholders. If any remain (`<your_database>`, `<your_warehouse>`, `<your_role>`, …), **STOP immediately** — create nothing. Tell the user exactly which placeholders are unfilled and what each means. Wait, re-read AGENTS.md, re-scan. Do not proceed while any required `<...>` remains. *(An unfilled placeholder makes the pipeline create wrong or missing objects.)*
 
 Then confirm the session matches AGENTS.md: `SELECT CURRENT_ROLE(), CURRENT_WAREHOUSE(), CURRENT_DATABASE();` — if it differs, ask whether to `USE` the AGENTS.md values or update AGENTS.md.
 
@@ -62,18 +63,19 @@ The agent can't list the filesystem — ask:
 
 ### 1d — Additional requirements + advanced mode
 
-Ask: *"Any additional requirements? (optional features, AI study recommendations, different scoring — or advanced mode: quality model / self-verify / Automations)"*. Map advanced requests to the **Advanced options** section above (set at Step 8 / 8.5 / 10; never change AGENTS.md defaults). If the user names features not in AGENTS.md, clarify requirements before Step 2. Wait for the response.
+Ask: *"Any additional requirements? (optional features, AI study recommendations, different scoring — or advanced mode: quality model / self-verify / Automations / container runtime)"*. Map advanced requests to the **Advanced options** section above (set at Step 8 / 8.5 / 10; never change AGENTS.md defaults). **The default runtime is `warehouse`** — switch to `container` ONLY if the user explicitly asks *and* the account can create a PyPI EAI (not on trial); it changes the deps file + deploy at Steps 8–9. If the user names features not in AGENTS.md, clarify requirements before Step 2. Wait for the response.
 
 ### 1e — Look & feel
 
 `ask_user_question`: **Default look** (clean Snowflake-blue — no further questions) or **Custom**. Custom → a short one-question-at-a-time dialog (light/dark base; accent color; corner roundness; font stack; sidebar tint), mapped ONLY to native `[theme]`/`[theme.sidebar]` keys per the `$quiz/design` theming contract — **never CSS, `unsafe_allow_html`, or external fonts (CSP)**. Confirm the palette in words. Store the choice for Step 8.
 
-### 1f — Deploy prerequisites (container runtime = default)
+### 1f — Deploy prerequisites
 
-The container runtime has TWO account-level prereqs; missing either makes deploy FAIL at the package server (`Failed to retrieve package… Have you enabled External Access Integration?`). Check BOTH now (early, so the user can fix while the pipeline runs), **STOP** if unresolved:
+**Default (`warehouse` runtime): nothing to check** — no compute pool, no external access integration; `pandas`/`altair` come from the Snowflake Anaconda channel. Skip to 1g.
 
-1. **Compute pool** — `SHOW COMPUTE POOLS;` (role needs `USAGE` on one).
-2. **PyPI EAI** — the container installs `pandas`/`altair` from PyPI (NOT in the base image, which has only Python/Streamlit/Snowpark). If none exists, give the user this ACCOUNTADMIN DDL (Snowflake ships the managed rule — no custom rule):
+**Only if the user opted into the `container` runtime** (Step 1d) — it needs a compute pool **and** a PyPI EAI:
+1. **Compute pool** — `SHOW COMPUTE POOLS;`. `SYSTEM_COMPUTE_POOL_CPU` exists on essentially every account with `USAGE` granted to `PUBLIC`, so the role can use it (the CPU system pool; **never** `SYSTEM_COMPUTE_POOL_GPU`).
+2. **PyPI EAI** — installs `pandas`/`altair` from PyPI (not in the base image). **Not available on trial accounts.** If the account supports it and the user has ACCOUNTADMIN:
    ```sql
    USE ROLE ACCOUNTADMIN;
    CREATE OR REPLACE EXTERNAL ACCESS INTEGRATION pypi_access_integration
@@ -81,9 +83,8 @@ The container runtime has TWO account-level prereqs; missing either makes deploy
      ENABLED = TRUE;
    GRANT USAGE ON INTEGRATION pypi_access_integration TO ROLE {role};
    ```
-   Record the EAI name (`external_access_integration` in AGENTS.md) — attached at deploy (Step 9).
 
-**⚠️ STOP** if either is missing and unresolved — offer the **warehouse fallback** (Step 9 Path C: no pool, no EAI, `environment.yml`, Streamlit 1.52.2). Confirm container vs warehouse before continuing (it sets the deps file + deploy path).
+**⚠️ If container was requested but the EAI can't be created** (trial account, or no ACCOUNTADMIN) → **fall back to the default `warehouse` runtime** — it needs neither and runs the same app. Confirm the runtime before continuing — it sets the deps file (`environment.yml` vs `pyproject.toml`) and the deploy path.
 
 ### 1g — Doc grounding (optional, default-on when available)
 
@@ -112,7 +113,7 @@ USE SCHEMA {database}.QUIZ_<EXAM_CODE>;
 
 ## Step 3 — Create stages, tables, file format (this skill is the sole owner of the data model)
 
-**Stages** — `STAGE_QUIZ_DATA` MUST have SSE + directory for `AI_PARSE_DOCUMENT`. **Copy this DDL verbatim — do NOT write `CREATE STAGE` from memory** (a bare `CREATE STAGE` defaults to client-side encryption → `AI_PARSE_DOCUMENT` fails "Client Side Encryption is not supported" — a real failure that cost a re-upload):
+**Stages** — `STAGE_QUIZ_DATA` MUST have SSE + directory for `AI_PARSE_DOCUMENT`. **Copy this DDL verbatim — do NOT write `CREATE STAGE` from memory** (a bare `CREATE STAGE` defaults to client-side encryption → `AI_PARSE_DOCUMENT` fails "Client Side Encryption is not supported"):
 ```sql
 CREATE STAGE IF NOT EXISTS {database}.QUIZ_<CODE>.STAGE_QUIZ_DATA
   ENCRYPTION = (TYPE = 'SNOWFLAKE_SSE')
@@ -241,20 +242,20 @@ Edit `AGENTS.md` within these boundaries.
 ## Step 8 — Build the `app/` project in the workspace
 
 1. Read the updated `AGENTS.md`.
-2. **MANDATORY — read these skills BEFORE writing any code** (they're generation rules, not a post-hoc linter; reading first is what makes the scan pass first-try — skipping it produced 10+ scan failures in a real run):
+2. **MANDATORY — read these skills BEFORE writing any code** (they're generation rules, not a post-hoc linter — reading them first is what makes the scan pass):
    - `$sis` — gotchas (no-`ttl` cache + `clear_caches()`, widget lifecycle, SQL safety) + the pre-deploy scan your code must ALREADY pass
    - `$cortex` — `call_cortex_json` + `response_format` (no fence parsing), injection delimiting, and the `_search.py` CKE helper (generate it when grounding is in play — Step 1g)
    - `$quiz/screens` (flow, state, learning-loop contracts, write-back), `$quiz/questions` (`DIFFICULTY_GUIDE`, shuffling, validation, retry), `$quiz/design` (`EXAM_NAME`, the theming contract + chart rules), and `$quiz/features` only if a feature was requested
    - For general Streamlit / AISQL, the bundled `developing-with-streamlit-in-snowflake` / `cortex-ai-function-studio`. `$sis`/`$cortex` carry only the project deltas.
 
-   **Generation rules — apply WHILE writing** (the actual first-pass failures): bind params (only `DATABASE`/`SCHEMA`/`CORTEX_MODEL`/`RESPONSE_FORMATS` in f-strings); `@st.cache_data` with no `ttl` + `clear_caches()` after every write; NO `unsafe_allow_html`; every JSON AI call via `call_cortex_json` + `response_format`; `config.toml` `showErrorDetails = "none"` (string); `st.set_page_config(layout="centered")` first `st.` call in `main.py` and nowhere else.
+   **Generation rules — apply WHILE writing:** bind params (only `DATABASE`/`SCHEMA`/`CORTEX_MODEL`/`RESPONSE_FORMATS` in f-strings); `@st.cache_data` with no `ttl` + `clear_caches()` after every write; NO `unsafe_allow_html`; every JSON AI call via `call_cortex_json` + `response_format`; `config.toml` `showErrorDetails = "none"` (string); `st.set_page_config(layout="centered")` first `st.` call in `main.py` and nowhere else.
 
 3. Generate the decomposed project (file responsibilities → `$quiz`; the app module map is in `$quiz`):
    ```
    app/
      main.py            _config.py   _cortex.py   _data.py   _questions.py   _ui.py   _search.py
      pages/  quiz.py   review.py   admin.py        # + <feature>.py ONLY for requested features
-     .streamlit/config.toml   pyproject.toml   snowflake.yml
+     .streamlit/config.toml   environment.yml   snowflake.yml   # pyproject.toml instead, for the container opt-in
    ```
    **Generate `snowflake.yml` + `.streamlit/config.toml` FIRST** — `snowflake.yml` at the project root is what makes the Workspace recognize the folder as a Streamlit app (no "Convert to Streamlit app" click). If the user chose "No CSV", default `question_source = 'ai'`.
 
@@ -267,18 +268,17 @@ Edit `AGENTS.md` within these boundaries.
    st.navigation(pages).run()
    ```
 
-5. **`pyproject.toml`** (container deps):
-   ```toml
-   [project]
-   name = "snowpro_quiz"
-   version = "1.0.0"
-   requires-python = "==3.11.*"
-   dependencies = ["streamlit[snowflake]", "pandas", "altair"]
+5. **`environment.yml`** (default — warehouse runtime, Snowflake Anaconda channel):
+   ```yaml
+   name: snowpro_quiz
+   channels: [snowflake]
+   dependencies: [streamlit, pandas, altair]
    ```
+   *(Container opt-in instead emits `pyproject.toml`: `[project]` with `name = "snowpro_quiz"`, `requires-python = "==3.11.*"`, `dependencies = ["streamlit[snowflake]", "pandas", "altair"]`.)*
 
 6. **`.streamlit/config.toml`** — `[client] showErrorDetails = "none"` (the string, NOT `false`, which leaks tracebacks) + `toolbarMode = "minimal"`. The `[theme]`/`[theme.sidebar]` block comes from **`$quiz/design`** (the canonical default theme lives there; or the user's Step 1e custom palette) — never author theme values here from memory.
 
-7. **`snowflake.yml`** — `identifier` = `app_name` from AGENTS.md; attach the PyPI EAI; **list EVERY generated file in `artifacts`** (an incomplete list = a partial/broken deploy — an observed bug):
+7. **`snowflake.yml`** — `identifier` = `app_name` from AGENTS.md; **list EVERY generated file in `artifacts`** (an incomplete list = a partial / broken deploy). Default (warehouse runtime):
    ```yaml
    definition_version: 2
    entities:
@@ -287,13 +287,10 @@ Edit `AGENTS.md` within these boundaries.
        identifier: SNOWPRO_QUIZ
        stage: STAGE_SIS_APP
        query_warehouse: {warehouse}
-       compute_pool: {compute_pool}
-       runtime_name: SYSTEM$ST_CONTAINER_RUNTIME_PY3_11
-       external_access_integrations: [pypi_access_integration]
        main_file: main.py
-       artifacts: [main.py, _config.py, _cortex.py, _data.py, _questions.py, _ui.py, _search.py, pages/, pyproject.toml, .streamlit/config.toml]
+       artifacts: [main.py, _config.py, _cortex.py, _data.py, _questions.py, _ui.py, _search.py, pages/, environment.yml, .streamlit/config.toml]
    ```
-   Add each `pages/<feature>.py` to `artifacts`. Do NOT set `pages_dir` (navigation is `st.navigation`-controlled) or `execute_as`/`run_mode` (caller's-rights Preview; this app is owner-rights). **Warehouse fallback (Path C):** drop `compute_pool`/`runtime_name`/`external_access_integrations` and swap `pyproject.toml` → `environment.yml` in `artifacts`.
+   Add each `pages/<feature>.py` to `artifacts`. Do NOT set `pages_dir` (navigation is `st.navigation`-controlled) or `execute_as`/`run_mode` (caller's-rights Preview; this app is owner-rights). **Container opt-in:** add `compute_pool: {compute_pool}`, `runtime_name: SYSTEM$ST_CONTAINER_RUNTIME_PY3_11`, `external_access_integrations: [pypi_access_integration]`, and swap `environment.yml` → `pyproject.toml` in `artifacts`.
 
 8. **Run the `$sis` pre-deploy scan across ALL app files as a final confirmation.** If you applied the item-2 rules it reports 0 failures — that's the target; >0 means a rule was skipped during generation (fix + re-scan). ⚠️ Do NOT deploy on any FAIL.
 
@@ -303,25 +300,23 @@ Only if **self-verify** was enabled (Step 1d) and the session can execute code (
 
 ## Step 9 — Deploy
 
-Three paths; **Path A is the default**. The agent instructs + verifies with SQL (it can't click UI or `PUT`). Container deploy needs the compute pool + PyPI EAI from Step 1f — if unresolved, fix now or use Path C. Offer the choice via `ask_user_question`.
+Two paths; **Path A (Workspaces) is the default**. The agent instructs + verifies with SQL (it can't click UI or `PUT`). The **default `warehouse` runtime needs no compute pool or EAI**; the container opt-in adds them (Step 1f). Offer the choice via `ask_user_question`.
 
-**Path A — Workspaces preview + Deploy** (Public Preview): tell the user → open `app/main.py`, **Run** (private dev-app preview, no stage), iterate; then **Deploy** in the toolbar setting app title `SNOWPRO_QUIZ`, database `{database}`, schema `QUIZ_<CODE>`, compute pool `{compute_pool}`, warehouse `{warehouse}`, and **Network → External Access Integrations → `pypi_access_integration`** (without it the PyPI fetch fails). Reply "deployed". Verify:
+**Path A — Workspaces preview + Deploy** (Public Preview): tell the user → open `app/main.py`, **Run** (private dev-app preview, no stage), iterate; then **Deploy** in the toolbar setting app title `SNOWPRO_QUIZ`, database `{database}`, schema `QUIZ_<CODE>`, query warehouse `{warehouse}`. *(Container opt-in only: also set compute pool `{compute_pool}` and, under **Network → External Access Integrations**, `pypi_access_integration`.)* Reply "deployed". Verify:
 ```sql
 SHOW STREAMLITS LIKE 'SNOWPRO_QUIZ' IN SCHEMA {database}.QUIZ_<CODE>;
 ```
 (Dev-app changes are private until **Deploy** — and after every later edit, until re-Deploy.)
 
-**Path B — scripted via stage** (reproducible): user uploads `app/` to `STAGE_SIS_APP` (preserving `pages/`, `.streamlit/`); verify with `LIST`; then:
+**Path B — scripted via stage** (reproducible): user uploads `app/` to `STAGE_SIS_APP` (preserving `pages/`, `.streamlit/`); verify with `LIST`; then (default warehouse runtime):
 ```sql
 CREATE OR REPLACE STREAMLIT {database}.QUIZ_<CODE>.SNOWPRO_QUIZ
   FROM '@{database}.QUIZ_<CODE>.STAGE_SIS_APP' MAIN_FILE = 'main.py'
-  RUNTIME_NAME = 'SYSTEM$ST_CONTAINER_RUNTIME_PY3_11'
-  COMPUTE_POOL = {compute_pool} QUERY_WAREHOUSE = {warehouse}
-  EXTERNAL_ACCESS_INTEGRATIONS = (pypi_access_integration);
+  QUERY_WAREHOUSE = {warehouse};
 ```
-The `EXTERNAL_ACCESS_INTEGRATIONS` clause is required on the container runtime. (CLI equivalent: `snow streamlit deploy`, driven by `snowflake.yml`.)
+*(Container opt-in: add `RUNTIME_NAME = 'SYSTEM$ST_CONTAINER_RUNTIME_PY3_11' COMPUTE_POOL = {compute_pool} EXTERNAL_ACCESS_INTEGRATIONS = (pypi_access_integration)` — the EAI clause is required on the container runtime and is not available on trial.)* CLI equivalent: `snow streamlit deploy`, driven by `snowflake.yml`.
 
-**Path C — warehouse fallback** (no pool / no EAI — needs neither, installs from the Snowflake Anaconda channel): generate `environment.yml` (`channels: [snowflake]`, deps `streamlit`/`pandas`/`altair`), then deploy via the Path B stage flow without the container params (`CREATE OR REPLACE STREAMLIT … MAIN_FILE = 'main.py' QUERY_WAREHOUSE = {warehouse};`). Streamlit is capped at 1.52.2 — flag that the container-only guidance in `$sis` doesn't all apply.
+The warehouse runtime pins a supported Streamlit version (currently ~1.52.2) and installs `pandas`/`altair` from the Snowflake Anaconda channel — everything this app uses works there.
 
 ## Step 10 — Verify + report
 
@@ -343,13 +338,13 @@ Report: exam name + code, schema, domains extracted (N), questions loaded (N or 
 - **1a** — halt on unfilled `<...>` placeholders; resume when filled.
 - **1c** — confirm PDF; ask about optional CSV.
 - **1e** — default vs custom look; if custom, run the dialog + confirm palette before Step 2.
-- **1f** — compute pool + PyPI EAI; STOP-or-warehouse-fallback if missing.
+- **1f** — default warehouse needs nothing; only the container opt-in checks compute pool + PyPI EAI (EAI not on trial) → fall back to warehouse if it can't be made.
 - **4** — wait for upload; verify via `LIST`.
 - **5 (conditional)** — pick among conflicting domain structures.
 - **5 verify** — Approve / Re-extract / Abort.
 - **8 scan** — every `$sis` item must PASS; do NOT deploy on any FAIL.
 - **8.5** (if self-verify) — modules compile-clean, else fix → re-scan.
-- **9** — deploy path A/B/C; wait for "deployed" / upload confirmation.
+- **9** — deploy path A or B (warehouse default; container opt-in adds the pool + EAI); wait for "deployed" / upload confirmation.
 - **10** — report; Done / Review.
 
 **Resume rule:** on approval, proceed without re-asking.
