@@ -28,7 +28,7 @@ Trade-off: `claude-sonnet-4-6` is the best quality for question generation and e
 Ask Snowflake CoCo to change it. :) 
 
 Or:
-- For round size: Open `pages/quiz.py`, find the home-screen block, look for the `st.selectbox("Questions", options=[...])` widget. Default options are typically `[5, 10, 20, 50]`. Change to taste and redeploy (+ re-run `$sis/pre-deploy`).
+- For round size: Open `pages/quiz.py`, find the home-screen block, look for the `st.selectbox("Questions", options=[...])` widget. Default options are typically `[5, 10, 20, 50]`. Change to taste and redeploy (+ re-run `$sis`).
 - For question source: In `render_home` find the `question_source` selectbox. Options are `mix`, `db`, `ai`. If the user chose "No CSV/JSON" during `$setup-exam`, the default is already `ai`; otherwise `mix`. Change `index=` to change the default.
 - And so on.
 
@@ -38,7 +38,7 @@ Explanations render `why_correct`, `why_wrong` (per option), `mnemonic`, `doc_ur
 - The AI_COMPLETE prompt template in `generate_explanation` (ask for the new field);
 - The `render_quiz` explanation block (display the new field).
 
-Run `$cortex/prompt-audit` after the prompt change to catch JSON key mismatches.
+Run `$cortex` after the prompt change to catch JSON key mismatches.
 
 ---
 
@@ -61,7 +61,7 @@ Example prompt:
 run $quiz/design. I want a dark base, violet accent (#7C5CFC), round corners, and the score line chart in green (#36B37E).
 ```
 
-The agent updates `.streamlit/config.toml` (+ matching `_config.py` chart constants), runs `$sis/pre-deploy`, and asks you to re-deploy.
+The agent updates `.streamlit/config.toml` (+ matching `_config.py` chart constants), runs `$sis`, and asks you to re-deploy.
 
 ### Branding (title, exam name, logo)
 
@@ -100,7 +100,7 @@ Or bolt them on later:
 the quiz app is deployed. add flashcards and spaced repetition. treat the existing schema and tables as fixed except where the skill says to add QUIZ_REVIEW_SCHEDULE.
 ```
 
-The agent reads `$quiz/features`, implements only the ones you name, re-runs `$sis/pre-deploy`, and redeploys.
+The agent reads `$quiz/features`, implements only the ones you name, re-runs `$sis`, and redeploys.
 
 ---
 
@@ -160,7 +160,7 @@ For a first pass on, say, "AWS Solutions Architect Associate":
 3. The agent extracts AWS domains (4 domains), generates ~30 questions per domain grounded on AWS key facts, deploys.
 4. Verify: `EXAM_DOMAINS` has 4 rows, weights sum to 100, a couple of sample questions mention AWS services correctly.
 
-Expect 1-2 rounds of refinement on the extraction prompt (`$cortex/prompt-audit`) before the question quality is where you want it. The Snowflake pipeline had this too - the difference is that for Snowflake it was pre-tuned over several iterations.
+Expect 1-2 rounds of refinement on the extraction prompt (`$cortex`) before the question quality is where you want it. The Snowflake pipeline had this too - the difference is that for Snowflake it was pre-tuned over several iterations.
 
 ### 4c - Maintain multiple cert providers in one database
 
@@ -215,7 +215,7 @@ CoCo **Automations** (Preview) run recurring, unattended jobs. A useful report-o
 
 ```
 read AGENTS.md. then:
-1. run the $sis/pre-deploy scan over app/ and report any FAIL.
+1. run the $sis scan over app/ and report any FAIL.
 2. check QUIZ_QUESTIONS: if any domain has fewer than 20 questions, generate one
    batch (10) for that domain per the seeding recipe (docs/customization.md
    section 6) and report counts.
@@ -312,6 +312,6 @@ SELECT * FROM ctx;
 ## Anti-patterns to avoid
 
 - **Don't hard-code domain names, weights, or topic lists anywhere in the app code.** They come from `EXAM_DOMAINS` at runtime. Hard-coding breaks the multi-exam design.
-- **Don't bypass `$sis/pre-deploy` even for "tiny" UI tweaks.** The scan catches regressions that only surface at runtime in SiS - a 5-minute scan is cheaper than a production redeploy loop.
+- **Don't bypass `$sis` even for "tiny" UI tweaks.** The scan catches regressions that only surface at runtime in SiS - a 5-minute scan is cheaper than a production redeploy loop.
 - **Don't add features by editing the app code without consulting `$quiz/features`.** The skill documents session-state key conventions and write-back contracts - ad-hoc additions will collide with future features.
 - **Don't change the 4-table schema casually.** Every screen and every skill assumes those exact columns. Add columns via `ALTER TABLE` if needed.

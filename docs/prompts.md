@@ -57,6 +57,6 @@ The parent skills route by intent: Cortex/AI errors → `/cortex`; app crash, de
 
 - **`AGENTS.md` is always in context** (`@AGENTS.md`) — project constraints, env table, data model, skill index. Don't repeat them in the prompt.
 - **Skills carry the procedure** — `/setup-exam` has its own Step 0–10 with mandatory stops (placeholder guard, stage verify, deploy preflight, domain approval, pre-deploy scan, deploy). You don't re-specify them.
-- **Invoking `/setup-exam` loads the skill** — far more reliable than describing the steps in prose. If the agent drifts, nudge it: "what did `/sis/pre-deploy` return?" or "show me the `EXAM_DOMAINS` rows".
+- **Invoking `/setup-exam` loads the skill** — far more reliable than describing the steps in prose. If the agent drifts, nudge it: "what did the `/sis` scan return?" or "show me the `EXAM_DOMAINS` rows".
 
-Invoke sub-skills directly when you want just one piece: `/cortex/patterns`, `/sis/pre-deploy`, `/quiz/questions`.
+Invoke a skill directly when you want just one piece: `/sis` (the pre-deploy scan), `/cortex` (a prompt audit), or a `/quiz` sub-skill like `/quiz/design`.

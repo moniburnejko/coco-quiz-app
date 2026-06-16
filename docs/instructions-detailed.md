@@ -89,7 +89,7 @@ If you happen to have a ready-made question bank, you can feed it to the agent a
 
 CoCo in Snowsight supports two kinds of skills:
 
-- **Global / built-in** - like `cortex-ai-functions`. These are part of CoCo itself and are always on. **You do not upload these.**
+- **Global / built-in** - like `cortex-ai-function-studio`. These are part of CoCo itself and are always on. **You do not upload these.**
 - **Custom / project-scoped** - live in `.snowflake/cortex/skills/` inside the workspace. You bring them into the workspace yourself.
 
 Two paths:
@@ -347,7 +347,7 @@ The agent reads the updated `AGENTS.md` plus all `$quiz/*` skills (screens, ques
 
 Everything appears in the workspace file tree under `app/`.
 
-Then it runs the **pre-deploy scan** from `$sis/pre-deploy` across all app files. It catches things like:
+Then it runs the **pre-deploy scan** from `$sis` across all app files. It catches things like:
 
 - `AI_COMPLETE` prompts not dollar-quoted;
 - SQL injection risks (f-string interpolation instead of bind params);
@@ -451,9 +451,9 @@ Skip this step if you only plan one or two exams — the schema-per-exam + singl
 
 Paste the **fix prompt** from [prompts.md](prompts.md), describe the symptom. The agent triages:
 
-- `AI_COMPLETE` / `AI_PARSE_DOCUMENT` errors > runs `$cortex/patterns` 5-step diagnostic;
-- App crashes in Streamlit > re-runs `$sis/pre-deploy`;
-- Wrong content / shallow explanations > runs `$cortex/prompt-audit`;
+- `AI_COMPLETE` / `AI_PARSE_DOCUMENT` errors > runs `$cortex` diagnostics;
+- App crashes in Streamlit > re-runs `$sis`;
+- Wrong content / shallow explanations > runs `$cortex`;
 - Screen flow glitches > reads `$quiz/screens`.
 
 After a fix it asks you to **Deploy** again from the workspace (Path A) or re-upload the changed files to `STAGE_SIS_APP` (Path B) and redeploys.

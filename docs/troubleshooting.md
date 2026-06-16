@@ -134,7 +134,7 @@ Usually one rerun is enough.
 - A session-state key read before being initialised;
 - A Cortex JSON helper called on a `None`.
 
-**Fix:** Paste the **fix prompt** with the error text. The agent re-runs `$sis/pre-deploy`, which catches these categories. Do not redeploy on a failing scan.
+**Fix:** Paste the **fix prompt** with the error text. The agent re-runs `$sis`, which catches these categories. Do not redeploy on a failing scan.
 
 ---
 
@@ -142,10 +142,10 @@ Usually one rerun is enough.
 
 **Cause:** The `response_format` schema does not cover a key the rendering code reads - the call returns a schema-conformant dict, but the code expects a field the schema never asked for.
 
-**Fix:** Run `$cortex/prompt-audit` on the offending prompt (item 1 checks schema-vs-code key coverage):
+**Fix:** Run `$cortex` on the offending prompt (item 1 checks schema-vs-code key coverage):
 
 ```
-run $cortex/prompt-audit on the question generation prompt. focus on key name mismatches and JSON completeness.
+run $cortex on the question generation prompt. focus on key name mismatches and JSON completeness.
 ```
 
 Usually one field was renamed in the prompt but not updated in the parser (or vice versa).
@@ -165,7 +165,7 @@ SELECT COUNT(*) FROM <your_database>.QUIZ_<CODE>.QUIZ_SESSION_LOG;
 If 0, start and finish one more round cleanly by clicking **Finish** on the quiz screen. If it stays at 0 after a clean finish, the write-back logic is broken - run:
 
 ```
-run $quiz/screens and $sis/pre-deploy on the current app files. focus on the finish-round handler and the QUIZ_SESSION_LOG INSERT.
+run $quiz/screens and $sis on the current app files. focus on the finish-round handler and the QUIZ_SESSION_LOG INSERT.
 ```
 
 ---

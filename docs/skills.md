@@ -1,176 +1,71 @@
 # Skills
 
-Custom Snowflake CoCo skills in this project live under `.snowflake/cortex/skills/` and are uploaded once per workspace via **CoCo chat > + > Upload Folder(s)**.
+Custom Snowflake CoCo skills live under `.snowflake/cortex/skills/` and are uploaded once per workspace via **CoCo chat » + » Upload Folder(s)**.
 
-There are **13 skill files**: 2 top-level standalone pipelines, 3 parent "routers", and 8 sub-skills. CoCo activates skills by matching your message against each skill's `description` (every description also lists "Do NOT use for…" anti-triggers to prevent cross-firing); you can also invoke explicitly via slash command (`/setup-exam`, `/cortex`, `/sis`, `/quiz`). Each parent router's **body** contains the dispatch instructions — "for intent X, load `<sub-skill path>` and follow it" — which is how CoCo's own bundled router skills work (routing is prose, not frontmatter).
+**9 skill files** — 4 invocable top-level skills plus a `quiz` router with 4 sub-skills. CoCo activates a skill by matching your message against its `description` (each also lists "Do NOT use for…" anti-triggers to stop cross-firing); you can also invoke explicitly with `/`. The `quiz` parent routes via its **body** ("for intent X, load `<sub-skill>` and follow it") — the same prose-routing CoCo's own bundled routers use.
 
-This pack is a **thin layer over CoCo's bundled skills**: `$cortex/*` defers to the built-in `cortex-ai-functions` (full Cortex AI reference), `$sis/*` defers to `developing-with-streamlit` (general Streamlit patterns) and `deploy-to-spcs`/`snowflake-apps` (deploy mechanics). The bundled `skill-development` skill can lint this pack. Bundled skills ship natively with CoCo in Snowsight - no upload needed.
+| Invoke | Kind | Carries |
+|--------|------|---------|
+| `/setup-exam` | standalone | the end-to-end pipeline (PDF → schema → domains → bank → app → deploy) |
+| `/adapt-questions` | standalone | map a CSV/JSON question bank to the `QUIZ_QUESTIONS` schema |
+| `/cortex` | standalone | AI deltas: structured outputs, injection delimiting, CKE grounding, diagnostics, prompt audit |
+| `/sis` | standalone | container-runtime gotchas + the mandatory pre-deploy scan |
+| `/quiz` | router → `screens` · `questions` · `design` · `features` | building/modifying the app |
 
----
-
-## /setup-exam - standalone
-
-**Scope:** the 10-step end-to-end pipeline that takes a study-guide PDF from upload to deployed Streamlit app.
-
-**When to use:**
-- First run of the workspace - sets everything up for a new exam;
-- Adding another certification - creates a parallel `QUIZ_<NEW_CODE>` schema without touching the previous one.
-
-**What it does:**
-- Collects exam metadata (name, code), PDF filename, optional CSV/JSON filename, optional feature list, and the look & feel choice (default theme or a guided custom-theming dialog — Streamlit theme keys only);
-- Validates AGENTS.md placeholders and runs an early **deploy preflight** (Step 1f): verifies a compute pool + a PyPI external access integration for the container runtime, or switches to the warehouse fallback;
-- Creates the schema, both stages (`STAGE_QUIZ_DATA` with `SNOWFLAKE_SSE` + `DIRECTORY` — verified via `DESCRIBE STAGE`, `STAGE_SIS_APP`), all 5 tables (incl. `QUIZ_CONFIG`), and the CSV/JSON file format;
-- Stops for manual PDF upload; calls `AI_PARSE_DOCUMENT` + `AI_COMPLETE` to populate `EXAM_DOMAINS` (domains, weights, topics, `key_facts`);
-- Loads the CSV/JSON question bank if provided (via `$adapt-questions` if columns need remapping); otherwise the bank deliberately stays empty — NO build-time generation; the agent hands over the seeding options (Admin Generate batch / worksheet recipe / Automation);
-- Updates `AGENTS.md` in place with new exam code, schema, PDF filename;
-- Reads `AGENTS.md` + all `$quiz/*` sub-skills, generates the decomposed multipage `app/` project (entry point, `_*.py` modules, `pages/`, configs) in the workspace;
-- Runs the `$sis/pre-deploy` scan across all app files, fixes until clean;
-- Optionally (advanced mode, Step 8.5) self-verifies the generated modules via code execution, and supports the quality model profile + an Automations hand-off (`docs/customization.md` section 5);
-- Deploys: by default the user previews with **Run** and clicks **Deploy** in the workspace (Path A); scripted fallback = upload `app/` to `STAGE_SIS_APP` + `CREATE STREAMLIT` on the container runtime (Path B); warehouse fallback when no compute pool exists (Path C).
-
-**Built-in stopping points:** input collection, upload PDF, domain approval, pre-deploy gate, deploy path choice, final report. The agent never proceeds past these without user confirmation.
+**Thin layer over CoCo's bundled skills** (built-in, no upload): `$cortex` defers to **`cortex-ai-function-studio`** + **`document-intelligence`** (full Cortex AI / doc-parsing reference); `$sis` defers to **`developing-with-streamlit-in-snowflake`** (general Streamlit) and **`deploy-to-spcs`** / **`snowflake-apps`** (deploy mechanics). The bundled **`skill-development`** skill can lint this pack. Our skills carry only the project deltas — decisions, conventions, gotchas, and the app's contracts.
 
 ---
 
-## /adapt-questions - standalone
+## /setup-exam — standalone
 
-**Scope:** schema adaptation for user-supplied question-bank files (CSV or JSON) that don't match the `QUIZ_QUESTIONS` target schema directly.
+**Scope:** the 10-step pipeline that takes a study-guide PDF from upload to a deployed Streamlit app.
 
-**When to use:**
-- Invoked from `$setup-exam` step 6 when a CSV has been uploaded;
-- Invoked directly: "scan my questions.json for compatibility" or "import this CSV".
+**When:** first run of a workspace, or adding another certification (a fresh `QUIZ_<NEW_CODE>` schema; the previous exam untouched).
 
-**What it does:**
-- Inspects source columns via SQL (`SELECT $1..$N FROM @STAGE_QUIZ_DATA/<file> ...`) - no bash, no local filesystem;
-- Maps source columns to the target schema (`domain_id`, `difficulty`, `question_text`, `option_a..e`, `correct_answer`, `is_multi`, `source`);
-- Picks the loading strategy (direct `COPY INTO`, transform via `INSERT SELECT`, or `AI_COMPLETE`-assisted mapping for messy sources);
-- Handles answer-key formats (letter, full text, index);
-- Backfills `domain_name` from `EXAM_DOMAINS` via join.
+Collects exam metadata + file names + optional features + look; validates AGENTS.md placeholders and runs the deploy preflight (compute pool + PyPI EAI, or warehouse fallback); creates the schema, stages (`STAGE_QUIZ_DATA` with `SNOWFLAKE_SSE`+`DIRECTORY`, verified via `DESCRIBE`), all 5 tables, and the file format; stops for the manual PDF upload; extracts `EXAM_DOMAINS` (domains/weights/topics/`key_facts`); loads the CSV bank if provided (else leaves it empty — no build-time generation); updates AGENTS.md; reads `$quiz/*` + `$sis` + `$cortex` and generates the decomposed `app/`; runs the `$sis` pre-deploy scan; deploys (Workspaces Run+Deploy default, scripted stage or warehouse fallback otherwise). Also owns the **data-model DDL** and the **Advanced options** (opt-in: quality model / self-verify / Automations).
 
----
+**Built-in stops:** input collection, PDF upload, domain approval, pre-deploy gate, deploy-path choice, final report.
 
-## /cortex - parent router
+## /adapt-questions — standalone
 
-Dispatches to one of two sub-skills depending on keywords in your message: **patterns** (for calling/debugging) or **prompt-audit** (for quality review).
+**Scope:** adapt a user-supplied CSV/JSON question bank that doesn't match `QUIZ_QUESTIONS` directly. Invoked from `$setup-exam` Step 6 or directly. Inspects the source on the stage, maps columns (with a Status per column), runs a domain-id compatibility check, picks a loading strategy (A direct COPY INTO → E manual fix), executes, backfills `domain_name`, and reports coverage. Two mandatory stops (mapping approval, strategy choice).
 
-### /cortex/patterns
+## /cortex — standalone
 
-**Scope:** calling conventions, error handling, and a 5-step diagnostic for `AI_COMPLETE` and `AI_PARSE_DOCUMENT`.
+**Scope:** the project's Cortex AI deltas (not a general AI-function reference — that's bundled `cortex-ai-function-studio`). Covers: `AI_COMPLETE` **structured outputs** (`response_format` + `RESPONSE_FORMATS`, the `call_cortex_json` helper — guaranteed schema-conformant JSON, no fence parsing); `$$` dollar-quoting + sanitization; **untrusted-content delimiting** (prompt-injection defense); the **Cortex Search (CKE) `_search.py`** isolation pattern (Python `snowflake.core` at runtime, graceful fallback); a trimmed **diagnostics** runbook; and a **prompt-audit** checklist.
 
-**When to use:**
-- Writing any SQL that calls a Cortex AI function;
-- Diagnosing "file not accessible", "model not found", NULL responses, parse errors;
-- Verifying stage prerequisites (`SNOWFLAKE_SSE`, `DIRECTORY=TRUE`).
+## /sis — standalone
 
-**What it covers:**
-- `AI_COMPLETE`: `$$...$$` dollar-quoting, `$$` sanitisation before interpolation, **structured outputs** (`response_format` schemas in `RESPONSE_FORMATS`, `call_cortex_json()` helper — guaranteed schema-conformant JSON, no fence parsing).
-- `AI_PARSE_DOCUMENT`: correct `TO_FILE(...)` + options object, common mistakes (no `BUILD_SCOPED_FILE_URL`, no `PARSE_JSON` wrap, no per-page pagination), stage DDL.
-- `AI_EXTRACT`: noted as an optional alternative for structured extraction (`$setup-exam` Step 5b).
-- **Cortex Search (CKE) retrieval**: the `_search.py` helper (`search_docs`/`docs_available`/`grounding_on`) that grounds questions/explanations in the Snowflake Documentation CKE — Python `snowflake.core` API at runtime, `SEARCH_PREVIEW` build-time only, graceful fallback.
-- 5-step diagnostic runbook: basic connectivity, model access, cross-region parameter, structured output, available models.
-- Defers to the bundled `cortex-ai-functions` skill for the full Cortex AI reference.
+**Scope:** Streamlit-in-Snowflake container-runtime deltas + the **mandatory pre-deploy scan** (run before every deploy). Gotchas: `get_active_session()` inside cached functions; no-`ttl` caching + `clear_caches()`; widget lifecycle (flag-at-top reset, `None`-guards); rerun discipline; multipage state; CSP / `unsafe_allow_html`; `.applymap`→`.map`; `showErrorDetails="none"`; uppercase columns; SQL bind-params. The scan checks every item across all app files; deploy only on a clean pass.
 
-### /cortex/prompt-audit
+## /quiz — router
 
-**Scope:** 7-item audit checklist for any `AI_COMPLETE` prompt in the app modules.
-
-**When to use:**
-- `call_cortex_json` returns `None` or a dict missing expected content;
-- AI explanations are shallow, generic, or missing per-option reasoning;
-- A prompt was just edited and needs a sanity check.
-
-**What it checks:**
-- Structured output requested (`response_format` schema covers every key the code reads);
-- Content completeness (difficulty adherence, grounding from `key_facts`);
-- Deduplication block uses `_get_shown_texts()` correctly;
-- Injection safety (user-derived values never f-string-interpolated into prompts);
-- `doc_search` pattern (no hallucinated URLs).
-
----
-
-## /sis - parent router
-
-Dispatches to **patterns** (for writing code) or **pre-deploy** (for the mandatory scan).
-
-### /sis/patterns
-
-**Scope:** Streamlit-in-Snowflake coding rules for the container runtime — any app-module work.
-
-**When to use:**
-- Writing or modifying any SiS code;
-- Debugging runtime errors (widget state drift, date bugs, cache staleness);
-- Reviewing generated code for SiS compatibility.
-
-**What it covers:**
-- `get_active_session()` placement and cache scope;
-- Caching without `ttl` + explicit `clear_caches()` invalidation after writes;
-- Widget lifecycle (flag-at-top reset, `on_click`), multipage `session_state`, `@st.fragment` scoped reruns;
-- Still-constrained APIs (CSP / `unsafe_allow_html`, `.applymap` removed in pandas 3, `st.experimental_rerun`);
-- Date handling, column-name normalisation, button click safety, SQL safety.
-- Defers to the bundled `developing-with-streamlit` skill for general Streamlit patterns.
-
-### /sis/pre-deploy
-
-**Scope:** **mandatory** 22-item scan across all app files (`main.py`, `_*.py`, `pages/*.py`, `config.toml`), run before every deploy. Catches the top runtime-failure classes (incl. untrusted-input handling + doc-grounding isolation) before they reach production.
-
-**When to use:**
-- Before every deploy - no exceptions;
-- After any code change, before re-deploying (Workspaces Deploy or stage upload);
-- When reviewing generated code for SiS compatibility.
-
-**What it checks:** SQL-injection safety, `AI_COMPLETE` dollar-quoting, structured-output usage, cache discipline (no `ttl` + `clear_caches()` after writes), `config.toml` settings, `st.set_page_config` placement, screen transitions, date handling, column-name conventions, and more. All must pass.
-
----
-
-## /quiz - parent router
-
-Dispatches across four sub-skills depending on what you are working on: **screens**, **questions**, **style**, or **features**.
+Dispatches across four sub-skills. Also carries the **app module map** (which `app/` file owns what).
 
 ### /quiz/screens
-
-**Scope:** behavioural contracts for the app pages - quiz (home/quiz/summary state machine), review, admin.
-
-**When to use:** building or modifying any page; adding a new feature to the flow; debugging page transitions or state.
-
-**What it covers:** page flow (`st.navigation`), config layer (`QUIZ_CONFIG` + gates), session-state key table, `history_item` schema, the learning loop (Socratic hint pre-answer, explanation + contrast post-answer, AI debrief + fail-only remedial round on summary), write-back + `clear_caches()` on round end, Admin page contract (config, question manager + Generate batch, bank stats, Cortex spend with graceful grants, tools), dashboard chart specs.
+Behavioural contracts: page flow (`st.navigation`), the home/quiz/summary state machine, the session-state key table, `history_item` schema, the learning loop (Socratic hint, explanation + contrast, AI debrief, fail-only remedial round), write-back + `clear_caches()`, the Admin page, and the multi-answer/button-safety/date-handling widget patterns.
 
 ### /quiz/questions
+Question selection/generation: `DIFFICULTY_GUIDE`, topic schedule, deduplication via `round_history`, fallback chain (DB → AI), retry, answer shuffling, hybrid doc-grounded generation.
 
-**Scope:** question-selection, generation, validation, deduplication.
-
-**When to use:** loading questions from DB or generating via AI; building the topic schedule; debugging coverage or quality issues.
-
-**What it covers:** `DIFFICULTY_GUIDE` constant (required), topic schedule (`_build_topic_schedule`), deduplication via `_get_shown_texts()` from `round_history`, fallback chain (DB → AI on miss), retry/backoff on parse failure, answer shuffling, JSON schema for AI-generated questions with 2–5 options + multi-answer flag.
-
-### /quiz/style
-
-**Scope:** UI conventions - theming contract (config.toml), badge colours, section labels, chart colours, button style.
-
-**When to use:** any visual or layout work (incl. the Step 1e custom-look dialog); reviewing visual consistency across pages; adding new badges / cards / sections.
-
-**What it covers:** the full `[theme]`/`[theme.sidebar]` key reference (the ONLY styling mechanism — no CSS, no external fonts), the canonical default theme, dialog→key mapping for custom looks, badge palette theming, chart colour constants aligned with `chartCategoricalColors`, axis formatting, docs-link format, card layout, button style variants.
+### /quiz/design
+**The single source for every visual rule** — theme/`config.toml` keys, badge palette, chart colors + axis formatting, cards, buttons, titles, docs-link. Other skills reference it; they never re-specify a color or chart rule.
 
 ### /quiz/features
-
-**Scope:** optional feature implementations - exam simulation mode, flashcards, quick stats, spaced repetition, achievement badges, AI study recommendations, misconception analysis (Review page), flag-a-question.
-
-**When to use:** **only** when the user explicitly requests a feature in their prompt. Never trigger by default.
-
-**What it covers:** per-feature: description, UI location, data dependencies (new tables if any), screen hook points, session-state additions.
+Optional features (only when explicitly requested): exam simulation, flashcards, quick stats, spaced repetition, achievement badges, AI study recommendation, misconception analysis, flag-a-question. Each spec gives behavior/data/state; visuals follow `$quiz/design`.
 
 ---
 
 ## Skill dependency graph
 
 ```
-$setup-exam ----┬--> $adapt-questions -> $cortex/patterns (if AI-assisted mapping)
-                ├--> $cortex/patterns (AI_PARSE_DOCUMENT, AI_COMPLETE structured outputs)
-                ├--> $sis/pre-deploy -> $cortex/patterns (dollar-quoting, response_format)
-                └--> $quiz/screens, $quiz/questions, $quiz/design, $quiz/features
-
-$cortex/prompt-audit - runs against prompts produced by $setup-exam and $quiz/questions
+/setup-exam ──┬── /adapt-questions ── /cortex   (if AI-assisted column mapping)
+              ├── /cortex                        (AI_COMPLETE, structured outputs, CKE)
+              ├── /sis                           (pre-deploy scan; gotchas the app must satisfy)
+              └── /quiz  →  screens · questions · design · features
 
 Bundled CoCo skills this pack defers to (built-in, no upload):
-  $cortex/* -> cortex-ai-functions          $sis/* -> developing-with-streamlit
-  deploy    -> deploy-to-spcs / snowflake-apps        authoring/lint -> skill-development
+  /cortex → cortex-ai-function-studio + document-intelligence
+  /sis    → developing-with-streamlit-in-snowflake, deploy-to-spcs / snowflake-apps
+  lint    → skill-development
 ```
