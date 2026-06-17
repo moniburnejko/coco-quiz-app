@@ -18,7 +18,7 @@ Example: *"I have SnowProGenAIStudyGuide.pdf — create a quiz app for this exam
 
 # Environment
 
-Runs inside **CoCo in Snowsight**: no bash/git/`snow` CLI, no `PUT` (the agent can't read the local filesystem). The user uploads the **PDF** manually via the Snowsight stage UI; the agent writes the `app/` project as workspace files, then **copies them onto `STAGE_SIS_APP` with `COPY FILES` and deploys via `CREATE STREAMLIT`** on the warehouse runtime (Step 9 — no manual app upload; the container path instead uses Workspaces Run + Deploy). Isolation is **schema-per-exam** (`QUIZ_<CODE>`) — no git branch.
+Runs inside **CoCo in Snowsight**: no bash/git/`snow` CLI, no `PUT` (the agent can't read the local filesystem). The user only **drops files into the workspace** (the PDF/CSV, plus the generated `app/` project the agent writes); the agent then **copies them onto stages with `COPY FILES`** — the PDF onto `STAGE_QUIZ_DATA` (Step 4) and the `app/` onto `STAGE_SIS_APP`, deploying via `CREATE STREAMLIT` on the warehouse runtime (Step 9). No manual stage upload (the container path instead uses Workspaces Run + Deploy). Isolation is **schema-per-exam** (`QUIZ_<CODE>`) — no git branch.
 
 Read `{database}`, `{warehouse}`, `{role}`, `{compute_pool}` from the `snowflake environment` table in `AGENTS.md`; every SQL placeholder below substitutes those. Never hardcode exam names/codes — extract the name from the PDF and ALWAYS confirm the code with the user.
 
@@ -67,8 +67,8 @@ Extract the exam name from the prompt, then **propose the exam code you recogniz
 
 ### 1c — Input files
 
-You do **not** need filenames here — you'll read the real names off the stage with `LIST` after upload (Step 4), so don't ask the user to type a name from memory. Ask only **what they have** (this selects the mode):
-- **Study-guide PDF (mandatory):** confirm they have one. No PDF → **STOP** (required for `AI_PARSE_DOCUMENT` → `EXAM_DOMAINS`).
+You do **not** need filenames here — the agent reads the real names off the workspace stage with `LIST` in Step 4, so don't ask the user to type a name from memory. Ask only **what they have** (this selects the mode):
+- **Study-guide PDF (mandatory):** confirm they have one **in the workspace** (they drop it into the file tree — the agent stages it in Step 4; no manual stage upload). No PDF → **STOP** (required for `AI_PARSE_DOCUMENT` → `EXAM_DOMAINS`).
 - **Question bank CSV/JSON (optional):** `ask_user_question` Yes/No (No → `question_source` defaults to `'ai'`). The Yes/No sets the mode; the filename is resolved by `LIST`, not asked.
 
 ### 1d — Additional requirements + advanced mode
@@ -204,14 +204,23 @@ CREATE FILE FORMAT IF NOT EXISTS {database}.QUIZ_<CODE>.FF_CSV
   TYPE = 'CSV' SKIP_HEADER = 1 FIELD_OPTIONALLY_ENCLOSED_BY = '"';
 ```
 
-## Step 4 — User uploads files to the stage (MANUAL)
+## Step 4 — Stage the study guide (agent-driven — no manual stage upload)
 
-The agent can't upload. Tell the user: **Data » Databases » {database} » QUIZ_<CODE> » Stages » STAGE_QUIZ_DATA » + Files** → upload the study-guide PDF (and a question-bank CSV if they have one) → reply when done. Then **STOP** and read the real filenames off the stage — the `LIST` output is the source of truth for the names used in Steps 5–6 (never a name typed from memory, which would make `AI_PARSE_DOCUMENT` fail on a path that isn't there):
+The user only drops the study-guide PDF (and an optional question-bank CSV) into the **workspace** file tree — never the stage UI. The agent copies it from the workspace's internal stage onto `STAGE_QUIZ_DATA` with `COPY FILES` (the same mechanism as the Step 9 app deploy).
+
+1. **Find the file(s) on the workspace stage** — the workspace name varies, so confirm the URI by listing it; the `.pdf` is the study guide, a `.csv`/`.json` is the bank:
 ```sql
+LIST 'snow://workspace/USER$.PUBLIC."<workspace_name>"/versions/live/';
+```
+2. **Copy onto `STAGE_QUIZ_DATA` and verify.** `STAGE_QUIZ_DATA` is the SSE+directory stage from Step 3; the copied file is stored under the target stage's `SNOWFLAKE_SSE` encryption, which is exactly what `AI_PARSE_DOCUMENT` requires:
+```sql
+COPY FILES INTO @{database}.QUIZ_<CODE>.STAGE_QUIZ_DATA
+  FROM 'snow://workspace/USER$.PUBLIC."<workspace_name>"/versions/live/'
+  FILES = ('<pdf_filename>');   -- + '<csv_filename>' if a bank CSV was provided
 ALTER STAGE {database}.QUIZ_<CODE>.STAGE_QUIZ_DATA REFRESH;
 LIST @{database}.QUIZ_<CODE>.STAGE_QUIZ_DATA;
 ```
-Resolve names from the listing: the `.pdf` is the study guide, a `.csv`/`.json` is the bank. Empty listing → ask them to upload and re-run `LIST`. Ambiguous (multiple PDFs, or no clear bank) → `ask_user_question` to pick. Carry the resolved `<pdf_filename>` (and `<csv_filename>`) into Steps 5–6.
+**STOP** if the PDF isn't in the workspace — ask the user to add it to the file tree and re-list. Ambiguous (multiple PDFs) → `ask_user_question`. The `LIST` output is the source of truth for the names (never typed from memory); carry the resolved `<pdf_filename>` (and `<csv_filename>`) — now on `STAGE_QUIZ_DATA` — into Steps 5–6.
 
 ## Step 5 — Extract domains from the PDF
 
@@ -404,7 +413,7 @@ Report: exam name + code, schema, domains extracted (N), questions loaded (N or 
 - **1c** — confirm a PDF exists; Yes/No on an optional CSV (no filenames — resolved at Step 4's `LIST`).
 - **1e** — default vs custom look; if custom, run the dialog + confirm palette before Step 2.
 - **1f** — default warehouse needs nothing; only the container opt-in checks compute pool + PyPI EAI (EAI not on trial) → fall back to warehouse if it can't be made.
-- **4** — wait for upload; `LIST` to verify presence AND resolve the real filenames for Steps 5–6.
+- **4** — `LIST` the workspace stage, `COPY FILES` the PDF (+ optional CSV) onto `STAGE_QUIZ_DATA`, verify with `LIST`, resolve the real filenames for Steps 5–6. STOP only if the PDF isn't in the workspace.
 - **5 (conditional)** — pick among conflicting domain structures.
 - **5 verify** — Approve / Re-extract / Abort.
 - **8 scan** — every `$sis` item must PASS; do NOT deploy on any FAIL.
@@ -421,7 +430,7 @@ Report: exam name + code, schema, domains extracted (N), questions loaded (N or 
 - **Never drop or modify the previous exam's schema** — exams coexist in separate schemas (`QUIZ_<CODE>` is the only isolation; no git here).
 - **Every query references `{database}.QUIZ_<CODE>`** — double-check.
 - **Env schema is authoritative; resume by probing, not assuming** — after a chat reload, target only the schema AGENTS.md env names, check what already exists (Step 1a), resume from the first incomplete step, and verify any "you already did X" claim against that schema — never redo work or write into a different `QUIZ_*` schema.
-- **Manual upload is the only way onto a stage in Snowsight** (no `PUT`) — always wait for confirmation + `LIST`.
+- **Files reach stages via `COPY FILES` from the workspace stage** (no `PUT` in Snowsight) — the user drops files into the workspace file tree; the agent copies them onto `STAGE_QUIZ_DATA` (PDF/CSV, Step 4) and `STAGE_SIS_APP` (the `app/`, Step 9), then `LIST`s to verify.
 - **If a step fails**, diagnose, fix, retry — don't skip.
 - **Bank needs schema adaptation?** → `$adapt-questions` before Step 6.
 
