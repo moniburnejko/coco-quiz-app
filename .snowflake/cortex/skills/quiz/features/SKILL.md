@@ -236,7 +236,7 @@ Session count, avg score, total questions, domain error counts, wrong question s
 }
 ```
 
-No `overall_assessment` key. `doc_search` converted to `doc_url` post-parse.
+No `overall_assessment` key. **Grounding (defer to `$cortex`):** in `cke`/`custom` mode retrieve `<doc_context>` for each weak topic, ground the topic recommendations in it ("answer ONLY from the provided documentation"), and set each topic's `doc_url` from the chunk's real `SOURCE_URL` — the `doc_search` → `https://docs.snowflake.com/en/search?q=` conversion is for **`none` mode only**. (The readiness/weak-domain analysis over the user's own error history is meta-analysis, like the debrief.)
 
 ## Prompt constraints (MUST be in the AI prompt)
 
@@ -279,7 +279,7 @@ Extends the **Review page** (no new page): per wrong answer, AI diagnoses the th
 
 ## Per-card diagnosis
 
-On each wrong-answer card: button "🧠 Diagnoza błędu" → `call_cortex_json(prompt, "misconception")` with question, all options, the user's selection, the correct answer — all wrapped per the untrusted-content delimiting rule (`$cortex`). Schema:
+On each wrong-answer card: button "🧠 Diagnose Error" → `call_cortex_json(prompt, "misconception")` with question, all options, the user's selection, the correct answer — wrapped per the untrusted-content delimiting rule AND **grounded per `$cortex`**: in `cke`/`custom` mode embed the question's retrieved `<doc_context>` (reuse the chunks fetched for its explanation) and diagnose ONLY from the docs, never built-in knowledge; fail visibly on empty retrieval. Schema:
 
 ```
 "misconception": "the likely thinking error behind choosing {selected} (1-2 sentences, names the confused concepts)",
@@ -289,9 +289,9 @@ On each wrong-answer card: button "🧠 Diagnoza błędu" → `call_cortex_json(
 
 Render in a bordered container on the card. **Write-once**: persist `misconception` back to the row (UPDATE by `log_id`, bind params) — later visits read from the DB, no repeat call. Button shows only when the column is NULL; otherwise render the stored text.
 
-## Patterns section ("Twoje wzorce błędów")
+## Patterns section ("Your Error Patterns")
 
-At the top of Wrong Answers, when ≥3 rows have `misconception IS NOT NULL`: button → one `call_cortex_json(..., "misconception_patterns")` over the collected diagnoses → `{recurring_patterns (array, max 3), advice (string)}`. Cache in session state keyed by diagnosis count; render as bullets + callout.
+At the top of Wrong Answers, when ≥3 rows have `misconception IS NOT NULL`: button → one `call_cortex_json(..., "misconception_patterns")` over the collected diagnoses → `{recurring_patterns (array, max 3), advice (string)}`. Cache in session state keyed by diagnosis count; render as bullets + callout. (Meta-analysis over the already-grounded per-card diagnoses — no new doc retrieval needed, like the debrief.)
 
 ## Session state keys
 
@@ -305,7 +305,7 @@ At the top of Wrong Answers, when ≥3 rows have `misconception IS NOT NULL`: bu
 
 ## What
 
-A small "🚩 Zgłoś pytanie" button on the quiz screen (post-answer area) that records quality complaints; flags surface on the Admin page and in the Automations maintenance recipe.
+A small "🚩 Flag Question" button on the quiz screen (post-answer area) that records quality complaints; flags surface on the Admin page and in the Automations maintenance recipe.
 
 ## DDL (generated ONLY when this feature is enabled; add to Step 3)
 
@@ -323,7 +323,7 @@ CREATE TABLE IF NOT EXISTS {database}.QUIZ_<CODE>.QUIZ_FLAGS (
 
 ## UI spec
 
-Post-answer, next to (not competing with) "Next": small secondary button → popover/expander with reason pills (`błędny klucz` / `niejasne` / `literówka` / `inne`) + optional comment (`st.text_input`, max 500 chars) → INSERT with bind params (question_id when the question came from the bank, text snapshot always) → toast "Zgłoszone". One flag per question per round (disable after submit).
+Post-answer, next to (not competing with) "Next": small secondary button → popover/expander with reason pills (`wrong key` / `unclear` / `typo` / `other`) + optional comment (`st.text_input`, max 500 chars) → INSERT with bind params (question_id when the question came from the bank, text snapshot always) → toast "Flagged". One flag per question per round (disable after submit).
 
 ## Admin + Automations integration
 

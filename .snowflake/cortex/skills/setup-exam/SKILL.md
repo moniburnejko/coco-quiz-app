@@ -96,22 +96,25 @@ Ask: *"Any additional requirements? (optional features, AI study recommendations
 
 **⚠️ If container was requested but the EAI can't be created** (trial account, or no ACCOUNTADMIN) → **fall back to the default `warehouse` runtime** — it needs neither and runs the same app. Confirm the runtime before continuing — it sets the deps file (`environment.yml` vs `pyproject.toml`) and the deploy path.
 
-### 1g — Doc grounding (optional, default-on when available)
+### 1g — Doc grounding mode (decided here, fixed for the exam)
 
-The app can ground generation/explanations in the **Snowflake Documentation CKE** (`SNOWFLAKE_DOCUMENTATION.SHARED.CKE_SNOWFLAKE_DOCS_SERVICE`) and cite exact pages. Probe once (one ad-hoc `SEARCH_PREVIEW` is fine here; the app uses the Python API — `$cortex`):
-```sql
-SELECT SNOWFLAKE.CORTEX.SEARCH_PREVIEW(
-  'SNOWFLAKE_DOCUMENTATION.SHARED.CKE_SNOWFLAKE_DOCS_SERVICE',
-  '{"query": "virtual warehouse", "columns": ["DOCUMENT_TITLE"], "limit": 1}');
-```
-- **Reachable** → leave `docs_grounding = 'auto'`; tell the user grounding is active.
-- **Not reachable** → tell them it's free/optional ("Data Products » Marketplace » Snowflake Documentation; needs `IMPORT SHARE`/ACCOUNTADMIN; then Admin » docs grounding"). Continue with fallback (unchanged behavior).
-- **Non-Snowflake exam** (CKE is Snowflake-docs only) → seed `'off'` so grounding never fires:
+Generation (questions, explanations, hints, deep-dive) is **grounded — the app NEVER falls back to the model's built-in knowledge.** Set `grounding_mode` ONCE here (stored in `QUIZ_CONFIG`, fixed for this exam's app — there is no runtime toggle):
+
+- **Snowflake exam → `cke` (default).** Grounds in the **Snowflake Documentation CKE** (`SNOWFLAKE_DOCUMENTATION.SHARED.CKE_SNOWFLAKE_DOCS_SERVICE`). **Hard gate** — probe it; if unreachable, **STOP**: tell the user to install the free listing (Data Products » Marketplace » Snowflake Documentation; needs `IMPORT SHARE`/ACCOUNTADMIN), then re-probe. Do NOT build until it's reachable. It's free and installable on **trial accounts**. (One ad-hoc `SEARCH_PREVIEW` is the probe; the app itself uses the Python API — `$cortex`.)
   ```sql
-  MERGE INTO {database}.QUIZ_<CODE>.QUIZ_CONFIG t
-  USING (SELECT 'docs_grounding' AS k, TO_VARIANT('off') AS v) s ON t.config_key = s.k
-  WHEN NOT MATCHED THEN INSERT (config_key, config_value) VALUES (s.k, s.v);
+  SELECT SNOWFLAKE.CORTEX.SEARCH_PREVIEW(
+    'SNOWFLAKE_DOCUMENTATION.SHARED.CKE_SNOWFLAKE_DOCS_SERVICE',
+    '{"query": "virtual warehouse", "columns": ["DOCUMENT_TITLE"], "limit": 1}');
   ```
+- **Non-Snowflake exam (AWS/GCP/…) → `none` or `custom`.** No Snowflake-docs CKE applies. `ask_user_question`: **`none`** = ungrounded AI generation — confirm the user accepts the tradeoff (modern models know this material decently, but ungrounded raises factual-error risk that CKE essentially eliminates); or **`custom`** = a private Cortex Search service the user built over their own docs (ask for its `db.schema.service` name). See `docs/customization.md` "Using a different exam".
+
+Seed the choice (replaces any prior value); for `custom`, also seed the `DOCS_SEARCH_SERVICE` override (matches the `_config.py` constant — `$cortex`):
+```sql
+MERGE INTO {database}.QUIZ_<CODE>.QUIZ_CONFIG t
+USING (SELECT 'grounding_mode' AS k, TO_VARIANT('<cke|custom|none>') AS v) s ON t.config_key = s.k
+WHEN MATCHED THEN UPDATE SET config_value = s.v
+WHEN NOT MATCHED THEN INSERT (config_key, config_value) VALUES (s.k, s.v);
+```
 
 ## Step 2 — Create the schema
 
@@ -221,7 +224,7 @@ SELECT AI_PARSE_DOCUMENT(
     {'mode': 'LAYOUT'}):content::VARCHAR
 WHERE NOT EXISTS (SELECT 1 FROM {database}.QUIZ_<CODE>._DOC_CONTENT);
 ```
-**Ground every domain, topic, and `key_facts` value in this parsed content — never hand-author them from your own knowledge** (that silently swaps the real study guide for a remembered, possibly-stale blueprint). Every prompt below reads `(SELECT doc_content FROM {database}.QUIZ_<CODE>._DOC_CONTENT)`.
+**Ground every domain, topic, and `key_facts` value in this parsed content — never hand-author them from your own knowledge** (that silently swaps the real study guide for a remembered, possibly-stale blueprint). Every prompt below reads `(SELECT doc_content FROM {database}.QUIZ_<CODE>._DOC_CONTENT)`. This is **build-time PDF grounding** — a separate regime from the runtime `grounding_mode`/CKE contract (Step 1g), which governs the deployed app's question/explanation/hint/etc. generation.
 
 **Confirm the exam code against the document** — the parsed title page is authoritative (model knowledge can be stale; see Step 1b). Compare it to `<EXAM_CODE>`. On a **mismatch** (e.g. the guide says `DEA-C02` but the schema is `QUIZ_DEA_C01`) → **STOP**; on the user's confirmation, recover WITHOUT a mid-pipeline `DROP`: create `QUIZ_<NEW_CODE>`, re-run the Step 3 DDL there, copy the already-uploaded file server-side (no re-upload), rebuild `_DOC_CONTENT` in the new schema, update AGENTS.md (Step 7 bounds), then OFFER to drop the empty wrong-code schema:
 ```sql
@@ -287,7 +290,7 @@ Edit `AGENTS.md` within these boundaries.
 1. Read the updated `AGENTS.md`.
 2. **MANDATORY — read these skills BEFORE writing any code** (they're generation rules, not a post-hoc linter — reading them first is what makes the scan pass):
    - `$sis` — gotchas (no-`ttl` cache + `clear_caches()`, widget lifecycle, SQL safety) + the pre-deploy scan your code must ALREADY pass
-   - `$cortex` — `call_cortex_json` + `response_format` (no fence parsing), injection delimiting, and the `_search.py` CKE helper (generate it when grounding is in play — Step 1g)
+   - `$cortex` — `call_cortex_json` + `response_format` (no fence parsing), injection delimiting, the **mandatory grounding contract** (no built-in fallback), and the `_search.py` CKE helper (generate it unless `grounding_mode = none` — Step 1g; requires the `snowflake` package in `environment.yml`)
    - `$quiz/screens` (flow, state, learning-loop contracts, write-back), `$quiz/questions` (`DIFFICULTY_GUIDE`, shuffling, validation, retry), `$quiz/design` (`EXAM_NAME`, the theming contract + chart rules), and `$quiz/features` only if a feature was requested
    - For general Streamlit / AISQL, the bundled `developing-with-streamlit-in-snowflake` / `cortex-ai-function-studio`. `$sis`/`$cortex` carry only the project deltas.
 
@@ -315,9 +318,9 @@ Edit `AGENTS.md` within these boundaries.
    ```yaml
    name: snowpro_quiz
    channels: [snowflake]
-   dependencies: [streamlit, pandas, altair]
+   dependencies: [streamlit, pandas, altair, snowflake]
    ```
-   *(Container opt-in instead emits `pyproject.toml`: `[project]` with `name = "snowpro_quiz"`, `requires-python = "==3.11.*"`, `dependencies = ["streamlit[snowflake]", "pandas", "altair"]`.)*
+   `snowflake` (the Snowflake Python API, unpinned) provides `snowflake.core`, which the CKE doc-grounding helper (`_search.py`, `$cortex`) imports — omit it and the app dies at load with `ModuleNotFoundError: No module named 'snowflake.core'`. *(Container opt-in instead emits `pyproject.toml`: `[project]` with `name = "snowpro_quiz"`, `requires-python = "==3.11.*"`, `dependencies = ["streamlit[snowflake]", "pandas", "altair", "snowflake"]`.)*
 
 6. **`.streamlit/config.toml`** — `[client] showErrorDetails = "none"` (the string, NOT `false`, which leaks tracebacks) + `toolbarMode = "minimal"`. The `[theme]`/`[theme.sidebar]` block comes from **`$quiz/design`** (the canonical default theme lives there; or the user's Step 1e custom palette) — never author theme values here from memory.
 

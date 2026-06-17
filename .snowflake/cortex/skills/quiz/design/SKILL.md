@@ -19,6 +19,10 @@ Parent skill `$quiz` routes here for DESIGN intent.
 
 ---
 
+# Language
+
+**All generated UI text is English** — every label, button, heading, badge, toast, caption, and section header. No other language, regardless of the conversation or prompt language. (Exam *content* follows the study guide.)
+
 # Badges
 
 `:color-badge[TEXT]` Markdown syntax is the standard for all metadata display.

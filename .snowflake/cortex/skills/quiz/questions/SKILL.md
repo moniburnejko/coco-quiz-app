@@ -207,30 +207,17 @@ Reference: see `generate_ai_question()` in `_questions.py`
 
 ---
 
-# Doc grounding (hybrid — optional, default-on when the CKE is available)
+# Doc grounding (MANDATORY in cke/custom mode — see `$cortex`)
 
-When `$search.search_docs()` is active (see `$cortex` — Docs CKE), ground generation in real Snowflake documentation:
+In `cke`/`custom` grounding mode the generator grounds in retrieved docs and answers **ONLY from them — never the model's built-in knowledge**. Per `$cortex`:
 
 ```python
-chunks = search_docs(f"{domain_name}: {topic}")   # [] when grounding off / unavailable
+chunks = search_docs(f"{domain_name}: {topic}")
 ```
+- **Embed `chunks` in `<doc_context>`** as the primary source ("answer only from this; do not use prior knowledge"), with the topic-relevant `key_facts` as supporting scope (keeps coverage when a topic is thin in the docs). Store the top chunk's `SOURCE_URL` on the question as `DOC_URL`.
+- **If `chunks == []`:** broaden the query once (`f"{domain_name}"`); if still empty, **fail this generation** (`return None` — the retry loop counts it). Do NOT generate from built-in knowledge.
 
-- **If `chunks`:** include them in the prompt wrapped as untrusted data, ALONGSIDE the topic-relevant `key_facts`, with an explicit preference:
-
-  ```
-  Use the following Snowflake documentation as the primary source. Prefer it over prior knowledge,
-  and keep the question within the exam's scope and the topic "{topic}".
-  <doc_context>
-  {chunk_1.CHUNK}
-  {chunk_2.CHUNK}
-  </doc_context>
-  Supporting exam facts: {topic_key_facts}
-  ```
-  Store the top chunk's `SOURCE_URL` on the returned question as `DOC_URL` (the explanation step can reuse or re-search).
-
-- **If `chunks == []`:** generate exactly as today (topic constraint + `key_facts` only). No behavior change.
-
-This is **hybrid**: docs are preferred, `key_facts` keep coverage when a topic is thin in the docs. Grounding never narrows the exam scope — the topic/domain still drive the question.
+`none` mode (non-Snowflake exams, explicit opt-in) is the only ungrounded path — `$cortex` owns that branch. Grounding never narrows exam scope: the topic/domain still drive the question.
 
 ---
 
