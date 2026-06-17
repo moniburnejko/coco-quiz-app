@@ -135,6 +135,8 @@ When loading from DB, try in order:
 3. `domain only` (full pool, no exclusion)
 4. `generate_ai_question()` (auto-fallback when DB exhausted)
 
+**Every level selects with `ORDER BY RANDOM() LIMIT 1` — never sequential / ordered-by-id.** With the bank now growing from runtime AI, a Question-Bank round MUST serve freshly randomized questions, not the table in insertion order; combined with the `NOT IN (shown)` dedup this gives shuffled, non-repeating coverage. (`_shuffle_options` then randomizes option positions — see below.)
+
 Reference: see `_get_db_question()` in `_questions.py`
 
 ---
@@ -145,8 +147,8 @@ Generation goes through `call_cortex_json(prompt, "question")` — the `RESPONSE
 
 What the code still does:
 - **Length — two mechanisms** (the schema guarantees shape, not length):
-  1. The AI prompt MUST include length guidance: `question_text (string, max 500 chars)`, `option_a through option_e (string, max 200 chars each)` — so the model targets the right length
-  2. After the call, apply safety-net truncation: `data["question_text"][:500]`, `data["option_a"][:200]`, etc. — this should rarely activate if the prompt constraint works, but prevents DB overflow
+  1. The AI prompt MUST include length guidance: `question_text (string, max 500 chars)`, `option_a through option_e (string, max 500 chars each)` — so the model targets the right length
+  2. After the call, apply safety-net truncation: `data["question_text"][:500]`, `data["option_a"][:500]`, etc. — this should rarely activate if the prompt constraint works, but prevents DB overflow (matches the `VARCHAR(500)` option columns)
 - **Sanity check**: `correct_answer` letters must reference options that are actually present (e.g. no `"E"` when `option_e` is empty) — regenerate on violation
 - **Retry loop**: retry only on `None` (call failed / returned NULL / guard tripped):
   ```python
@@ -223,15 +225,23 @@ chunks = search_docs(f"{domain_name}: {topic}")
 
 # AI Question Format
 
-The response shape is enforced by `RESPONSE_FORMATS["question"]` (see `$cortex`) — `question_text`, `is_multi`, `option_a..e`, `correct_answer`. The prompt's job is **content**: it MUST still include the max-length guidance alongside the keys (`question_text` max 500 chars, options max 200 chars each), the topic constraint, the full `DIFFICULTY_GUIDE` text, and the dedup block — the schema cannot express any of that.
+The response shape is enforced by `RESPONSE_FORMATS["question"]` (see `$cortex`) — `question_text`, `is_multi`, `option_a..e`, `correct_answer`. The prompt's job is **content**: it MUST still include the max-length guidance alongside the keys (`question_text` max 500 chars, options max 500 chars each), the topic constraint, the full `DIFFICULTY_GUIDE` text, and the dedup block — the schema cannot express any of that.
 
 Some SnowPro questions have 5 options. `option_e` is in the schema as optional. After the call, set `OPTION_E` from `option_e` if present.
 
 The code then adds UPPERCASE keys (`QUESTION_TEXT`, `DOMAIN_ID`, `DOMAIN_NAME`, `DIFFICULTY`, etc.) and returns the dict for in-memory use during the current round.
 
-**Note**: Runtime AI questions are **ephemeral** — they are NOT persisted to `QUIZ_QUESTIONS`. The table is seeded separately (CSV at build, Admin "Generate batch", the worksheet recipe in `docs/customization.md`, or a scheduled task/Automation) — never during `$setup-exam`. The `source` field distinguishes `'MANUAL'` vs `'AI_GENERATED'` rows.
+**Note**: every validated runtime AI question is **persisted to `QUIZ_QUESTIONS`** (`source='AI_GENERATED'`) so the bank grows as the user practices — see **Bank persistence** below. The `source` field distinguishes `'MANUAL'` (CSV) vs `'AI_GENERATED'` (runtime + Admin "Generate batch") rows. Build-time still never mass-generates.
 
 ---
+
+# Bank persistence
+
+Runtime AI generation **grows the bank**: when `generate_ai_question` returns a validated question, **INSERT it into `QUIZ_QUESTIONS`** (bind params per `$sis`; `source='AI_GENERATED'`; columns `domain_id`, `domain_name`, `difficulty`, `question_text`, `is_multi`, `option_a..e`, `correct_answer` — `question_id`/`created_at` are auto). The persist is **fire-and-forget**: the in-memory question keeps `QUESTION_ID = None` (Snowflake has no portable `INSERT … RETURNING`, and a dedup-skip inserts no row — nothing downstream needs the id back; `history_item.question_id` is `int/None`). After a few rounds the bank holds real, reusable, CKE-grounded questions, so **"Question Bank" mode serves them with no AI call** (faster + cheaper).
+
+- **Exact-text dedup**: insert only when no row with the same `question_text` already exists — `INSERT … SELECT … WHERE NOT EXISTS (SELECT 1 FROM {FQ}.QUIZ_QUESTIONS WHERE QUESTION_TEXT = :q)` — so re-asked concepts don't pile up duplicates.
+- **Always on** (no toggle). Persist the question as generated; `_get_db_question` re-shuffles option order on load anyway.
+- A failed persist must **never break the round** — wrap the INSERT so an error just skips saving (the question still displays). Build-time never mass-generates; the bank fills organically from rounds + the Admin "Generate batch" button.
 
 ## Output
 
