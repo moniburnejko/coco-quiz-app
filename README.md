@@ -4,7 +4,7 @@ A browser-only asset for building a Streamlit-in-Snowflake certification quiz ap
 
 > **Naming:** Snowflake renamed *Cortex Code* → *Snowflake CoCo* at Summit 26 (2026-06-02). Some Snowflake doc pages and URLs still use `cortex-code`; the on-disk skills path stays `.snowflake/cortex/skills/`. Both are expected.
 
-Load a study guide PDF, and the agent creates the schema, extracts exam domains, generates questions, builds a decomposed multipage `app/` project (container runtime), and deploys it with a live in-browser preview. All from a single chat session, zero local tooling.
+Load a study guide PDF, and the agent creates the schema, extracts exam domains, generates questions, builds a decomposed multipage `app/` project, and deploys it on the warehouse runtime — copying the files to a stage and running `CREATE STREAMLIT` for you. All from a single chat session, zero local tooling.
 
 > Baseline exam: **SnowPro Core COF-C03**. Swappable to any Snowflake certification by re-running `/setup-exam` with a different study guide PDF.
 
@@ -31,7 +31,7 @@ Load a study guide PDF, and the agent creates the schema, extracts exam domains,
 |---|---|---|
 | environment | terminal + `snow` CLI + bash | browser workspace, zero local tooling |
 | input file uploads | `snow stage copy` | manual upload via Snowsight UI |
-| app deploy | `snow streamlit deploy` | Workspaces **Run** (live dev preview) + **Deploy**; stage + `CREATE STREAMLIT` as scripted fallback |
+| app deploy | `snow streamlit deploy` | agent copies `app/` to a stage with `COPY FILES` + runs `CREATE STREAMLIT` (warehouse); Workspaces **Run + Deploy** for the container opt-in |
 | isolation | Git branch per exam + schema (agent-automated) | schema per exam always; optional branch per exam if workspace is Git-backed (user creates the branch manually) |
 | custom skills path | `.cortex/skills/` | `.snowflake/cortex/skills/` |
 | global skills | `~/.snowflake/cortex/skills/` | built into CoCo |

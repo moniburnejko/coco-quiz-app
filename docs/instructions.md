@@ -15,7 +15,7 @@ ALTER ACCOUNT SET CORTEX_ENABLED_CROSS_REGION = 'ANY_REGION';
 The **default `warehouse` runtime needs nothing extra** (no compute pool, no external access integration) — `pandas`/`altair` come from the Snowflake Anaconda channel, so it works on **trial accounts**.
 
 *Advanced opt-in — the **container runtime*** (custom PyPI packages / GPU) needs two things the default doesn't:
-1. A **compute pool** (`SHOW COMPUTE POOLS;` — `SYSTEM_COMPUTE_POOL_CPU` is present on most accounts, `USAGE` to `PUBLIC`).
+1. A **compute pool** to run the app container (`SHOW COMPUTE POOLS;`) — **not available on trial accounts**.
 2. A **PyPI external access integration** (as `ACCOUNTADMIN`; **not available on trial accounts**):
    ```sql
    CREATE OR REPLACE EXTERNAL ACCESS INTEGRATION pypi_access_integration
@@ -99,7 +99,7 @@ Paste the **setup prompt** from [prompts.md](prompts.md) into the CoCo chat — 
 
 - After asking you to upload the study guide PDF (and optionally a CSV) → you upload via Snowsight UI (step 4).
 - After extracting domains → approve / re-extract / abort.
-- Before deploy → asks you to **Run + Deploy** the generated `app/` from the workspace (or, on the fallback path, to upload `app/` to `STAGE_SIS_APP`) (step 5).
+- Before deploy → the agent copies the generated `app/` onto `STAGE_SIS_APP` and deploys it on the warehouse runtime — nothing for you to upload (step 5).
 
 ---
 
@@ -120,13 +120,9 @@ The agent verifies with `LIST @STAGE_QUIZ_DATA` and continues.
 
 After the agent finishes generation + passes the pre-deploy scan, the `app/` project sits in your workspace file tree.
 
-**Path A — Workspaces (default):**
+**Default (warehouse runtime) — the agent deploys it for you, no manual upload:** your workspace files already live on an internal stage, so the agent copies them onto `STAGE_SIS_APP` with `COPY FILES` (preserving `pages/` and `.streamlit/`), then runs `CREATE OR REPLACE STREAMLIT … MAIN_FILE = 'main.py' QUERY_WAREHOUSE = …` and verifies with `SHOW STREAMLITS`. After later edits it re-copies the changed files and re-creates the app. No compute pool, no EAI — packages come from the Snowflake Anaconda channel — so this works on **trial accounts**.
 
-1. Open `app/main.py`, click **Run** (or Cmd/Ctrl+Enter). A private **dev app** preview opens in the browser — only you see it. Iterate with the agent until it looks right.
-2. Click **Deploy** (project toolbar). Set: app title `SNOWPRO_QUIZ`, database + schema `QUIZ_<CODE>`, query warehouse. *(Container opt-in only: also set a compute pool and add the PyPI EAI under **Network**.)*
-3. Reply "deployed" — the agent verifies with `SHOW STREAMLITS`.
-
-**Path B — scripted via stage (reproducible):** Snowsight > **Data > Databases > `<your_db>` > `QUIZ_<CODE>` > Stages > STAGE_SIS_APP** > **+ Files** > upload the `app/` files (keep the `pages/` and `.streamlit/` folder layout) > reply "uploaded" — the agent runs `CREATE OR REPLACE STREAMLIT ... MAIN_FILE = 'main.py' QUERY_WAREHOUSE = ...` (default warehouse runtime). *(Container opt-in: add `RUNTIME_NAME` / `COMPUTE_POOL` / `EXTERNAL_ACCESS_INTEGRATIONS`.)*
+**Warehouse vs container deploy:** the **warehouse runtime** runs the app on your query warehouse and pulls packages from the Snowflake Anaconda channel — no compute pool, no internet. The **container runtime** runs the app on a **compute pool** and pulls packages from **PyPI**, which requires a **PyPI external access integration (EAI)**. You *can* deploy on the container runtime via the Workspaces **Run + Deploy** toolbar (open `app/main.py` → **Run** → **Deploy**, setting a compute pool + the EAI under **Network**) — but a compute pool and an EAI are **not available on trial accounts**, so the warehouse path above is the default.
 
 ---
 

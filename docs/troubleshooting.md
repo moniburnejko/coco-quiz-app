@@ -53,7 +53,7 @@ If you cannot get `ACCOUNTADMIN`, change the model in `AGENTS.md` > `cortex llm`
 
 ## Deploy dialog shows no compute pool / "compute pool not found"
 
-**Cause:** Only relevant if you opted into the **container runtime** — the default `warehouse` runtime needs no compute pool. Even for container it's rare: every account ships **`SYSTEM_COMPUTE_POOL_CPU`** with `USAGE` granted to `PUBLIC`. You hit it only if an admin revoked that `USAGE`, or there's no usable pool.
+**Cause:** Only relevant if you opted into the **container runtime** — the default `warehouse` runtime needs no compute pool. **Trial accounts can't use compute pools at all**, so the container runtime isn't available there — use the warehouse runtime. On non-trial accounts, a compute pool must exist and your role needs `USAGE` on it.
 
 **Fix:** Check what exists:
 
@@ -191,19 +191,17 @@ This never blocks the app: without grounding it uses `key_facts` + the generic `
 
 ## Everything looks fine but the Streamlit app is using an old version
 
-**Cause (Path A - Workspaces):** **Run** updates only your private *dev app*; the published app changes only on **Deploy**. If others see stale behaviour, you previewed but never re-deployed.
+**Cause:** SiS caches app bundles by stage URL — after the files on `STAGE_SIS_APP` change, the running app doesn't auto-refresh. (On the container opt-in, the published Workspaces app also updates only on **Deploy**, not **Run**.)
 
-**Fix (Path A):** Click **Deploy** again in the project toolbar.
-
-**Cause (Path B - stage):** SiS caches app bundles by stage URL. After uploading new `app/` files to `STAGE_SIS_APP`, the running app does not auto-refresh.
-
-**Fix (Path B):** Either:
+**Fix (warehouse default):** the agent re-copies the changed files and re-runs `CREATE OR REPLACE STREAMLIT` (`OR REPLACE` invalidates the cached bundle):
 
 ```sql
 CREATE OR REPLACE STREAMLIT ... FROM '@...STAGE_SIS_APP' MAIN_FILE = 'main.py' ...;
 ```
 
-(this is what the agent runs - `OR REPLACE` invalidates the cached bundle), or in the Streamlit UI: click the three-dot menu > **Restart app**.
+…or in the Streamlit UI: three-dot menu > **Restart app**.
+
+**Fix (container opt-in):** click **Deploy** again in the workspace toolbar — **Run** refreshes only your private dev app.
 
 ---
 

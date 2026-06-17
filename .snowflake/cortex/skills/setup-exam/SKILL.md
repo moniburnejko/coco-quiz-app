@@ -1,6 +1,6 @@
 ---
 name: setup-exam
-description: "Automated 10-step exam setup pipeline for Snowflake CoCo in Snowsight. Creates the schema, extracts domains from a study-guide PDF, loads an optional question bank, builds the multipage `app/` Streamlit project, and deploys it on the container runtime. First exam or adding another. Triggers: setup exam, new exam, new certification, new study guide PDF, add exam, switch exam, create exam"
+description: "Automated 10-step exam setup pipeline for Snowflake CoCo in Snowsight. Creates the schema, extracts domains from a study-guide PDF, loads an optional question bank, builds the multipage `app/` Streamlit project, and deploys it on a virtual warehouse (the default runtime). First exam or adding another. Triggers: setup exam, new exam, new certification, new study guide PDF, add exam, switch exam, create exam"
 ---
 
 # When to Use
@@ -11,14 +11,14 @@ Example: *"I have SnowProGenAIStudyGuide.pdf — create a quiz app for this exam
 
 # When NOT to Use
 
-- The exam schema already exists (`SHOW SCHEMAS LIKE 'QUIZ_<CODE>' IN DATABASE {database};`).
+- The exam is **fully set up** already — schema + deployed app (`SHOW SCHEMAS LIKE 'QUIZ_<CODE>' IN DATABASE {database};` + `SHOW STREAMLITS`). *(A **partial** schema from an interrupted or reloaded run is a resume, not a re-setup — Step 1a probes and continues.)*
 - Fixing bugs in an existing quiz → `$cortex` or `$sis`.
 
 ---
 
 # Environment
 
-Runs inside **CoCo in Snowsight**: no bash/git/`snow` CLI, no `PUT` (the agent can't read the local filesystem). The user uploads files **manually** via Snowsight UI; the agent writes the `app/` project as workspace files and the user deploys via Workspaces **Run + Deploy** (or a stage + `CREATE STREAMLIT`). Isolation is **schema-per-exam** (`QUIZ_<CODE>`) — no git branch.
+Runs inside **CoCo in Snowsight**: no bash/git/`snow` CLI, no `PUT` (the agent can't read the local filesystem). The user uploads the **PDF** manually via the Snowsight stage UI; the agent writes the `app/` project as workspace files, then **copies them onto `STAGE_SIS_APP` with `COPY FILES` and deploys via `CREATE STREAMLIT`** on the warehouse runtime (Step 9 — no manual app upload; the container path instead uses Workspaces Run + Deploy). Isolation is **schema-per-exam** (`QUIZ_<CODE>`) — no git branch.
 
 Read `{database}`, `{warehouse}`, `{role}`, `{compute_pool}` from the `snowflake environment` table in `AGENTS.md`; every SQL placeholder below substitutes those. Never hardcode exam names/codes — extract the name from the PDF and ALWAYS confirm the code with the user.
 
@@ -51,15 +51,25 @@ All OFF by default — enabled only if the user asks in Step 1d. **Without an ex
 
 Then confirm the session matches AGENTS.md: `SELECT CURRENT_ROLE(), CURRENT_WAREHOUSE(), CURRENT_DATABASE();` — if it differs, ask whether to `USE` the AGENTS.md values or update AGENTS.md.
 
+**AGENTS.md env is the source of truth for the target schema.** Every statement targets exactly the `schema` named there. If a code you derive later (Step 1b, or the PDF title in Step 5) implies a *different* schema, that's a contradiction — STOP and reconcile env first; never silently write into a different schema than env names.
+
+**Resume safely — this skill re-runs from the top after any chat reload, with NO memory of prior turns.** See what already exists, then resume from the first incomplete step (never redo finished work, never write outside the env schema). `SHOW SCHEMAS LIKE 'QUIZ_%' IN DATABASE {database};` — env schema **absent** → fresh run (start at Step 2); **present** → probe before redoing anything:
+```sql
+SELECT COUNT(*) AS domains, COUNT(key_facts) AS facts FROM {database}.QUIZ_<CODE>.EXAM_DOMAINS;
+SELECT COUNT(*) AS questions FROM {database}.QUIZ_<CODE>.QUIZ_QUESTIONS;
+SHOW STREAMLITS LIKE 'SNOWPRO_QUIZ' IN SCHEMA {database}.QUIZ_<CODE>;
+```
+Domains populated → skip Step 5; questions loaded → skip Step 6; app exists → you're at Step 10. A user's *"you already did X — continue"* is a claim to **verify with these probes against the env schema**, not to trust blindly; if the work sits in a different `QUIZ_*` schema than env names, reconcile env before continuing.
+
 ### 1b — Target exam
 
-Extract the exam name from the prompt; ALWAYS ask for the code (no hardcoded mapping): *"Target exam is **{exam_name}** — what is the exam code? (e.g. COF-C03)"*. Wait for both.
+Extract the exam name from the prompt, then **propose the exam code you recognize for it** and ask only to confirm — don't ask open-endedly for a code you already know. The code is *not* free to get wrong: it becomes a durable schema identifier (`QUIZ_<CODE>`) and exam codes are revised across versions (e.g. `COF-C01` → `C02` → `C03`), possibly past your training cutoff — so a confident-but-stale guess must never pass silently. *"**{exam_name}** is **{proposed_code}** — confirm, or give the current code."* Ask the user to **verify it against their study guide's title page** — that page is authoritative, and Step 5 re-confirms the code from the parsed document as a backstop. If you genuinely don't recognize the exam, ask outright. Wait for confirmation before using it.
 
 ### 1c — Input files
 
-The agent can't list the filesystem — ask:
-- **PDF (mandatory):** *"What's the study-guide PDF filename?"* No PDF → **STOP** (required for `AI_PARSE_DOCUMENT` → `EXAM_DOMAINS`).
-- **Question bank CSV/JSON (optional):** ask via `ask_user_question` (Yes → filename; No → `question_source` defaults to `'ai'`).
+You do **not** need filenames here — you'll read the real names off the stage with `LIST` after upload (Step 4), so don't ask the user to type a name from memory. Ask only **what they have** (this selects the mode):
+- **Study-guide PDF (mandatory):** confirm they have one. No PDF → **STOP** (required for `AI_PARSE_DOCUMENT` → `EXAM_DOMAINS`).
+- **Question bank CSV/JSON (optional):** `ask_user_question` Yes/No (No → `question_source` defaults to `'ai'`). The Yes/No sets the mode; the filename is resolved by `LIST`, not asked.
 
 ### 1d — Additional requirements + advanced mode
 
@@ -193,27 +203,60 @@ CREATE FILE FORMAT IF NOT EXISTS {database}.QUIZ_<CODE>.FF_CSV
 
 ## Step 4 — User uploads files to the stage (MANUAL)
 
-The agent can't upload. Tell the user: **Data » Databases » {database} » QUIZ_<CODE> » Stages » STAGE_QUIZ_DATA » + Files** → upload `{pdf_filename}` (and `{csv_filename}` if they have one) → reply when done. Then verify and **STOP** until present:
+The agent can't upload. Tell the user: **Data » Databases » {database} » QUIZ_<CODE> » Stages » STAGE_QUIZ_DATA » + Files** → upload the study-guide PDF (and a question-bank CSV if they have one) → reply when done. Then **STOP** and read the real filenames off the stage — the `LIST` output is the source of truth for the names used in Steps 5–6 (never a name typed from memory, which would make `AI_PARSE_DOCUMENT` fail on a path that isn't there):
 ```sql
 ALTER STAGE {database}.QUIZ_<CODE>.STAGE_QUIZ_DATA REFRESH;
 LIST @{database}.QUIZ_<CODE>.STAGE_QUIZ_DATA;
 ```
-If an expected file is missing, ask them to re-upload before proceeding.
+Resolve names from the listing: the `.pdf` is the study guide, a `.csv`/`.json` is the bank. Empty listing → ask them to upload and re-run `LIST`. Ambiguous (multiple PDFs, or no clear bank) → `ask_user_question` to pick. Carry the resolved `<pdf_filename>` (and `<csv_filename>`) into Steps 5–6.
 
 ## Step 5 — Extract domains from the PDF
 
-**Parse once, reuse** — call `AI_PARSE_DOCUMENT` in LAYOUT mode and keep `doc_content` (session var / temp table / CTE); do NOT re-parse per domain:
+**Parse once into a transient table, then reuse it — survives chat reloads.** `AI_PARSE_DOCUMENT` is billed per call, so parse the PDF (`<pdf_filename>` from Step 4's `LIST`) **exactly once** and keep the result; every later statement — and any resumed session — reads from it instead of re-parsing. A CTE or `TEMPORARY` table is lost across separate statements / a chat reload; a **`TRANSIENT` table persists across reloads with no Fail-safe overhead** — right for regenerable parse output (just re-parse if it's ever lost). Parse-only-if-empty guard:
 ```sql
+CREATE TRANSIENT TABLE IF NOT EXISTS {database}.QUIZ_<CODE>._DOC_CONTENT (doc_content VARCHAR);
+INSERT INTO {database}.QUIZ_<CODE>._DOC_CONTENT
 SELECT AI_PARSE_DOCUMENT(
     TO_FILE('@{database}.QUIZ_<CODE>.STAGE_QUIZ_DATA', '<pdf_filename>'),
-    {'mode': 'LAYOUT'}):content::VARCHAR AS doc_content;
+    {'mode': 'LAYOUT'}):content::VARCHAR
+WHERE NOT EXISTS (SELECT 1 FROM {database}.QUIZ_<CODE>._DOC_CONTENT);
+```
+**Ground every domain, topic, and `key_facts` value in this parsed content — never hand-author them from your own knowledge** (that silently swaps the real study guide for a remembered, possibly-stale blueprint). Every prompt below reads `(SELECT doc_content FROM {database}.QUIZ_<CODE>._DOC_CONTENT)`.
+
+**Confirm the exam code against the document** — the parsed title page is authoritative (model knowledge can be stale; see Step 1b). Compare it to `<EXAM_CODE>`. On a **mismatch** (e.g. the guide says `DEA-C02` but the schema is `QUIZ_DEA_C01`) → **STOP**; on the user's confirmation, recover WITHOUT a mid-pipeline `DROP`: create `QUIZ_<NEW_CODE>`, re-run the Step 3 DDL there, copy the already-uploaded file server-side (no re-upload), rebuild `_DOC_CONTENT` in the new schema, update AGENTS.md (Step 7 bounds), then OFFER to drop the empty wrong-code schema:
+```sql
+COPY FILES INTO @{database}.QUIZ_<NEW_CODE>.STAGE_QUIZ_DATA FROM @{database}.QUIZ_<OLD_CODE>.STAGE_QUIZ_DATA;
+-- only after re-extraction succeeds, with user approval (safe ONLY because it never received domains/questions):
+DROP SCHEMA IF EXISTS {database}.QUIZ_<OLD_CODE>;
 ```
 
-**Before extracting**, scan `doc_content` for multiple/transition exam blueprints (effective dates, "old vs new"). If conflicting structures exist, `ask_user_question` to pick (default: the one effective today) — study guides published during transitions often contain both.
+**Before extracting**, scan the parsed content (`SELECT doc_content FROM {database}.QUIZ_<CODE>._DOC_CONTENT`) for multiple/transition blueprints (effective dates, "old vs new"). If conflicting structures exist, `ask_user_question` to pick (default: the one effective today) — guides published during a transition often contain both.
 
-**Extract domains** with `AI_COMPLETE` (calling/structured-output patterns → `$cortex`): prompt for a JSON array of `{domain_id (sequential string), domain_name (exact), weight_pct (numbers summing to 100), topics (string array)}` over `doc_content`, and INSERT each into `EXAM_DOMAINS`. *(Messy PDF? `AI_EXTRACT` is a one-call keyed-JSON alternative — `$cortex` / bundled `cortex-ai-function-studio`. AI_COMPLETE stays the default.)*
+**Extract domains — schema-constrained, one statement.** Structured output is the project standard for ALL JSON (→ `$cortex`): pass a `response_format` schema so the result is guaranteed-conformant — never prompt-only "return JSON". Read the TEMP table and FLATTEN straight into `EXAM_DOMAINS`:
+```sql
+INSERT INTO {database}.QUIZ_<CODE>.EXAM_DOMAINS (domain_id, domain_name, weight_pct, topics)
+SELECT d.value:domain_id::VARCHAR, d.value:domain_name::VARCHAR, d.value:weight_pct::FLOAT, d.value:topics
+FROM TABLE(FLATTEN(PARSE_JSON(AI_COMPLETE(
+    model => 'claude-sonnet-4-6',
+    prompt => CONCAT($$List EVERY exam domain for <EXAM_CODE> with its exact name, weight % (numbers summing to 100), and topics, as JSON. If the guide shows old + new blueprints, use the one effective today.$$, CHR(10),
+                     (SELECT doc_content FROM {database}.QUIZ_<CODE>._DOC_CONTENT)),
+    model_parameters => {},
+    response_format => {'type':'json','schema':{'type':'object','properties':{'domains':{'type':'array','items':{'type':'object','properties':{
+        'domain_id':{'type':'string'},'domain_name':{'type':'string'},'weight_pct':{'type':'number'},
+        'topics':{'type':'array','items':{'type':'string'}}},'required':['domain_id','domain_name','weight_pct','topics']}}},'required':['domains']}}
+)):domains)) d;
+```
+*(Messy PDF? `AI_EXTRACT` is a one-call keyed-JSON alternative — bundled `cortex-ai-function-studio`. AI_COMPLETE stays the default.)*
 
-**Extract `key_facts` per domain** — reuse `doc_content`; one `AI_COMPLETE` per domain asking for a plain-text list of testable facts (definitions, limits, best practices, feature names), `UPDATE EXAM_DOMAINS … WHERE domain_id = …`. Verify each is non-null.
+**Extract `key_facts` per domain** — reuse the SAME `_DOC_CONTENT` (free text, so no `response_format`); ONE `UPDATE` covers every domain, each using its own `domain_name`, **never re-parsing**:
+```sql
+UPDATE {database}.QUIZ_<CODE>.EXAM_DOMAINS d
+SET key_facts = AI_COMPLETE(model => 'claude-sonnet-4-6',
+    prompt => CONCAT($$Extract a comprehensive plain-text list of testable facts (definitions, limits, best practices, feature names) for the $$, d.domain_name,
+                     $$ domain of {exam_name} (<EXAM_CODE>).$$, CHR(10),
+                     (SELECT doc_content FROM {database}.QUIZ_<CODE>._DOC_CONTENT)));
+```
+Verify each `key_facts` is non-null.
 
 **Verify + ⚠️ STOP:**
 ```sql
@@ -298,25 +341,44 @@ Edit `AGENTS.md` within these boundaries.
 
 Only if **self-verify** was enabled (Step 1d) and the session can execute code (Cloud Agents). Byte-compile every module (`python -m py_compile app/main.py app/_*.py app/pages/*.py`) — Snowflake-bound modules can't run outside SiS, so compile/parse only; on failure fix → re-run the `$sis` scan → repeat. If the session can't execute code, say so and skip. Supplements the Step 8 scan, never replaces it.
 
-## Step 9 — Deploy
+## Step 9 — Deploy (default: warehouse, fully scriptable — no manual upload)
 
-Two paths; **Path A (Workspaces) is the default**. The agent instructs + verifies with SQL (it can't click UI or `PUT`). The **default `warehouse` runtime needs no compute pool or EAI**; the container opt-in adds them (Step 1f). Offer the choice via `ask_user_question`.
+The agent can't click the Workspaces UI or `PUT`, but the workspace files already live on an internal stage — so the agent copies them onto `STAGE_SIS_APP` with SQL and creates the app. Default path: **warehouse runtime — no compute pool, no EAI; works on trial accounts.**
 
-**Path A — Workspaces preview + Deploy** (Public Preview): tell the user → open `app/main.py`, **Run** (private dev-app preview, no stage), iterate; then **Deploy** in the toolbar setting app title `SNOWPRO_QUIZ`, database `{database}`, schema `QUIZ_<CODE>`, query warehouse `{warehouse}`. *(Container opt-in only: also set compute pool `{compute_pool}` and, under **Network → External Access Integrations**, `pypi_access_integration`.)* Reply "deployed". Verify:
+**1. Copy `app/` from the workspace stage → `STAGE_SIS_APP`.** Workspace files sit at `snow://workspace/USER$.PUBLIC."<workspace_name>"/versions/live/app/` — **confirm the exact URI first** (the workspace name varies), then copy, preserving the `pages/` and `.streamlit/` subfolders:
 ```sql
-SHOW STREAMLITS LIKE 'SNOWPRO_QUIZ' IN SCHEMA {database}.QUIZ_<CODE>;
-```
-(Dev-app changes are private until **Deploy** — and after every later edit, until re-Deploy.)
+LIST 'snow://workspace/USER$.PUBLIC."<workspace_name>"/versions/live/app/';  -- confirm URI + files
 
-**Path B — scripted via stage** (reproducible): user uploads `app/` to `STAGE_SIS_APP` (preserving `pages/`, `.streamlit/`); verify with `LIST`; then (default warehouse runtime):
+COPY FILES INTO @{database}.QUIZ_<CODE>.STAGE_SIS_APP
+  FROM 'snow://workspace/USER$.PUBLIC."<workspace_name>"/versions/live/app/'
+  FILES = ('main.py','_config.py','_cortex.py','_data.py','_questions.py','_ui.py','_search.py','environment.yml');
+COPY FILES INTO @{database}.QUIZ_<CODE>.STAGE_SIS_APP/pages/
+  FROM 'snow://workspace/USER$.PUBLIC."<workspace_name>"/versions/live/app/pages/'
+  FILES = ('quiz.py','review.py','admin.py');  -- + each <feature>.py
+COPY FILES INTO @{database}.QUIZ_<CODE>.STAGE_SIS_APP/.streamlit/
+  FROM 'snow://workspace/USER$.PUBLIC."<workspace_name>"/versions/live/app/.streamlit/'
+  FILES = ('config.toml');
+```
+
+**2. Verify the stage** (root + `pages/` + `.streamlit/` all present):
+```sql
+LIST @{database}.QUIZ_<CODE>.STAGE_SIS_APP;
+```
+
+**3. Create (or replace) the app on the warehouse runtime** — packages come from the Snowflake Anaconda channel via `environment.yml`; no compute pool, no EAI, no internet:
 ```sql
 CREATE OR REPLACE STREAMLIT {database}.QUIZ_<CODE>.SNOWPRO_QUIZ
   FROM '@{database}.QUIZ_<CODE>.STAGE_SIS_APP' MAIN_FILE = 'main.py'
   QUERY_WAREHOUSE = {warehouse};
 ```
-*(Container opt-in: add `RUNTIME_NAME = 'SYSTEM$ST_CONTAINER_RUNTIME_PY3_11' COMPUTE_POOL = {compute_pool} EXTERNAL_ACCESS_INTEGRATIONS = (pypi_access_integration)` — the EAI clause is required on the container runtime and is not available on trial.)* CLI equivalent: `snow streamlit deploy`, driven by `snowflake.yml`.
+**Redeploy after an edit:** save the file in the workspace, re-run the relevant `COPY FILES` (it overwrites same-named files) + `CREATE OR REPLACE STREAMLIT`; confirm with `LIST` that the changed file's size updated before assuming it took.
 
-The warehouse runtime pins a supported Streamlit version (currently ~1.52.2) and installs `pandas`/`altair` from the Snowflake Anaconda channel — everything this app uses works there.
+**Container opt-in (non-trial only).** The Workspaces **Run + Deploy** UI runs the **container** runtime, which resolves dependencies from PyPI — so it needs a **PyPI EAI** *and* a **compute pool**, **neither available on trial accounts**. If both exist: open `app/main.py` → **Run** (dev preview) → **Deploy** (app title `SNOWPRO_QUIZ`, db `{database}`, schema `QUIZ_<CODE>`, warehouse `{warehouse}`, compute pool `{compute_pool}`, the PyPI EAI under **Network**). SQL equivalent: the same staged `CREATE STREAMLIT` plus `RUNTIME_NAME = 'SYSTEM$ST_CONTAINER_RUNTIME_PY3_11' COMPUTE_POOL = {compute_pool} EXTERNAL_ACCESS_INTEGRATIONS = (pypi_access_integration)`, shipping `pyproject.toml` instead of `environment.yml`.
+
+Verify either path:
+```sql
+SHOW STREAMLITS LIKE 'SNOWPRO_QUIZ' IN SCHEMA {database}.QUIZ_<CODE>;
+```
 
 ## Step 10 — Verify + report
 
@@ -336,15 +398,15 @@ Report: exam name + code, schema, domains extracted (N), questions loaded (N or 
 
 `ask_user_question` (or numbered-list fallback) at each:
 - **1a** — halt on unfilled `<...>` placeholders; resume when filled.
-- **1c** — confirm PDF; ask about optional CSV.
+- **1c** — confirm a PDF exists; Yes/No on an optional CSV (no filenames — resolved at Step 4's `LIST`).
 - **1e** — default vs custom look; if custom, run the dialog + confirm palette before Step 2.
 - **1f** — default warehouse needs nothing; only the container opt-in checks compute pool + PyPI EAI (EAI not on trial) → fall back to warehouse if it can't be made.
-- **4** — wait for upload; verify via `LIST`.
+- **4** — wait for upload; `LIST` to verify presence AND resolve the real filenames for Steps 5–6.
 - **5 (conditional)** — pick among conflicting domain structures.
 - **5 verify** — Approve / Re-extract / Abort.
 - **8 scan** — every `$sis` item must PASS; do NOT deploy on any FAIL.
 - **8.5** (if self-verify) — modules compile-clean, else fix → re-scan.
-- **9** — deploy path A or B (warehouse default; container opt-in adds the pool + EAI); wait for "deployed" / upload confirmation.
+- **9** — copy `app/` → `STAGE_SIS_APP` (`COPY FILES`) + `CREATE STREAMLIT` (warehouse default, no pool/EAI); container opt-in = Workspaces Run + Deploy (pool + EAI, not on trial). Verify with `SHOW STREAMLITS`.
 - **10** — report; Done / Review.
 
 **Resume rule:** on approval, proceed without re-asking.
@@ -355,6 +417,7 @@ Report: exam name + code, schema, domains extracted (N), questions loaded (N or 
 
 - **Never drop or modify the previous exam's schema** — exams coexist in separate schemas (`QUIZ_<CODE>` is the only isolation; no git here).
 - **Every query references `{database}.QUIZ_<CODE>`** — double-check.
+- **Env schema is authoritative; resume by probing, not assuming** — after a chat reload, target only the schema AGENTS.md env names, check what already exists (Step 1a), resume from the first incomplete step, and verify any "you already did X" claim against that schema — never redo work or write into a different `QUIZ_*` schema.
 - **Manual upload is the only way onto a stage in Snowsight** (no `PUT`) — always wait for confirmation + `LIST`.
 - **If a step fails**, diagnose, fix, retry — don't skip.
 - **Bank needs schema adaptation?** → `$adapt-questions` before Step 6.

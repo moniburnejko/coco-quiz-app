@@ -14,7 +14,7 @@ You give CoCo a Snowflake certification **study guide PDF**. The agent:
 4. Loads a question bank if you provide one (CSV/JSON); otherwise the bank stays empty and questions are AI-generated at runtime (you can seed the bank later from the Admin page, a worksheet recipe, or a scheduled task).
 5. Generates the multipage `app/` Streamlit project in the workspace (`main.py`, `_*.py` modules, `pages/`, configs — container runtime).
 6. Runs a mandatory pre-deploy scan to catch Streamlit-in-Snowflake footguns.
-7. Deploys the app — by default via the Workspaces **Run + Deploy** flow (live preview, no stage upload), or via stage + `CREATE STREAMLIT` as the scripted fallback.
+7. Deploys the app — by default the agent copies `app/` from the workspace stage onto `STAGE_SIS_APP` and runs `CREATE STREAMLIT` on the warehouse runtime (no manual upload); the container runtime instead deploys via the Workspaces **Run + Deploy** flow.
 
 You never leave the browser. You never run `bash`, `git`, `snow`, or `PUT`. You only:
 - Click around Snowsight UI to upload input files to a stage;
@@ -39,7 +39,7 @@ The **default `warehouse` runtime needs nothing extra** — no compute pool, no 
 
 *Advanced opt-in — the **container runtime*** (custom PyPI packages / GPU) needs two things the default doesn't:
 
-1. A **compute pool** (`SHOW COMPUTE POOLS;` — `SYSTEM_COMPUTE_POOL_CPU` is present on most accounts, `USAGE` to `PUBLIC`).
+1. A **compute pool** to run the app container (`SHOW COMPUTE POOLS;`) — **not available on trial accounts**.
 2. A **PyPI external access integration** (the container installs pandas/altair from PyPI; **not available on trial accounts**), as `ACCOUNTADMIN`:
    ```sql
    CREATE OR REPLACE EXTERNAL ACCESS INTEGRATION pypi_access_integration
@@ -356,47 +356,39 @@ If anything fails, the agent fixes it and re-scans until clean. Do not proceed t
 
 ---
 
-## Step 9 - preview and deploy
+## Step 9 - deploy
 
-When the scan is clean, pick a deploy path. **Path A is the default.**
+When the scan is clean, the agent deploys. **The default warehouse runtime is fully scripted — no manual upload.**
 
-### Path A - Workspaces live preview + Deploy (default)
+### Default - warehouse runtime (agent-scripted)
 
-Streamlit-in-Workspaces (Public Preview) runs the app straight from the workspace - no stage upload:
+Your workspace files already live on an internal stage, so the agent:
 
-1. Open `app/main.py` in the workspace and click **Run** (or press Cmd/Ctrl+Enter).
-2. A private **dev app** preview opens in the browser - only you can see it. Iterate with the agent until it looks right (agent edits, you Run again).
-3. Click **Deploy** in the project toolbar. In the dialog set: app title `SNOWPRO_QUIZ`, database `<your_db>`, schema `QUIZ_<CODE>`, query warehouse. *(Container opt-in only: also set a compute pool + the PyPI EAI under **Network**.)*
-4. Reply "deployed" - the agent verifies with `SHOW STREAMLITS`.
-
-Remember: after later edits, the published app updates only when you **Deploy** again - **Run** refreshes only your private dev app.
-
-### Path B - scripted: stage + CREATE STREAMLIT (default warehouse runtime)
-
-For a fully scripted, reproducible flow:
-
-1. Snowsight > **Data > Databases > `<your_db>` > `QUIZ_<CODE>` > Stages > STAGE_SIS_APP**.
-2. **+ Files** > upload the `app/` files, preserving the folder layout (`pages/`, `.streamlit/`).
-3. Reply "uploaded".
-
-The agent runs:
+1. Copies `app/` from the workspace stage onto `STAGE_SIS_APP` with `COPY FILES`, preserving the `pages/` and `.streamlit/` subfolders.
+2. Creates the app and verifies:
 
 ```sql
 CREATE OR REPLACE STREAMLIT <your_database>.QUIZ_<CODE>.SNOWPRO_QUIZ
   FROM '@<your_database>.QUIZ_<CODE>.STAGE_SIS_APP'
   MAIN_FILE = 'main.py'
   QUERY_WAREHOUSE = <your_warehouse>;
--- Container opt-in: also add RUNTIME_NAME = 'SYSTEM$ST_CONTAINER_RUNTIME_PY3_11',
---   COMPUTE_POOL = SYSTEM_COMPUTE_POOL_CPU, EXTERNAL_ACCESS_INTEGRATIONS = (pypi_access_integration)
 
 SHOW STREAMLITS LIKE 'SNOWPRO_QUIZ' IN SCHEMA <your_database>.QUIZ_<CODE>;
 ```
 
-(From a machine with the Snowflake CLI, `snow streamlit deploy` does the same, driven by the generated `snowflake.yml`.)
+3. After later edits, it re-copies the changed files (`COPY FILES` overwrites same-named files) and re-runs `CREATE OR REPLACE STREAMLIT`.
 
-### Container runtime (advanced opt-in)
+Warehouse runtime = no compute pool, no EAI, no internet; packages come from the Snowflake Anaconda channel. Works on **trial accounts**.
 
-Paths A and B above use the **default `warehouse` runtime** (no pool, no EAI; works on trial). Only if you opted into the **container runtime** does the agent emit `pyproject.toml` instead of `environment.yml` and add `RUNTIME_NAME`/`COMPUTE_POOL`/`EXTERNAL_ACCESS_INTEGRATIONS` — it needs a compute pool **and** a PyPI EAI (**EAI not available on trial accounts**).
+### Container runtime (advanced opt-in, non-trial)
+
+The container runtime runs the app on a compute pool and installs packages from PyPI, so it needs a **compute pool** *and* a **PyPI EAI** — **neither is available on trial accounts**. It deploys via the Workspaces **Run + Deploy** toolbar (which uses the container runtime):
+
+1. Open `app/main.py` → **Run** (private dev preview) → iterate with the agent.
+2. **Deploy** in the toolbar: app title `SNOWPRO_QUIZ`, database `<your_db>`, schema `QUIZ_<CODE>`, query warehouse, the compute pool, and the PyPI EAI under **Network**.
+3. Reply "deployed" - the agent verifies with `SHOW STREAMLITS`. (After later edits, the published app updates only when you **Deploy** again — **Run** refreshes only your private dev app.)
+
+The SQL equivalent adds `RUNTIME_NAME = 'SYSTEM$ST_CONTAINER_RUNTIME_PY3_11'`, `COMPUTE_POOL`, and `EXTERNAL_ACCESS_INTEGRATIONS` to `CREATE STREAMLIT`, shipping `pyproject.toml` instead of `environment.yml`.
 
 ---
 
@@ -454,7 +446,7 @@ Paste the **fix prompt** from [prompts.md](prompts.md), describe the symptom. Th
 - Wrong content / shallow explanations > runs `$cortex`;
 - Screen flow glitches > reads `$quiz/screens`.
 
-After a fix it asks you to **Deploy** again from the workspace (Path A) or re-upload the changed files to `STAGE_SIS_APP` (Path B) and redeploys.
+After a fix it re-copies the changed files onto `STAGE_SIS_APP` and re-runs `CREATE OR REPLACE STREAMLIT` to redeploy (on the container opt-in, you **Deploy** again from the workspace instead).
 
 See [troubleshooting.md](troubleshooting.md) for a curated list of the most common Snowsight-specific issues.
 

@@ -22,9 +22,9 @@ Custom Snowflake CoCo skills live under `.snowflake/cortex/skills/` and are uplo
 
 **When:** first run of a workspace, or adding another certification (a fresh `QUIZ_<NEW_CODE>` schema; the previous exam untouched).
 
-Collects exam metadata + file names + optional features + look; validates AGENTS.md placeholders and (only for the container opt-in) runs a deploy preflight for a compute pool + PyPI EAI; creates the schema, stages (`STAGE_QUIZ_DATA` with `SNOWFLAKE_SSE`+`DIRECTORY`, verified via `DESCRIBE`), all 5 tables, and the file format; stops for the manual PDF upload; extracts `EXAM_DOMAINS` (domains/weights/topics/`key_facts`); loads the CSV bank if provided (else leaves it empty — no build-time generation); updates AGENTS.md; reads `$quiz/*` + `$sis` + `$cortex` and generates the decomposed `app/`; runs the `$sis` pre-deploy scan; deploys on the **default warehouse runtime** (Workspaces Run+Deploy, or a scripted stage; container is an opt-in). Also owns the **data-model DDL** and the **Advanced options** (opt-in: quality model / self-verify / Automations / container runtime).
+Collects exam metadata + file names + optional features + look; validates AGENTS.md placeholders and (only for the container opt-in) runs a deploy preflight for a compute pool + PyPI EAI; creates the schema, stages (`STAGE_QUIZ_DATA` with `SNOWFLAKE_SSE`+`DIRECTORY`, verified via `DESCRIBE`), all 5 tables, and the file format; stops for the manual PDF upload; extracts `EXAM_DOMAINS` (domains/weights/topics/`key_facts`); loads the CSV bank if provided (else leaves it empty — no build-time generation); updates AGENTS.md; reads `$quiz/*` + `$sis` + `$cortex` and generates the decomposed `app/`; runs the `$sis` pre-deploy scan; deploys on the **default warehouse runtime** — copies `app/` to `STAGE_SIS_APP` with `COPY FILES` + `CREATE STREAMLIT` (container is an opt-in, deployed via Workspaces Run+Deploy). Also owns the **data-model DDL** and the **Advanced options** (opt-in: quality model / self-verify / Automations / container runtime).
 
-**Built-in stops:** input collection, PDF upload, domain approval, pre-deploy gate, deploy-path choice, final report.
+**Built-in stops:** input collection, PDF upload, domain approval, pre-deploy gate, final report.
 
 ## /adapt-questions — standalone
 
