@@ -1,6 +1,6 @@
 ---
 name: quiz-features
-description: "Optional features for the quiz app — exam simulation, flashcards, quick stats, spaced repetition, achievement badges, AI study recommendations. Implement ONLY features explicitly requested by the user, never by default. Triggers: exam simulation, timer, flashcard, spaced repetition, smart review, achievement, badge, streak, study recommendation, AI recommendation. Do NOT use for the core quiz flow (quiz-screens)."
+description: "Optional features for the quiz app — exam simulation, flashcards, AI study recommendation, comparison. Implement ONLY features explicitly requested by the user, never by default. Triggers: exam simulation, timed exam, mock exam, flashcard, study card, study recommendation, exam readiness, comparison, compare options, A vs B. Do NOT use for the core quiz flow (quiz-screens)."
 ---
 
 # When to Load
@@ -23,6 +23,8 @@ Parent skill `$quiz` routes here for FEATURES intent.
 This skill contains **OPTIONAL** features. Do NOT implement any feature unless the user explicitly requests it in their prompt. Each feature is self-contained — implement only the requested ones. Core quiz functionality (home, quiz, summary, wrong answers, learning dashboard) does NOT require this skill.
 
 All **visual rendering** (badges, cards, callouts, buttons, charts) follows `$quiz/design`, the single source for styling — including the **`md()` `$`-escaping of every dynamic string** (question text, mnemonics, AI output) before `st.markdown`/`st.info`/`st.write`. Each feature below specifies *what* it shows and *where* in the flow — it never defines colors, theme keys, or chart formatting.
+
+Four features are specced here: **Exam Simulation, Flashcards, AI Study Recommendation, Comparison.** Further ideas not yet implemented (Quick Stats, Smart Review, Achievement Badges, Misconception Analysis, Flag a Question) live in `docs/future-features.md` — re-add a spec here when one is requested.
 
 ---
 
@@ -74,7 +76,7 @@ pages/exam_simulation.py (own page):
 - Timer is non-blocking — check `datetime.now() - _sim_start_time` on each render
 - Domain question distribution: `round(weight_pct / 100 * total_questions)` per domain
 - Time limit and question count: derive from EXAM_CODE — ask user to confirm if unknown. Common values: COF-C03 = 100q/115min, GES-C01 = 65q/90min
-- Reuse existing `get_question()`, `render_quiz()` patterns — just wrap with timer and different config
+- Reuse existing `get_question()` patterns — just wrap with timer and different config
 
 ---
 
@@ -97,7 +99,7 @@ Fields: `card_front`, `card_back` (≤ ~120 chars, as short as possible — neve
 
 ## AI transform (grounded — `$cortex`)
 
-Source = the user's `QUIZ_REVIEW_LOG` rows (each carries `question_text`, the resolved `correct_answer`, `domain_name`, `difficulty`, `doc_url`, and `misconception` if Feature 7 ran). Per row, ONE grounded `call_cortex_json(prompt, "flashcards")` mines **2–4 atomic cards**: (a) the load-bearing fact behind the correct answer (qa/cloze); (b) the distinction the user missed (a `compare` card for the interference pair); (c) if the row has a `misconception`, one card targeting that confusion. The prompt instructs: split enumerations, strip all MCQ scaffolding, make each card answerable cold, keep backs minimal, add a domain/topic context cue. **Grounding (mandatory, cke/custom):** reuse/retrieve `chunks = search_docs(question_text)`, embed as `<doc_context>` ("build cards ONLY from this documentation + the row's correct answer; never prior knowledge"); on empty retrieval broaden once then **skip that row visibly** ("couldn't ground — retry"), never fabricate; `doc_url = chunks[0]["SOURCE_URL"]`. `none` mode = ungrounded, empty `doc_url`. New `RESPONSE_FORMATS["flashcards"]` = `{cards: [{card_type, card_front, card_back, topic}]}` (see `$cortex`); `domain_name`/`doc_url` are attached by Python from the source row + chunk, NEVER asked of the model (same rule as never asking for a URL). A post-call validator drops any card with >1 blank, an empty back, or list-shaped content (if a row's cards all fail, skip that row visibly). Generation is **idempotent per wrong-answer row**: build + persist cards ONLY for rows with no `FLASHCARD_PROGRESS` entry yet (`source_log_id` absent); already-carded rows are skipped, so existing cards and their Leitner boxes are never regenerated or disturbed.
+Source = the user's `QUIZ_REVIEW_LOG` rows (each carries `question_text`, the resolved `correct_answer`, `domain_name`, `difficulty`, `doc_url`). Per row, ONE grounded `call_cortex_json(prompt, "flashcards")` mines **2–4 atomic cards**: (a) the load-bearing fact behind the correct answer (qa/cloze); (b) the distinction the user missed (a `compare` card for the interference pair). The prompt instructs: split enumerations, strip all MCQ scaffolding, make each card answerable cold, keep backs minimal, add a domain/topic context cue. **Grounding (mandatory, cke/custom):** reuse/retrieve `chunks = search_docs(question_text)`, embed as `<doc_context>` ("build cards ONLY from this documentation + the row's correct answer; never prior knowledge"); on empty retrieval broaden once then **skip that row visibly** ("couldn't ground — retry"), never fabricate; `doc_url = chunks[0]["SOURCE_URL"]`. `none` mode = ungrounded, empty `doc_url`. New `RESPONSE_FORMATS["flashcards"]` = `{cards: [{card_type, card_front, card_back, topic}]}` (see `$cortex`); `domain_name`/`doc_url` are attached by Python from the source row + chunk, NEVER asked of the model (same rule as never asking for a URL). A post-call validator drops any card with >1 blank, an empty back, or list-shaped content (if a row's cards all fail, skip that row visibly). Generation is **idempotent per wrong-answer row**: build + persist cards ONLY for rows with no `FLASHCARD_PROGRESS` entry yet (`source_log_id` absent); already-carded rows are skipped, so existing cards and their Leitner boxes are never regenerated or disturbed.
 
 ## Spacing — Leitner boxes (persisted)
 
@@ -125,101 +127,11 @@ Boxes 1–5 → cadences **1 / 2 / 4 / 7 / 14 days**. On reveal, three buttons: 
 
 **Data source**: the cached `load_flashcard_progress()` (the due-today deck — content + box from the table); the build step reads `load_review_log()` only to find un-carded rows. **Session state keys**: `_flashcard_cards` (the loaded due deck), `_flashcard_index` (int), `_flashcard_revealed` (bool). Because cards persist and `card_id` is deterministic per `(source_log_id, ordinal)`, a rebuild adds cards only for new wrong answers and never disturbs existing Leitner boxes.
 
-**Distinct from Feature 4** (Spaced Repetition / Smart Review): that is a QUIZ source-mode re-serving whole MCQs on the Home screen; this is atomic recall-card study on the Review tab. Same upstream signal (`QUIZ_REVIEW_LOG`), different output/location/role — keep them separate.
+**Scope:** flashcards are atomic recall-card study (Review tab) built from wrong answers — distinct from the core quiz (full MCQs) and from any future spaced-repetition *quiz* mode (`docs/future-features.md`).
 
 ---
 
-# Feature 3: Quick Stats Sidebar
-
-**OPTIONAL** — implement only if user requests quick stats, live stats, sidebar stats, or gamification.
-
-## What
-
-During active quiz, sidebar shows live mini-stats: current streak, round accuracy, current domain.
-
-## UI spec
-
-Inside `with st.sidebar:` block, below End Round button, only when `screen == "quiz"`:
-
-```python
-st.divider()
-st.caption("ROUND STATS")
-st.metric("Streak", streak_count)
-st.metric("Accuracy", f"{round_accuracy}%")
-st.markdown(f":blue-badge[{current_domain}]")
-```
-
-- `streak_count`: count consecutive correct from end of `round_history`
-- `round_accuracy`: `correct_count / total_count * 100` from session state
-- `current_domain`: from current question's DOMAIN_NAME
-
-**Data source**: `st.session_state["round_history"]` + current question (live, no DB query)
-
----
-
-# Feature 4: Spaced Repetition (Smart Review)
-
-**OPTIONAL** — implement only if user requests spaced repetition, smart review, SM-2, intelligent review, or adaptive review.
-
-## What
-
-New question source mode "SMART REVIEW" — prioritizes questions the user got wrong more recently or repeatedly.
-
-## UI spec
-
-Home screen: SOURCE pills get additional option: `["QUESTION BANK", "AI GENERATED", "SMART REVIEW"]`
-
-When SMART REVIEW selected:
-- Ignores domain_filter and difficulty settings
-- Picks questions based on review priority score
-- Priority formula: `score = error_count * (1 / max(days_since_last_error, 1))`
-- Source: QUIZ_REVIEW_LOG question_text → match back to QUIZ_QUESTIONS, or re-ask via AI
-
-**Session state keys**: `_smart_review_queue` (list of prioritized question_texts)
-
-**Data source**: QUIZ_REVIEW_LOG (logged_at, question_text), QUIZ_QUESTIONS (for re-fetching full question)
-
----
-
-# Feature 5: Achievement Badges
-
-**OPTIONAL** — implement only if user requests achievements, badges, milestones, gamification, or streak tracking.
-
-## What
-
-Gamification badges computed from quiz history. Displayed in sidebar.
-
-## Badge definitions
-
-Computed from logs on each render (not stored in DB):
-
-| Badge | Condition | Icon |
-|-------|-----------|------|
-| First Perfect | Any round with 100% score | 🎯 |
-| Century | 100+ questions answered total | 💯 |
-| Week Streak | Sessions on 5+ different days in last 7 days | 🔥 |
-| Domain Master: {name} | 90%+ accuracy in a domain (min 10 questions) | 🏆 |
-| Speed Demon | Completed 20-question round in under 5 minutes | ⚡ |
-
-## UI spec
-
-In sidebar, below navigation pills (always visible, not just during quiz):
-
-```python
-st.divider()
-st.caption("ACHIEVEMENTS")
-for badge in earned_badges:
-    st.markdown(f":green-badge[{badge.icon} {badge.name}]")
-for badge in locked_badges:
-    st.markdown(f":gray-badge[{badge.icon} {badge.name}]")
-    st.caption(badge.requirement_text)
-```
-
-**Data sources**: QUIZ_SESSION_LOG (round scores, timestamps), QUIZ_REVIEW_LOG (domain accuracy)
-
----
-
-# Feature 6: AI Study Recommendation
+# Feature 3: AI Study Recommendation
 
 **OPTIONAL** — implement only if user requests study recommendation, AI recommendation, readiness analysis, or exam readiness.
 
@@ -285,73 +197,28 @@ Sets `domain_filter`, `difficulty`, `round_size=10`, `screen="home"` (with the c
 
 ---
 
-# Feature 7: Misconception Analysis (Review page)
+# Feature 4: Comparison
 
-**OPTIONAL** — implement only if user requests misconception analysis, error diagnosis, "why do I keep getting these wrong", or thinking-pattern analysis.
-
-## What
-
-Extends the **Review page** (no new page): per wrong answer, AI diagnoses the thinking error behind the user's specific selection; an aggregate section surfaces recurring error patterns.
-
-## Requirements
-
-`QUIZ_REVIEW_LOG.selected_answer` + `.misconception` columns (in the Step 3 DDL) — the write-back must populate `selected_answer` (resolved like `correct_answer`: `"{letter}) {full_text}"`).
-
-## Per-card diagnosis
-
-On each wrong-answer card: button "🧠 Diagnose Error" → `call_cortex_json(prompt, "misconception")` with question, all options, the user's selection, the correct answer — wrapped per the untrusted-content delimiting rule AND **grounded per `$cortex`**: in `cke`/`custom` mode embed the question's retrieved `<doc_context>` (reuse the chunks fetched for its explanation) and diagnose ONLY from the docs, never built-in knowledge; fail visibly on empty retrieval. Schema:
-
-```
-"misconception": "the likely thinking error behind choosing {selected} (1-2 sentences, names the confused concepts)",
-"contrast_with_correct": "the key distinction the user missed (1 sentence)",
-"how_to_avoid": "a practical check to apply next time (1 sentence)"
-```
-
-Render in a bordered container on the card. **Write-once**: persist `misconception` back to the row (UPDATE by `log_id`, bind params) — later visits read from the DB, no repeat call. Button shows only when the column is NULL; otherwise render the stored text.
-
-## Patterns section ("Your Error Patterns")
-
-At the top of Wrong Answers, when ≥3 rows have `misconception IS NOT NULL`: button → one `call_cortex_json(..., "misconception_patterns")` over the collected diagnoses → `{recurring_patterns (array, max 3), advice (string)}`. Cache in session state keyed by diagnosis count; render as bullets + callout. (Meta-analysis over the already-grounded per-card diagnoses — no new doc retrieval needed, like the debrief.)
-
-## Session state keys
-
-`_misconception_{log_id}` transient render state only; persistence is the DB column.
-
----
-
-# Feature 8: Flag a Question
-
-**OPTIONAL** — implement only if user requests question flagging, reporting bad questions, or bank quality control.
+**OPTIONAL** — implement only if user requests comparison, compare options, "A vs B", or concept contrast.
 
 ## What
 
-A small "🚩 Flag Question" button on the quiz screen (post-answer area) that records quality complaints; flags surface on the Admin page and in the Automations maintenance recipe.
-
-## DDL (generated ONLY when this feature is enabled; add to Step 3)
-
-```sql
-CREATE TABLE IF NOT EXISTS {database}.QUIZ_<CODE>.QUIZ_FLAGS (
-    flag_id        NUMBER AUTOINCREMENT PRIMARY KEY,
-    flagged_at     TIMESTAMP_LTZ DEFAULT CURRENT_TIMESTAMP(),
-    question_id    NUMBER,            -- NULL for runtime-AI questions
-    question_text  VARCHAR,           -- snapshot (AI questions have no id)
-    reason         VARCHAR,
-    comment        VARCHAR(500),
-    status         VARCHAR DEFAULT 'OPEN'
-);
-```
+Adds a **"⚖️ Compare two"** control to the **AI-explanation expander** on the quiz screen (alongside the core Deep dive — `$quiz/screens`). Pick **two** options and get a side-by-side discrimination of the underlying concepts. SnowPro questions are mostly "which similar feature fits?", so training that exact distinction is high-value. (Comparing two options is NOT in core — the core Deep dive explains ONE option; this feature adds the compare-two control.)
 
 ## UI spec
 
-Post-answer, next to (not competing with) "Next": small secondary button → popover/expander with reason pills (`wrong key` / `unclear` / `typo` / `other`) + optional comment (`st.text_input`, max 500 chars) → INSERT with bind params (question_id when the question came from the bank, text snapshot always) → toast "Flagged". One flag per question per round (disable after submit).
+Inside the explanation expander, below the explanation + Deep dive: an option picker (`st.multiselect`, validated to **exactly 2**) + a **"⚖️ Compare two"** button → `call_cortex_json(prompt, "contrast")` → render a compact `aspect | A | B` table + the `exam_trap` as an `st.caption`, in `st.container(border=True)`. Default the picker to the user's wrong choice + the correct option (any two selectable). All dynamic text via the `md()` `$`-escaper.
 
-## Admin + Automations integration
+## Grounding (mandatory — `$cortex`)
 
-- Admin question manager shows OPEN flag count per question and lists flagged rows.
-- The customization.md §5c Automations recipe gains a step: regenerate flagged bank questions (`status='OPEN' AND question_id IS NOT NULL`) via the seeding machinery, set `status='REGENERATED'`, report.
+In `cke`/`custom` mode embed the two option texts + the question as `<doc_context>` ("compare ONLY from the provided documentation; never prior knowledge"); reuse the explanation's retrieved chunks, broaden once then fail visibly on empty — never built-in. `none` mode is the only ungrounded path. Schema `RESPONSE_FORMATS["contrast"]`: `concept_a`, `concept_b`, `differences[]` (max 4), `exam_trap`.
+
+## Session state keys
+
+`comparison` (None/{}/dict), reset on Next.
 
 ---
 
 ## Output
 
-Only the requested optional features implemented and integrated into quiz.py, following the UI patterns from `$quiz/design` and state management from `$quiz/screens`.
+Only the requested optional features implemented and integrated into the app, following the UI patterns from `$quiz/design` and state management from `$quiz/screens`.
