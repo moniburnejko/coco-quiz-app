@@ -64,9 +64,9 @@ The generated app is a decomposed multipage project under `app/`. What each file
 | `pages/quiz.py` | QUIZ: home → quiz → summary state machine (hints, deep dive, debrief, remedial) |
 | `pages/review.py` | REVIEW: wrong-answer history + learning dashboard |
 | `pages/admin.py` | ADMIN: config, question manager + Generate batch, bank stats, Cortex spend, tools |
-| `pages/<feature>.py` | ONLY when a feature is requested (`features/`) — e.g. `exam_simulation.py`, `flashcards.py`, `recommendations.py` |
+| `pages/<feature>.py` | ONLY when a feature is requested (`features/`) — e.g. `exam_simulation.py`, `recommendations.py` (flashcards is a Review tab, not a page — Feature 2) |
 
-Navigation is native multipage (`st.Page` + `st.navigation` in `main.py`); `st.session_state` is shared across pages; optional features add their own pages, never tabs. Full flow/state/write-back contracts → `screens/`.
+Navigation is native multipage (`st.Page` + `st.navigation` in `main.py`); `st.session_state` is shared across pages; **most** optional features add their own pages, but a few hook into an existing page — flashcards add a Review tab (Feature 2), misconception analysis extends Review (Feature 7), flag-a-question adds a quiz-screen button (Feature 8). Full flow/state/write-back contracts → `screens/`.
 
 ## Output
 

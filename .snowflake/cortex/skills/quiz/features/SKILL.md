@@ -78,34 +78,54 @@ pages/exam_simulation.py (own page):
 
 ---
 
-# Feature 2: Flashcard Review
+# Feature 2: Flashcards
 
 **OPTIONAL** — implement only if user requests flashcards, study cards, or review cards.
 
 ## What
 
-Own page `pages/flashcards.py` (added to `st.navigation` in `main.py`, title "Flashcards"). Shows wrong answers as flashcards — front = question, click to reveal = correct answer + mnemonic + docs link.
+A **FLASHCARDS tab on the Review page** (NOT a separate page — `$quiz/screens`). It turns the user's **wrong answers** into **atomic, recall-forcing** study cards — never the verbatim quiz question. Each wrong answer is AI-decomposed into a small set of one-fact cards, CKE-grounded, and reviewed with lightweight **Leitner spaced repetition**.
 
-## UI spec
+## Card model (atomic — one fact per card)
 
-**Card front**: `st.container(border=True)` with:
-- Domain badge + difficulty badge
-- Question text (`st.markdown(f"#### {text}")`)
-- "Show Answer" button (primary)
+`card_type` ∈ `qa` | `cloze` | `compare`:
+- **qa** — short question → short answer ("At what level does a masking policy apply? → column").
+- **cloze** — one sentence with exactly ONE blank ("A ___ filters which rows a role sees.").
+- **compare** — directional discrimination for an interference pair ("Masking vs row access: which removes whole rows? → row access").
 
-**Card back** (after "Show Answer"):
-- Correct answer: bold text
-- Mnemonic: `st.info(f"🧠 {mnemonic}")`
-- Docs link: `st.markdown(f"📖 [Snowflake Documentation]({doc_url})")`
-- Two buttons: "Got it ✓" (removes from deck this session) / "Review Again ↻" (keeps in deck)
+Fields: `card_front`, `card_back` (≤ ~120 chars, as short as possible — never a paragraph or list), `card_type`, `domain_name`/`topic` (from the source row — badge + context cue on the front), `doc_url` (the CKE chunk's real `SOURCE_URL`; empty only in `none` mode). `card_id` = a **deterministic** key `<source_log_id>:<ordinal>` (NOT a hash of the AI-generated text — so it's stable across rebuilds; the Leitner key). HARD rules: exactly one fact per card; NO "name the N …"/list cards (split into atomic cards or overlapping clozes); a cloze has exactly one blank; **the MCQ option text is NEVER copied verbatim** (that's the recognition-not-recall anti-pattern this redesign removes). All dynamic text via the `md()` `$`-escaper (`$quiz/design`).
 
-**Counter**: `st.caption(f"Card {current} of {total} remaining")`
+## AI transform (grounded — `$cortex`)
 
-**Empty state**: `:green-badge[All caught up!] No flashcards to review.`
+Source = the user's `QUIZ_REVIEW_LOG` rows (each carries `question_text`, the resolved `correct_answer`, `domain_name`, `difficulty`, `doc_url`, and `misconception` if Feature 7 ran). Per row, ONE grounded `call_cortex_json(prompt, "flashcards")` mines **2–4 atomic cards**: (a) the load-bearing fact behind the correct answer (qa/cloze); (b) the distinction the user missed (a `compare` card for the interference pair); (c) if the row has a `misconception`, one card targeting that confusion. The prompt instructs: split enumerations, strip all MCQ scaffolding, make each card answerable cold, keep backs minimal, add a domain/topic context cue. **Grounding (mandatory, cke/custom):** reuse/retrieve `chunks = search_docs(question_text)`, embed as `<doc_context>` ("build cards ONLY from this documentation + the row's correct answer; never prior knowledge"); on empty retrieval broaden once then **skip that row visibly** ("couldn't ground — retry"), never fabricate; `doc_url = chunks[0]["SOURCE_URL"]`. `none` mode = ungrounded, empty `doc_url`. New `RESPONSE_FORMATS["flashcards"]` = `{cards: [{card_type, card_front, card_back, topic}]}` (see `$cortex`); `domain_name`/`doc_url` are attached by Python from the source row + chunk, NEVER asked of the model (same rule as never asking for a URL). A post-call validator drops any card with >1 blank, an empty back, or list-shaped content (if a row's cards all fail, skip that row visibly). Generation is **idempotent per wrong-answer row**: build + persist cards ONLY for rows with no `FLASHCARD_PROGRESS` entry yet (`source_log_id` absent); already-carded rows are skipped, so existing cards and their Leitner boxes are never regenerated or disturbed.
 
-**Data source**: `load_review_log()` (existing cached function)
+## Spacing — Leitner boxes (persisted)
 
-**Session state keys**: `_flashcard_deck` (list of review log entries), `_flashcard_index` (int), `_flashcard_revealed` (bool)
+DDL (generated ONLY when this feature is enabled; add to `$setup-exam` Step 3) — the table is the **durable card store + Leitner state**, so a due card always has content to render:
+```sql
+CREATE TABLE IF NOT EXISTS {database}.QUIZ_<CODE>.FLASHCARD_PROGRESS (
+    card_id        VARCHAR PRIMARY KEY,   -- deterministic: <source_log_id>:<ordinal>
+    source_log_id  NUMBER,
+    card_type      VARCHAR,
+    card_front     VARCHAR,
+    card_back      VARCHAR,
+    domain_name    VARCHAR,
+    topic          VARCHAR,
+    doc_url        VARCHAR,
+    box            NUMBER DEFAULT 1,
+    due_date       DATE,
+    updated_at     TIMESTAMP_LTZ DEFAULT CURRENT_TIMESTAMP()
+);
+```
+Boxes 1–5 → cadences **1 / 2 / 4 / 7 / 14 days**. On reveal, three buttons: **"Again"** → box 1; **"Good"** → box+1; **"Easy"** → box+2 (cap 5). Each click `MERGE`s the row by `card_id` (`box`, `due_date = CURRENT_DATE + cadence`, bind params) + `clear_caches()`. The cached `load_flashcard_progress()` loader is **registered in `clear_caches()`** in `_data.py` (no `ttl`, like every other loader — `$sis`), so the MERGE actually refreshes the deck. The tab's **deck = `FLASHCARD_PROGRESS` rows due today** (`due_date <= CURRENT_DATE`), read straight from the table (content lives there — no dependency on regenerating this session).
+
+## UI (Review FLASHCARDS tab)
+
+**On-demand:** a **"Build cards from my wrong answers"** button generates + **persists** cards for any new (un-carded) wrong answers (spinner; never auto-run on page load; the CKE grounding guard applies). The deck shown is `FLASHCARD_PROGRESS` rows **due today** (content + box from the table). Then per card: `st.container(border=True)` + domain/difficulty/type badges + `card_front` → **"Show Answer"** → `card_back`, the `📖` docs link (qa/compare), and the three Leitner buttons. `st.caption("Due today: N")`. Empty state: `:green-badge[All caught up!] Nothing due — build more from new wrong answers.`
+
+**Data source**: the cached `load_flashcard_progress()` (the due-today deck — content + box from the table); the build step reads `load_review_log()` only to find un-carded rows. **Session state keys**: `_flashcard_cards` (the loaded due deck), `_flashcard_index` (int), `_flashcard_revealed` (bool). Because cards persist and `card_id` is deterministic per `(source_log_id, ordinal)`, a rebuild adds cards only for new wrong answers and never disturbs existing Leitner boxes.
+
+**Distinct from Feature 4** (Spaced Repetition / Smart Review): that is a QUIZ source-mode re-serving whole MCQs on the Home screen; this is atomic recall-card study on the Review tab. Same upstream signal (`QUIZ_REVIEW_LOG`), different output/location/role — keep them separate.
 
 ---
 

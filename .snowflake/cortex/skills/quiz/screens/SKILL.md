@@ -24,12 +24,12 @@ Parent skill `$quiz` routes here for SCREENS intent.
 
 # Page Flow
 
-Navigation is native multipage (`st.Page` + `st.navigation`), built in `main.py`. Two base pages; optional features add **their own pages**, never extra tabs:
+Navigation is native multipage (`st.Page` + `st.navigation`), built in `main.py`. Two base pages; **most** optional features add **their own pages**, a few hook into Review/Quiz instead (see Optional Feature Pages):
 
 ```
 main.py  ->  st.navigation([
     pages/quiz.py      "Quiz"   (default)   home -> quiz -> summary  (internal state machine)
-    pages/review.py    "Review"             WRONG ANSWERS | LEARNING DASHBOARD  (st.pills sub-tabs)
+    pages/review.py    "Review"             WRONG ANSWERS | [FLASHCARDS] | LEARNING DASHBOARD  (st.pills sub-tabs; FLASHCARDS only if enabled)
     pages/admin.py     "Admin"              app config, question manager, bank stats, spend, tools
     pages/<feature>.py                      only when the feature was requested
 ])
@@ -41,7 +41,7 @@ main.py  ->  st.navigation([
 
 **Inside `pages/quiz.py`** the three screens are an internal state machine driven by `st.session_state["screen"]` (`home` / `quiz` / `summary`) — they are NOT separate pages, because they share one round lifecycle.
 
-**Inside `pages/review.py`** the two tabs are `st.pills` with `st.divider()` and `st.title()` per tab, driven by `_review_page`.
+**Inside `pages/review.py`** the tabs are `st.pills` with `st.divider()` and `st.title()` per tab, driven by `_review_page` — `WRONG ANSWERS` and `LEARNING DASHBOARD` always, plus `FLASHCARDS` when the flashcards feature is enabled (`$quiz/features` Feature 2).
 
 Cross-page redirects (e.g. recommendations -> quiz): set the target state, then `st.switch_page("pages/quiz.py")`.
 
@@ -212,7 +212,7 @@ Wrong answer cards: `st.container(border=True)` with domain badge + difficulty b
 
 # Optional Feature Pages
 
-Optional features (`$quiz/features`) are generated as **separate pages** (`pages/exam_simulation.py`, `pages/flashcards.py`, `pages/recommendations.py`) and appended to the `st.navigation` list in `main.py` only when requested. Two features hook into existing pages instead: Feature 7 (misconception analysis) extends the Review page, Feature 8 (flag a question) adds a button to the quiz screen. They read the same `_data.py` loaders and shared `_ui.py` helpers — no new tables except where a feature's spec says so.
+Optional features (`$quiz/features`) are generated as **separate pages** (`pages/exam_simulation.py`, `pages/recommendations.py`) appended to the `st.navigation` list in `main.py` only when requested. Three features hook into existing pages instead: **Feature 2 (flashcards)** adds a FLASHCARDS tab to the Review page, Feature 7 (misconception analysis) extends the Review page, Feature 8 (flag a question) adds a button to the quiz screen. They read the same `_data.py` loaders and shared `_ui.py` helpers — no new tables except where a feature's spec says so (Feature 2 adds `FLASHCARD_PROGRESS`, Feature 8 adds `QUIZ_FLAGS`).
 
 ---
 

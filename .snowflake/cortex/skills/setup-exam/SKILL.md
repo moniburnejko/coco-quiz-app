@@ -196,7 +196,7 @@ CREATE TABLE IF NOT EXISTS {database}.QUIZ_<CODE>.QUIZ_CONFIG (
     updated_at   TIMESTAMP_LTZ DEFAULT CURRENT_TIMESTAMP()
 );
 ```
-`QUIZ_REVIEW_LOG` = per-wrong-answer history (`selected_answer`/`misconception` feed the optional misconception feature); `QUIZ_SESSION_LOG` = per-round summary (a perfect round writes a session row but no review rows, so they can't merge); `QUIZ_CONFIG` = runtime config (defaults in `_config.py`, DB overrides). The flag-a-question feature adds `QUIZ_FLAGS` (`$quiz/features`).
+`QUIZ_REVIEW_LOG` = per-wrong-answer history (`selected_answer`/`misconception` feed the optional misconception feature); `QUIZ_SESSION_LOG` = per-round summary (a perfect round writes a session row but no review rows, so they can't merge); `QUIZ_CONFIG` = runtime config (defaults in `_config.py`, DB overrides). Optional features add their own tables when enabled: the flashcard feature adds `FLASHCARD_PROGRESS`, the flag-a-question feature adds `QUIZ_FLAGS` (`$quiz/features`).
 
 **File format:**
 ```sql
