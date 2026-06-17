@@ -128,6 +128,9 @@ Only `DATABASE`, `SCHEMA`, `CORTEX_MODEL`, and `RESPONSE_FORMATS` constants may 
 21. **Admin/flag inputs hardened** — all writes bind-param'd; form values length-capped (question 2000, options 500, comment 500); `correct_answer` ⊆ non-empty options; any stored/user-editable text embedded in a prompt is wrapped in data delimiters (`$cortex` — untrusted content).
 22. **Doc-grounding (CKE) isolation + mandate** *(N/A only in `grounding_mode = none`)* — all CKE access via `_search.py` (single caller), each call try/except→`[]`; in `cke`/`custom` mode consumers do NOT fall back to built-in knowledge — on empty retrieval they broaden once then **fail visibly** (return `None`); ungrounded generation exists ONLY in `none` mode; chunks delimited (`<doc_context>`); and **no `SEARCH_PREVIEW` in any app module** (runtime uses the Python `snowflake.core` API, from the `snowflake` package).
 
+### Rendering
+23. **No raw `$` in rendered dynamic text** — model/DB strings (question, options, explanation, deep-dive, mnemonics, summary + review + flashcard cards) pass through the `_ui.py` `md()` escaper before `st.markdown`/`st.write`/`st.info`; an unescaped `$…$` renders as LaTeX in Streamlit. Flag any dynamic text rendered without `md()`.
+
 **Output:** a table, one row per item (# · item · PASS/FAIL/N·A · `file:line` snippet). Verdict — all pass → "Clean. Proceed to deploy."; any FAIL → "Fix items [list] before deploying," each with file+line and a one-line fix.
 
 ---

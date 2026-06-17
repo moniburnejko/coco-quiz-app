@@ -22,7 +22,7 @@ Parent skill `$quiz` routes here for FEATURES intent.
 
 This skill contains **OPTIONAL** features. Do NOT implement any feature unless the user explicitly requests it in their prompt. Each feature is self-contained — implement only the requested ones. Core quiz functionality (home, quiz, summary, wrong answers, learning dashboard) does NOT require this skill.
 
-All **visual rendering** (badges, cards, callouts, buttons, charts) follows `$quiz/design`, the single source for styling. Each feature below specifies *what* it shows and *where* in the flow — it never defines colors, theme keys, or chart formatting.
+All **visual rendering** (badges, cards, callouts, buttons, charts) follows `$quiz/design`, the single source for styling — including the **`md()` `$`-escaping of every dynamic string** (question text, mnemonics, AI output) before `st.markdown`/`st.info`/`st.write`. Each feature below specifies *what* it shows and *where* in the flow — it never defines colors, theme keys, or chart formatting.
 
 ---
 
@@ -55,7 +55,7 @@ pages/exam_simulation.py (own page):
 **sim_quiz screen**: Same as regular quiz but:
 - Prominent timer: `st.metric("Time Remaining", f"{minutes}:{seconds:02d}")` at top
 - Progress bar below timer
-- NO explanations toggle (always off)
+- No AI-explanation button during the timed simulation (explanations suppressed in sim mode)
 - NO source selection — all from DB+AI weighted by domain
 - Timer: check elapsed time on each render (non-blocking), updates on each answer submission
 - End conditions: all questions answered OR timer expires

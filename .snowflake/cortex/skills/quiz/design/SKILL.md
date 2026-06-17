@@ -72,6 +72,10 @@ Examples: `**QUESTIONS**`, `**DOMAINS**`, `**DIFFICULTY**`, `**SOURCE**`, `**WRO
 
 ---
 
+# Escaping dynamic text
+
+Streamlit Markdown renders text between two `$` as LaTeX math, so any model- or DB-sourced string containing `$` (e.g. `SYSTEM$CLASSIFY`) renders garbled (everything between the two `$` turns into italic math). Route **every** rendered dynamic string — question text, options, explanation / deep-dive fields, mnemonics, summary + review + flashcard cards — through a `md()` helper in `_ui.py` that **backslash-escapes `$`** so it renders literally. Never pass raw question/option/AI text straight to `st.markdown` / `st.write`. (Enforced by the `$sis` pre-deploy scan.)
+
 # Question Text
 
 Use `st.markdown(f"#### {text}")` (h4 heading) for question text display. NOT `st.subheader()` (too large) or `st.markdown(f"**{text}**")` (too small).
@@ -141,7 +145,7 @@ Rules:
 
 Always use `st.markdown(f"📖 [Snowflake Documentation]({url})")` for Snowflake docs links. Do NOT use `st.caption` (too subtle) or abbreviated "Docs" (unclear). The 📖 emoji makes it scannable.
 
-Applies in: quiz screen (correct + incorrect), review cards, AI recommendations topics.
+Applies in: inside the on-demand AI-explanation expander (after the **💡 AI explanation** click — correct + incorrect alike; never auto-shown on the quiz screen), review cards, AI recommendations topics.
 
 ---
 

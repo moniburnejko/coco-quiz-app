@@ -61,7 +61,7 @@ The generated app is a decomposed multipage project under `app/`. What each file
 | `_questions.py` | Topic schedule, `get_question`, AI generation, answer shuffling, dedup (`questions/`) |
 | `_ui.py` | Shared render helpers — badges, cards, explanation expander, docs link (`design/`) |
 | `_search.py` | Docs-CKE retrieval (`search_docs`/`docs_available`/`grounding_required`/`grounding_mode`) — MANDATORY doc grounding in cke/custom mode, never built-in knowledge; `none` = the only ungrounded path (see `$cortex`) |
-| `pages/quiz.py` | QUIZ: home → quiz → summary state machine (hints, contrast, debrief, remedial) |
+| `pages/quiz.py` | QUIZ: home → quiz → summary state machine (hints, deep dive, debrief, remedial) |
 | `pages/review.py` | REVIEW: wrong-answer history + learning dashboard |
 | `pages/admin.py` | ADMIN: config, question manager + Generate batch, bank stats, Cortex spend, tools |
 | `pages/<feature>.py` | ONLY when a feature is requested (`features/`) — e.g. `exam_simulation.py`, `flashcards.py`, `recommendations.py` |

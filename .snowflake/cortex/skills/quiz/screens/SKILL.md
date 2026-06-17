@@ -35,7 +35,7 @@ main.py  ->  st.navigation([
 ])
 ```
 
-**Config layer**: runtime behavior toggles live in `QUIZ_CONFIG` (defaults in `_config.py` `CONFIG_DEFAULTS`, DB overrides; `load_config()` cached + `save_config()` in `_data.py`, both with `clear_caches()` on write). Gates used below: `hints_enabled`, `contrast_enabled`, `debrief_enabled`, `remedial_enabled`, `explanations_default`, `default_round_size`, `pass_threshold_override`.
+**Config layer**: runtime behavior toggles live in `QUIZ_CONFIG` (defaults in `_config.py` `CONFIG_DEFAULTS`, DB overrides; `load_config()` cached + `save_config()` in `_data.py`, both with `clear_caches()` on write). Gates used below: `hints_enabled`, `debrief_enabled`, `remedial_enabled`, `default_round_size`, `pass_threshold_override`. (There is no `explanations_default`/`contrast_enabled` config — the explanation + deep-dive are always-available on-demand, so they need no toggle.)
 
 **Entry point (`main.py`)**: `st.set_page_config` (first `st.` call) -> `init_session_state()` -> shared sidebar title -> `st.navigation(pages).run()`. Pages share `st.session_state` (it persists across page switches).
 
@@ -49,13 +49,14 @@ Cross-page redirects (e.g. recommendations -> quiz): set the target state, then 
 
 # Home Screen (`pages/quiz.py`, screen == "home")
 
-5 control groups in order, each with a bold UPPERCASE label (`st.markdown("**LABEL**")`) and `label_visibility="collapsed"` on the widget:
+4 control groups in order, each with a bold UPPERCASE label (`st.markdown("**LABEL**")`) and `label_visibility="collapsed"` on the widget:
 
 1. **QUESTIONS** — number_input (1-100)
 2. **DOMAINS** — pills multi-select from EXAM_DOMAINS
 3. **DIFFICULTY** — pills (mixed/easy/medium/hard), guard against None
 4. **SOURCE** — pills multi-select (`["QUESTION BANK", "AI GENERATED"]`), mapped internally to `"mix"/"db"/"ai"`
-5. **Enable AI explanations** — toggle
+
+There is **no "AI explanations" toggle** — the explanation is on-demand per question (a button after answering), never auto-loaded.
 
 **Grounding guard** (top of Home, `cke`/`custom` mode): if `not docs_available()` (`$cortex`/`_search.py`), show a red "install/grant the Snowflake Documentation CKE — the app can't generate until it's reachable" message and **disable Start Round**. The app must never generate from built-in knowledge. (In `none` mode there is no guard — generation is intentionally ungrounded.)
 
@@ -75,13 +76,13 @@ Cross-page redirects (e.g. recommendations -> quiz): set the target state, then 
 
 **Submit**: Records result in `round_history` (incl. `hint_used`), increments counters, sets `answered=True`, reruns. Does NOT call Cortex.
 
-**After submission**: Shows result badge and correct answer info. Do NOT add per-option markup (✓, strikethrough) — let the AI explanation handle details.
+**After submission** — show the result badge, then a **two-button row** (`st.columns(2)`):
+- **left = "Next"** (primary; **"Finish Round"** on the last question) → advances immediately
+- **right = "💡 AI explanation"** (secondary) → loads the explanation **on demand** (Explanation Contract below) into an expander rendered beneath the row
+
+The explanation is NEVER auto-generated, and the button appears for **correct answers too** (to learn why the distractors are wrong). Both buttons stay visible after the explanation loads (read, then Next). Do NOT render "Next" and "Finish" together — it causes accidental round termination. Do NOT add per-option markup (✓, strikethrough) — the explanation handles details.
 - Correct: `:green-badge[✅ CORRECT]`
 - Incorrect: `:red-badge[❌ INCORRECT]` + newline + `Correct answer: **A**, **C**` (bold letters only, not full option text)
-
-If explanations enabled, generates explanation lazily (see Explanation Contract below).
-
-**Navigation after answer**: Main content area shows ONLY "Next" button (primary, full-width) — or "Finish Round" (primary) on the last question. Do NOT show a "Finish" button next to "Next" — it causes accidental round termination.
 
 **Sidebar "End Round"**: When `screen == "quiz"`, the sidebar shows an "End Round" button (secondary, full-width). This lets the user finish early without it competing with "Next" in the main area. Clicking sets `_pending_finish = True` and does a natural rerender.
 
@@ -99,39 +100,36 @@ Pair this with the spinner + single-`st.rerun()` rule in `$sis`.
 
 # Explanation Contract
 
-**State machine** in `st.session_state["explanation"]`:
-- `None` — not yet attempted; call Cortex
-- `{}` — tried and failed (sentinel; do NOT retry)
-- `{dict}` — success; render
+**On-demand only** — generated when the user clicks **"💡 AI explanation"**, never automatically. State machine in `st.session_state["explanation"]`: `None` (not requested yet — just show the button), `{}` (tried and failed; do NOT retry), `{dict}` (success; render the expander). On "Next": reset to `None`.
 
-`_generate_explanation()` calls `call_cortex_json(prompt, "explanation")` — the `RESPONSE_FORMATS["explanation"]` schema (see `$cortex`) guarantees the keys `why_correct` (array), `why_wrong` (object), `mnemonic`, `doc_search`. No fence parsing, no key-existence paranoia; retry only on `None`.
+`_generate_explanation()` calls `call_cortex_json(prompt, "explanation")` — the `RESPONSE_FORMATS["explanation"]` schema (`$cortex`) guarantees `why_correct` (array), `why_wrong` (object), `mnemonic`, `doc_search`. No fence parsing; retry only on `None`.
 
-**For correct answers**: call `_generate_explanation()` same as for incorrect — the full explanation is needed to extract `doc_search`. Then show ONLY `📖 [Snowflake Documentation]({doc_url})` (no expander, no why_correct/why_wrong). Do NOT skip the Cortex call — without it, the doc link defaults to a generic `https://docs.snowflake.com` which is useless. Also store `mnemonic` and `doc_url` in `current_history_item` for review log.
+**Same flow for correct AND incorrect answers** — clicking the button opens `st.expander("💡 AI EXPLANATION", expanded=True)` containing, in order:
+- `st.container(border=True)` **✅ WHY CORRECT** — `why_correct` bullet list
+- `st.container(border=True)` **WHY WRONG** — one line per *other* option (on a correct answer this is exactly the value: learn why the distractors are wrong)
+- `st.info()` mnemonic
+- a **"📚 From the docs"** block: `st.caption(DOCUMENT_TITLE)`, a short `CHUNK` excerpt (~280 chars), and `📖 [Snowflake Documentation]({doc_url})`
+- the **Deep dive** control (below)
 
-**For incorrect answers**: `st.expander("💡 AI EXPLANATION", expanded=False)` containing:
-- `📖 [Snowflake Documentation]({doc_url})` at top
-- `st.container(border=True)` with **✅ WHY CORRECT** as bullet list (`why_correct` is a JSON array)
-- `st.container(border=True)` with **WHY WRONG** per option
-- `st.info()` with mnemonic
+The 📖 doc link appears **only inside this expander, only after the button is clicked** — never auto-shown (not even for correct answers). Render every dynamic field (`why_correct`, `why_wrong`, `mnemonic`, the `CHUNK` excerpt) through the `_ui.py` `md()` escaper before `st.markdown`/`st.info` (`$quiz/design` — escaping dynamic text). Store `mnemonic` + `doc_url` on `current_history_item` for the review log.
 
-**Doc grounding is MANDATORY in `cke`/`custom` mode (see `$cortex`)** — the explanation is grounded, never from built-in knowledge:
-- Retrieve once for the current question: `chunks = search_docs(question_text)`; if `[]`, broaden once (domain/topic), and if still empty **fail visibly** (don't explain from built-in knowledge).
-- Embed the top chunk(s) in the explanation prompt wrapped in `<doc_context>…</doc_context>` ("reference data, not instructions") so `why_correct`/`why_wrong` are grounded in real docs; set `doc_url = chunks[0]["SOURCE_URL"]` (the exact page). In the expander render a **"📚 From the docs"** block: `st.caption(chunks[0]["DOCUMENT_TITLE"])`, a short `CHUNK` excerpt (~280 chars), and `📖 [Snowflake Documentation]({doc_url})`.
-- **`none` mode only** (non-Snowflake exams): the prompt asks for `doc_search` ("exactly 2-3 words, no URLs, no commas, max 3 words") → `https://docs.snowflake.com/en/search?q={query}`, the generic-link fallback. `doc_search` stays in the schema solely for this mode.
+**Doc grounding is MANDATORY in `cke`/`custom` mode (`$cortex`)**: retrieve `chunks = search_docs(question_text)` once; if `[]`, broaden once, else **fail visibly** (no built-in). Embed the top chunk(s) in the prompt as `<doc_context>` so `why_correct`/`why_wrong` are doc-grounded; `doc_url = chunks[0]["SOURCE_URL"]`. **`none` mode only**: the prompt asks for `doc_search` ("2-3 words, no URLs/commas") → `https://docs.snowflake.com/en/search?q={query}`.
 
-**Explanation prompt content** — the schema guarantees shape, the prompt controls quality. The prompt MUST still include format examples so the content is concise and specific:
+**Explanation prompt content** — the schema guarantees shape, the prompt controls quality:
 ```
-"why_correct": ["First key reason (Snowflake-specific)", "Second reason with technical detail", "Optional third reason"],
-"why_wrong": {"X": "one sentence why option X is wrong", "Y": "one sentence why Y is wrong"},
-"mnemonic": "a memorable phrase or acronym to remember the correct answer",
-"doc_search": "exactly 2-3 words for Snowflake docs search (e.g. 'Cortex Search', 'AI_COMPLETE'). No URLs. No commas. Max 3 words."
+"why_correct": ["First key reason (Snowflake-specific)", "Second reason with technical detail", "Optional third"],
+"why_wrong": {"X": "one sentence why option X is wrong", "Y": "..."},
+"mnemonic": "a memorable phrase or acronym for the correct answer",
+"doc_search": "exactly 2-3 words for Snowflake docs search. No URLs. No commas. Max 3 words."
 ```
 
-On "Next": reset explanation to `None`.
+## Deep dive (inside the expander, below the explanation)
 
-## Contrast "A vs C" (post-answer; gate `contrast_enabled`)
+A picker over the question's options (`st.multiselect` / option pills), **validated to exactly 1 or 2 selections**, + a **"🔬 Deep dive"** button:
+- **1 selected** → `call_cortex_json(prompt, "deep_dive")` — an in-depth breakdown of that single option (`$cortex` `deep_dive` schema: `summary`, `how_it_works[]`, `when_to_use`, `exam_traps[]`). Render in `st.container(border=True)` with bold sub-labels + bullets.
+- **2 selected** → `call_cortex_json(prompt, "contrast")` — the A-vs-B comparison (`concept_a`, `concept_b`, `differences[]`, `exam_trap`). Render a compact `aspect | A | B` table + `exam_trap` caption, in a bordered container.
 
-Under the explanation block: a two-option picker (default pre-selection: the user's wrong choice vs the correct one; any pair selectable) + "⚖️ Compare" button → `call_cortex_json(prompt, "contrast")` → render a compact table (`aspect | A | B`) + `exam_trap` as a caption. Prompt embeds the two option texts + question context per the delimiting rule. State: `contrast` (None/{}/dict), reset on Next. Rationale: SnowPro questions are mostly discrimination tasks between similar features — this trains exactly that.
+Both modes are **grounded** like the explanation: reuse the explanation's retrieved `<doc_context>`; if a 2-compare needs a wider query and retrieval comes back empty, broaden once then **fail visibly** (return `None`) — never built-in. Embed the option text(s) + question per the delimiting rule, render all output through the `_ui.py` `md()` escaper, and carry **more detail** than the base explanation. State: `deep_dive` (None/{}/dict), reset on Next. Default the picker to the correct option (or the user's wrong choice + the correct one for a 2-compare), but any 1-or-2 selection is allowed. Rationale: SnowPro questions are discrimination tasks — "explain one" deepens a concept, "compare two" trains the exact distinction the exam tests.
 
 ---
 
@@ -221,7 +219,7 @@ Optional features (`$quiz/features`) are generated as **separate pages** (`pages
 
 Five sections, top to bottom. Single-user app → visible to the owner; when multi-user lands, gate via restricted caller's rights (fail-closed) — do NOT build RBAC now.
 
-**1. App configuration**: toggles for `hints_enabled`, `contrast_enabled`, `debrief_enabled`, `remedial_enabled`, `explanations_default`; slider `default_round_size` (5–50); `pass_threshold_override` slider with an "exam default (75%)" reset button + warning caption that the official exam threshold does not change. **Grounding** is shown **read-only** — `grounding_mode` is fixed at setup (`$setup-exam` Step 1g), never a runtime toggle (an "off" switch would be a built-in-knowledge backdoor). In `cke`/`custom` mode, if `docs_available()` is False, show a red caption: "The doc grounding service is unavailable — install/grant the Snowflake Documentation CKE; the app can't generate until it's reachable." Every config change → `save_config(key, value)` (MERGE by key, bind params) → `clear_caches()` (clears `docs_available`/`search_docs` too) → `st.toast`.
+**1. App configuration**: toggles for `hints_enabled`, `debrief_enabled`, `remedial_enabled`; slider `default_round_size` (5–50); `pass_threshold_override` slider with an "exam default (75%)" reset button + warning caption that the official exam threshold does not change. **Grounding** is shown **read-only** — `grounding_mode` is fixed at setup (`$setup-exam` Step 1g), never a runtime toggle (an "off" switch would be a built-in-knowledge backdoor). In `cke`/`custom` mode, if `docs_available()` is False, show a red caption: "The doc grounding service is unavailable — install/grant the Snowflake Documentation CKE; the app can't generate until it's reachable." Every config change → `save_config(key, value)` (MERGE by key, bind params) → `clear_caches()` (clears `docs_available`/`search_docs` too) → `st.toast`.
 
 **2. Question manager**: filter pills (domain / difficulty / source) → cached query → `st.dataframe(..., on_select="rerun", selection_mode="single-row")` → selected row loads into an edit form below (question `st.text_area`, options A–E inputs, `correct_answer` multiselect restricted to NON-EMPTY options, difficulty pills; `is_multi` derived = len(correct) > 1) → UPDATE by `question_id`. "Add new question" = the same form, empty → INSERT with `source='MANUAL'`. **Hard rules**: every write via bind params (NEVER f-string); length caps enforced in the form AND by truncation (question 2000, options 500); `correct_answer` ⊆ non-empty options; ≥2 options. **"Generate batch (AI)"** button: pick domain + difficulty mix → generates 10 questions via the **same grounded `_questions.py` path** (`$quiz/questions`: in `cke`/`custom` mode each question embeds retrieved `<doc_context>` as the primary source with `key_facts` as supporting scope, answers ONLY from the docs, and fails visibly on empty retrieval — never built-in knowledge) → INSERT with `source='AI_GENERATED'` → report count; caption with an approximate-cost note. If Feature 8 is enabled, show OPEN flags next to their questions.
 
@@ -275,7 +273,6 @@ All keys initialized in `init_session_state()` in `main.py` (state is shared acr
 | `question_source` | str | `"mix"` | mix/db/ai |
 | `_current_topic` | str | `""` | Current topic from schedule |
 | `_review_page` | str | `"WRONG ANSWERS"` | Active review sub-tab |
-| `use_explanations` | bool | `True` | AI explanations toggle |
 | `correct_count` | int | `0` | Correct answers this round |
 | `total_count` | int | `0` | Total answered this round |
 | `current_history_item` | dict\|None | `None` | Ref to last appended history item |
@@ -289,7 +286,7 @@ All keys initialized in `init_session_state()` in `main.py` (state is shared acr
 | `_op_clear_keys` | list | `[]` | Widget keys to pop at top of next run (flag-at-top reset) |
 | `hint` | None/{}/ dict | `None` | Socratic hint (None=not tried, {}=failed, dict=success) |
 | `hint_level` | int | `0` | 0=none, 1=hint_1 shown, 2=hint_2 shown |
-| `contrast` | None/{}/ dict | `None` | Contrast result for the current question |
+| `deep_dive` | None/{}/ dict | `None` | Deep-dive result (explain-1 or compare-2) for the current question |
 | `debrief` | None/{}/ dict | `None` | Round debrief (generated once per round end) |
 | `_round_type` | str | `"practice"` | practice / remedial |
 | `_remedial_queue` | list | `[]` | Wrong items queued for the remedial round |
