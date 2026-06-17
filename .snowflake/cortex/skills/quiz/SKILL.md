@@ -55,7 +55,7 @@ The generated app is a decomposed multipage project under `app/`. What each file
 | File | Responsibility |
 |------|----------------|
 | `main.py` | Entry: `st.set_page_config` (first `st.` call), `init_session_state()`, sidebar title, `st.navigation([...]).run()` |
-| `_config.py` | `EXAM_NAME`, `EXAM_CODE`, `CORTEX_MODEL`, `PASS_THRESHOLD`, `DIFFICULTY_GUIDE`, color + `RESPONSE_FORMATS` constants |
+| `_config.py` | `EXAM_NAME`, `EXAM_CODE`, `CORTEX_MODEL`, `PASS_THRESHOLD`, `EXAM_QUESTION_COUNT`/`EXAM_TIME_LIMIT_MIN` (exam structure from setup — read by Exam Simulation), `DIFFICULTY_GUIDE`, color + `RESPONSE_FORMATS` constants |
 | `_cortex.py` | `call_cortex` + `call_cortex_json` (see `$cortex`) |
 | `_data.py` | Cached loaders (`load_domains`, `load_session_stats`, `load_recent_sessions`, `load_domain_errors`, `load_config`) + `clear_caches()` |
 | `_questions.py` | Topic schedule, `get_question`, AI generation, answer shuffling, dedup (`questions/`) |

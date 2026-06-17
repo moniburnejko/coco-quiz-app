@@ -51,10 +51,12 @@ Cross-page redirects (e.g. recommendations -> quiz): set the target state, then 
 
 4 control groups in order, each with a bold UPPERCASE label (`st.markdown("**LABEL**")`) and `label_visibility="collapsed"` on the widget:
 
-1. **QUESTIONS** — number_input (1-100)
-2. **DOMAINS** — pills multi-select from EXAM_DOMAINS
-3. **DIFFICULTY** — pills (mixed/easy/medium/hard), guard against None
+1. **QUESTIONS** — number_input (1-100), initial value from `round_size` if set
+2. **DOMAINS** — pills multi-select from EXAM_DOMAINS, initial selection from `domain_filter` if set
+3. **DIFFICULTY** — pills (mixed/easy/medium/hard), guard against None, initial value from `difficulty` if set
 4. **SOURCE** — pills multi-select (`["QUESTION BANK", "AI GENERATED"]`), mapped internally to `"mix"/"db"/"ai"`
+
+Each control **seeds its initial value from the matching session key** (`round_size`, `domain_filter`, `difficulty`) when present, so a cross-page redirect — e.g. the AI Study Recommendation "Start Focused Session" (`$quiz/features`) — pre-fills the round instead of landing on a blank Home.
 
 There is **no "AI explanations" toggle** — the explanation is on-demand per question (a button after answering), never auto-loaded.
 

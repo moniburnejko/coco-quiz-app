@@ -47,36 +47,44 @@ pages/exam_simulation.py (own page):
 
 ## UI spec
 
-**sim_config screen**: Shows exam params as read-only info:
+**sim_config screen**: Shows exam params as read-only info, read from `_config.py` (`EXAM_QUESTION_COUNT`, `EXAM_TIME_LIMIT_MIN` — captured from the study guide at setup, `$setup-exam` Step 5):
 - Exam: {EXAM_NAME} ({EXAM_CODE})
-- Questions: {N} (weighted by domain)
-- Time limit: {M} minutes
-- Pass threshold: {PASS_THRESHOLD}%
+- Questions: {EXAM_QUESTION_COUNT} (weighted by domain)
+- Time limit: {EXAM_TIME_LIMIT_MIN} minutes
+- Pass threshold: {PASS_THRESHOLD}% (a study proxy — the official SnowPro score is scaled 0–1000, pass 750)
 - "Start Exam" button (primary, full-width)
+- If either value is null (the guide didn't state it), prompt the user to confirm the count/time before enabling Start.
 
 **sim_quiz screen**: Same as regular quiz but:
-- Prominent timer: `st.metric("Time Remaining", f"{minutes}:{seconds:02d}")` at top
+- Prominent timer: `st.metric("Time Remaining", f"{minutes}:{seconds:02d}")` at top, inside an `st.fragment(run_every="10s")` that recomputes remaining time from `_sim_end_time` and auto-submits the round when it hits 0. Streamlit does NOT rerun on its own, so a plain "check on render" timer would neither tick nor expire while the candidate sits on a question — the fragment is what actually enforces the limit. (Coarse `run_every` like 10s bounds warehouse reruns; if the SiS Streamlit version lacks `st.fragment(run_every=…)`, degrade to checking elapsed on each interaction and say so in a caption.)
 - Progress bar below timer
 - No AI-explanation button during the timed simulation (explanations suppressed in sim mode)
-- NO source selection — all from DB+AI weighted by domain
-- Timer: check elapsed time on each render (non-blocking), updates on each answer submission
-- End conditions: all questions answered OR timer expires
+- NO source selection — questions are sourced bank-first then AI, weighted by domain (see Implementation notes)
+- End conditions: all questions answered OR `_sim_end_time` reached (auto-submit)
 
 **sim_results screen**: Detailed breakdown:
-- Overall: pass/fail badge, score, time used
+- Overall: pass/fail badge (vs `PASS_THRESHOLD`), score, time used
 - Domain table: domain name, questions asked, correct, %, exam weight
-- Comparison vs real exam threshold
+- Caption: the % is a study proxy for the official scaled 750/1000 — the real exam publishes no raw passing %
+- **Write-back** (below) runs once when the round ends, before this screen renders
 
 ## Session state keys
 
-`_quiz_mode` (str: "PRACTICE"/"EXAM SIMULATION"), `_sim_start_time` (datetime), `_sim_time_limit` (int, seconds), `_sim_questions` (int), `_sim_screen` (str: "config"/"quiz"/"results")
+`_quiz_mode` (str: "PRACTICE"/"EXAM SIMULATION"), `_sim_start_time` (datetime), `_sim_end_time` (datetime — `start + limit`; the single source of truth for the timer), `_sim_time_limit` (int, seconds), `_sim_questions` (int), `_sim_screen` (str: "config"/"quiz"/"results"). Initialized in the feature page — NOT in the core `init_session_state` 28-key contract.
 
 ## Implementation notes
 
-- Timer is non-blocking — check `datetime.now() - _sim_start_time` on each render
-- Domain question distribution: `round(weight_pct / 100 * total_questions)` per domain
-- Time limit and question count: derive from EXAM_CODE — ask user to confirm if unknown. Common values: COF-C03 = 100q/115min, GES-C01 = 65q/90min
-- Reuse existing `get_question()` patterns — just wrap with timer and different config
+- **Question count + time limit** come from `_config.py` (`EXAM_QUESTION_COUNT`, `EXAM_TIME_LIMIT_MIN`), captured from the user's study guide at setup (`$setup-exam` Step 5) — NEVER hardcode per-code guesses. Exam structure is revised across versions and recalled values go stale, the same risk as the exam code itself (`$setup-exam` Step 1b). If a value is null, confirm it with the user against their guide before starting.
+- **Domain distribution must sum to exactly N** — use largest-remainder: `floor(weight_pct/100 * N)` per domain, then hand the leftover questions one each to the domains with the largest fractional remainders until the counts total N. (Independent `round()` per domain does NOT sum to N.)
+- **Question sourcing is bank-first** — a live mock needs 65–100 questions and generating them all is slow + costly: per domain, draw from `QUIZ_QUESTIONS` (`ORDER BY RANDOM()`, deduped — `$quiz/questions`) up to its quota, then generate only the shortfall via the grounded `get_question()` path. If a domain still can't be filled, shrink its quota and show a visible caption ("Only M of N for {domain}") — never pad from built-in knowledge. Spinner/progress during the fill.
+- **Timer**: set `_sim_end_time = _sim_start_time + _sim_time_limit` once at Start; the `st.fragment(run_every=…)` countdown reads it and auto-submits on expiry (see sim_quiz).
+- Reuse the existing `get_question()` patterns for generation — just wrap with the timer and the weighted, bank-first config.
+
+## Write-back (when the round ends)
+
+A finished simulation persists like a practice round so it feeds Review + Flashcards + history:
+- Each wrong answer → a `QUIZ_REVIEW_LOG` row (the same `write_review_log` path as practice).
+- One `QUIZ_SESSION_LOG` row, tagged so mock ≠ practice: when this feature is enabled, add the column once — `ALTER TABLE {db}.QUIZ_<CODE>.QUIZ_SESSION_LOG ADD COLUMN IF NOT EXISTS session_type VARCHAR DEFAULT 'PRACTICE';` — and write `'SIMULATION'` for sim rounds (practice rounds keep the default). `clear_caches()` after the writes.
 
 ---
 
@@ -145,7 +153,9 @@ Added to the `st.navigation` list in `main.py` (title "AI Study Recommendation")
 
 ## Condition
 
-Sessions >= 2 AND error_data is non-empty. Otherwise show caption: "Complete at least 2 quiz sessions to see personalized recommendations."
+- < 2 sessions → caption: "Complete at least 2 quiz sessions to see personalized recommendations."
+- ≥ 2 sessions AND no errors recorded → all-clear state: `:green-badge[EXAM READY]` + caption "No weak areas detected — you're scoring above threshold across the board." (do NOT show the "complete 2 sessions" caption — it's misleading here).
+- ≥ 2 sessions AND errors present → generate recommendations.
 
 ## Trigger
 
@@ -153,7 +163,7 @@ Sessions >= 2 AND error_data is non-empty. Otherwise show caption: "Complete at 
 
 ## Prompt inputs
 
-Session count, avg score, total questions, domain error counts, wrong question samples (last 30 per domain via `load_wrong_question_samples()`), domain topic lists.
+Session count, avg score, total questions, domain error counts (`load_domain_errors()`), wrong-question samples (last 30 per domain), domain topic lists. The per-domain sampling needs a dedicated cached loader — **add `load_wrong_question_samples()` to `_data.py`** (a `ROW_NUMBER() OVER (PARTITION BY domain_id ORDER BY logged_at DESC) <= 30` query over `QUIZ_REVIEW_LOG`) **and register it in `clear_caches()`** (no `ttl`, like every loader — `$sis`). It does not exist by default.
 
 ## JSON output schema
 
@@ -170,9 +180,17 @@ Session count, avg score, total questions, domain error counts, wrong question s
 
 No `overall_assessment` key. **Grounding (defer to `$cortex`):** in `cke`/`custom` mode retrieve `<doc_context>` for each weak topic, ground the topic recommendations in it ("answer ONLY from the provided documentation"), and set each topic's `doc_url` from the chunk's real `SOURCE_URL` — the `doc_search` → `https://docs.snowflake.com/en/search?q=` conversion is for **`none` mode only**. (The readiness/weak-domain analysis over the user's own error history is meta-analysis, like the debrief.)
 
+## Computed in Python, NOT by the model
+
+Deterministic values are computed in Python from the user's own stats and **override** whatever the model returns (an LLM does arithmetic unreliably — same rule as never asking it for a URL):
+- `exam_readiness.ready` = `avg_score >= PASS_THRESHOLD`; `gap_pct` = `abs(avg_score - PASS_THRESHOLD)` — from the same `avg_score` shown on screen.
+- `recommended_domain` = the domain with the most errors (`load_domain_errors()`).
+
+The model authors only qualitative text: `exam_readiness.message`, the `recommendation` strings, `study_plan`, `recommended_difficulty`, and `weak_topics[].doc_search`. The schema still includes the computed keys (Python overwrites them after the call).
+
 ## Prompt constraints (MUST be in the AI prompt)
 
-- `exam_readiness.ready = true` if avg_score >= PASS_THRESHOLD; `gap_pct = abs(avg_score - PASS_THRESHOLD)`
+- Respond in **English** (project rule — all generated text is English).
 - `exam_readiness.message`: max 1 sentence, under 80 chars
 - `weak_domains[].recommendation` and `weak_topics[].recommendation`: max 1 sentence, under 80 chars each
 - `study_plan`: exactly 3 items, each under 80 chars, action-oriented verbs
@@ -189,7 +207,7 @@ No `overall_assessment` key. **Grounding (defer to `$cortex`):** in `cke`/`custo
 
 ## Start Focused Session
 
-Sets `domain_filter`, `difficulty`, `round_size=10`, `screen="home"` (with the config pre-filled), then calls `st.switch_page("pages/quiz.py")` — `st.navigation` owns the page, so there is no nav-widget key to mutate (the old `nav_pills` redirect machinery does not exist in the multipage app).
+Sets `domain_filter`, `difficulty`, `round_size` (=10), `screen="home"`, then `st.switch_page("pages/quiz.py")`. For the pre-fill to actually take, the **Home screen widgets must seed their initial value from these session keys** (`$quiz/screens` Home contract) — otherwise the redirect lands on a blank Home. (`st.navigation` owns the page, so there is no nav-widget key to mutate — the old `nav_pills` redirect machinery does not exist in the multipage app.)
 
 ## Session state keys
 

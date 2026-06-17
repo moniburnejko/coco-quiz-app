@@ -268,6 +268,8 @@ SET key_facts = AI_COMPLETE(model => 'claude-sonnet-4-6',
 ```
 Verify each `key_facts` is non-null.
 
+**Capture the exam structure** for `_config.py` (Step 8): from the same `_DOC_CONTENT`, extract the exam's **question count** and **time limit (minutes)** — one schema-constrained `AI_COMPLETE` returning `{question_count:int|null, time_limit_min:int|null}` — and bake the result into `_config.py` as `EXAM_QUESTION_COUNT` / `EXAM_TIME_LIMIT_MIN`. The **Exam Simulation** feature reads them (`$quiz/features`); capture them now even if no feature is requested, because `_DOC_CONTENT` is transient (gone in later sessions). Null is fine — the feature confirms with the user when needed.
+
 **Verify + ⚠️ STOP:**
 ```sql
 SELECT COUNT(*) , SUM(weight_pct) FROM {database}.QUIZ_<CODE>.EXAM_DOMAINS;
