@@ -185,11 +185,11 @@ Each submitted answer is appended to `round_history`:
 
 Query `QUIZ_REVIEW_LOG` via the cached loader in `_data.py` (`@st.cache_data` with NO ttl, `get_active_session()` inside — see `$sis` Caching). Do NOT query directly in the page code. Freshness comes from `clear_caches()` at write time, not from a ttl.
 
-Filters: domain pills (multi, empty=all) + date range slider (integer offset, not date objects).
+Filters: domain pills (multi, empty=all) + a **date-range `st.date_input`** — **always shown**, even when all wrong answers fall on one day (do NOT hide it when `min == max`; pass that single date as both `value` ends + `min_value`/`max_value`). Keep rows whose cast `LOGGED_AT` date is within `[start, end]`.
 
 Wrong answer cards: `st.container(border=True)` with domain badge + difficulty badge + date badge, question text, correct answer, mnemonic caption, doc link caption.
 
-**Date handling** (filters + dashboard): values from `.collect()` are Snowflake datetimes — cast with `datetime.date(raw.year, raw.month, raw.day)` before feeding any widget or doing date arithmetic. For range queries against `TIMESTAMP_LTZ`, pass dates as `strftime("%Y-%m-%d")` strings with an exclusive upper bound (`< end + 1 day`) to include the full last day. Use `st.date_input` for date ranges — never pass a `datetime.date` to `st.slider` (this filter uses an integer day-offset).
+**Date handling** (filters + dashboard): values from `.collect()` are Snowflake datetimes — cast with `datetime.date(raw.year, raw.month, raw.day)` before feeding any widget or doing date arithmetic. The Wrong-Answers date filter is an **`st.date_input` range** (always rendered — see above); compare each row's cast `LOGGED_AT` date against the selected `[start, end]` in Python. For any `TIMESTAMP_LTZ` range query in SQL, pass dates as `strftime("%Y-%m-%d")` strings with an exclusive upper bound (`< end + 1 day`) to include the full last day. Never pass a `datetime.date` to `st.slider` (`$sis`).
 
 ---
 
@@ -218,7 +218,7 @@ Optional features (`$quiz/features`) are generated as **separate pages** (`pages
 
 # Admin Page (`pages/admin.py` — core)
 
-Five sections, top to bottom. Single-user app → visible to the owner; when multi-user lands, gate via restricted caller's rights (fail-closed) — do NOT build RBAC now.
+Five **`st.tabs`** — **App config · Question manager · Bank stats · Cortex spend · Tools** (not one long scrolling page); the five subsections below are the tab contents in order. Single-user app → visible to the owner; when multi-user lands, gate via restricted caller's rights (fail-closed) — do NOT build RBAC now.
 
 **1. App configuration**: toggles for `hints_enabled`, `debrief_enabled`, `remedial_enabled`; slider `default_round_size` (5–50); `pass_threshold_override` slider with an "exam default (75%)" reset button + warning caption that the official exam threshold does not change. **Grounding** is shown **read-only** — `grounding_mode` is fixed at setup (`$setup-exam` Step 1g), never a runtime toggle (an "off" switch would be a built-in-knowledge backdoor). In `cke`/`custom` mode, if `docs_available()` is False, show a red caption: "The doc grounding service is unavailable — install/grant the Snowflake Documentation CKE; the app can't generate until it's reachable." Every config change → `save_config(key, value)` (MERGE by key, bind params) → `clear_caches()` (clears `docs_available`/`search_docs` too) → `st.toast`.
 
