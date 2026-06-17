@@ -165,18 +165,19 @@ Each submitted answer is appended to `round_history`:
 - 2-metric row: SCORE (`correct/total`), ACCURACY (`pct%`)
 - Pass: `:green-badge[PASSED] above {PASS_THRESHOLD}% threshold`
 - Fail: `:orange-badge[NOT YET] {gap}% to go - keep practicing!` (include encouragement)
-- Wrong answers in `st.container(border=True)` cards with domain/difficulty badges
-- Perfect score: `:green-badge[PERFECT SCORE] No wrong answers this round.`
+- **Wrong answers** go inside a **collapsed `st.expander("WRONG ANSWERS", expanded=False)`** — each as an `st.container(border=True)` card with domain/difficulty badges, the **question text**, the **correct answer in full** (`"B) …text… & D) …text…"`, built from the card's `option_texts` + correct letters — NEVER bare letters), and the **mnemonic** (`st.info` 🧠) only when one was generated for it this round (`round_history[i]["mnemonic"]`; omit if empty). All dynamic text via the `md()` `$`-escaper (`$quiz/design`).
+- Perfect score: `:green-badge[PERFECT SCORE] No wrong answers this round.` (no expander)
 
-**AI debrief (gate `debrief_enabled`)**: when the round has ≥1 wrong answer, generate once on entering summary — `call_cortex_json(prompt, "debrief")` with per-question domain/topic/correctness/`hint_used` from `round_history`. **Grounding scope:** the debrief is meta-analysis over the user's OWN round performance — it names weak domains/topics and study actions but MUST NOT assert new Snowflake facts or emit doc links, so it is the one runtime generation path exempt from doc-grounding (`$cortex`). Render: patterns as bullets, max 3 `priority_actions`, `one_thing` as a highlighted callout. Perfect round → no call, nothing rendered. State `debrief` (None/{}/dict), reset on round start.
+**Round Brief (on-demand; gate `debrief_enabled`; only when ≥1 wrong answer)**: a **"Round Brief"** button — NOT auto-generated. On click → `call_cortex_json(prompt, "debrief")` with per-question domain/topic/correctness/`hint_used` from `round_history` → open an **expander** with clean formatting: `st.container(border=True)` holding **PATTERNS** (bullets) and **PRIORITY ACTIONS** (max 3 bullets), then `one_thing` as a highlighted **🎯 FOCUS** line in its own bordered container (NOT `st.info` — that's reserved for the mnemonic per `$quiz/design`). **Grounding scope:** meta-analysis over the user's OWN round performance — names weak domains/topics + study actions but MUST NOT assert new Snowflake facts or emit doc links; the one runtime generation path exempt from doc-grounding (`$cortex`). State `debrief` (None=not requested / {}=failed / dict=success), reset on round start. A perfect round shows no Round Brief button. Render every dynamic field (PATTERNS, PRIORITY ACTIONS, `one_thing`) through the `md()` `$`-escaper before `st.markdown` (`$quiz/design`).
 
-**Buttons (pass/fail dependent)**:
-- **Pass** (`score_pct >= threshold`): "Retry Same Config" (same settings, rebuilds topic schedule) + "Configure New Round" (back to home) — as before.
-- **Fail** AND `remedial_enabled`: "Remedial Round" (primary) + "Configure New Round". NO "Retry Same Config" on fail.
-- Threshold = `pass_threshold_override` from config if set, else `PASS_THRESHOLD`.
-- All buttons set state and call `st.rerun()`.
+**Action buttons (practice rounds, by outcome)** — `Round Brief` and `Remedial Round` only apply when there are wrong answers. When `_round_type == "remedial"`, ignore this table: the remedial summary shows only **"Configure New Round"** (see the Remedial round contract).
+- **Perfect** (all correct): **"Configure New Round"** only.
+- **Passed, some wrong**: **"Round Brief"** + **"Configure New Round"**.
+- **Failed, `remedial_enabled` ON**: **"Round Brief"** + **"Remedial Round"** (primary) + **"Configure New Round"**.
+- **Failed, `remedial_enabled` OFF**: **"Round Brief"** + **"Configure New Round"**. (Remedial Round is the ONLY button gated by `remedial_enabled` — a failed round always offers at least Round Brief + Configure New Round.)
+- No "Retry Same Config" button (removed). Threshold = `pass_threshold_override` if set, else `PASS_THRESHOLD`. All buttons set state and call `st.rerun()`.
 
-**Remedial round contract**: queue = the wrong items from `round_history` (order shuffled; `_shuffle_options` re-applied to every question so option letters move). Sets `_round_type="remedial"`, `_remedial_queue`, resets counters/q_index/history for the remedial pass. During remedial: hints/explanations behave normally; questions count toward nothing — **no `_write_back_results()`, no debrief, no logging** (a re-test of just-seen questions would inflate readiness stats and duplicate review entries). Remedial summary: score + only "Configure New Round" (no chained remedials). `_round_type` resets to `"practice"` on any new round.
+**Remedial round contract**: queue = the wrong items from `round_history` (order shuffled; `_shuffle_options` re-applied to every question so option letters move). Sets `_round_type="remedial"`, `_remedial_queue`, resets counters/q_index/history for the remedial pass. During remedial: hints/explanations behave normally; questions count toward nothing — **no `_write_back_results()`, no debrief, no logging** (a re-test of just-seen questions would inflate readiness stats and duplicate review entries). Remedial summary: score + only "Configure New Round" (no chained remedials) — this overrides the by-outcome button table above. `_round_type` resets to `"practice"` on any new round.
 
 ---
 
@@ -287,7 +288,7 @@ All keys initialized in `init_session_state()` in `main.py` (state is shared acr
 | `hint` | None/{}/ dict | `None` | Socratic hint (None=not tried, {}=failed, dict=success) |
 | `hint_level` | int | `0` | 0=none, 1=hint_1 shown, 2=hint_2 shown |
 | `deep_dive` | None/{}/ dict | `None` | Deep-dive result (explain-1 or compare-2) for the current question |
-| `debrief` | None/{}/ dict | `None` | Round debrief (generated once per round end) |
+| `debrief` | None/{}/ dict | `None` | On-demand Round Brief (None=not requested, {}=failed, dict=success); generated from the Round Brief button, reset on round start |
 | `_round_type` | str | `"practice"` | practice / remedial |
 | `_remedial_queue` | list | `[]` | Wrong items queued for the remedial round |
 

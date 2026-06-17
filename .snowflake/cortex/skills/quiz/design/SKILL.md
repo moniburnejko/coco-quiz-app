@@ -68,7 +68,7 @@ Use `st.markdown("**LABEL**")` for all section headers. Labels are UPPERCASE.
 
 Do NOT use `st.subheader()` — it's too visually heavy for section labels.
 
-Examples: `**QUESTIONS**`, `**DOMAINS**`, `**DIFFICULTY**`, `**SOURCE**`, `**WRONG ANSWERS**`, `**SCORE PER SESSION**`, `**ERRORS BY DOMAIN**`, `**FOCUS AREAS**`, `**TOPICS TO REVIEW**`, `**NEXT STEPS**`
+Examples: `**QUESTIONS**`, `**DOMAINS**`, `**DIFFICULTY**`, `**SOURCE**`, `**SCORE PER SESSION**`, `**ERRORS BY DOMAIN**`, `**FOCUS AREAS**`, `**TOPICS TO REVIEW**`, `**NEXT STEPS**` (the summary's `WRONG ANSWERS` is an `st.expander` title now, not a bold label)
 
 ---
 
@@ -157,6 +157,7 @@ Applies in: inside the on-demand AI-explanation expander (after the **💡 AI ex
 - Topics to review cards
 - Next steps container
 - Explanation containers (why correct, why wrong)
+- Round Brief containers (summary): the PATTERNS + PRIORITY ACTIONS block, and the 🎯 FOCUS one-thing line (its own bordered container — NOT `st.info`; `st.info` is mnemonic-only)
 
 ---
 
