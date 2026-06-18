@@ -334,11 +334,65 @@ Each submitted answer is appended to `round_history`:
 
 Query `QUIZ_REVIEW_LOG` via the cached loader in `_data.py` (`@st.cache_data` with NO ttl, `get_active_session()` inside - see `$sis` Caching). Do NOT query directly in the page code. Freshness comes from `clear_caches()` at write time, not from a ttl.
 
-Filters: domain pills (multi, empty=all) + a **date-range `st.date_input`** - **always shown**, even when all wrong answers fall on one day (do NOT hide it when `min == max`; pass that single date as both `value` ends + `min_value`/`max_value`). Keep rows whose cast `LOGGED_AT` date is within `[start, end]`.
+Filters (BOTH always present — the app-v4 regression was a filterless log dump): a **domain `st.pills`** (multi-select, empty = all) over the distinct `DOMAIN_NAME` values, PLUS a **date-range `st.date_input`** - **always shown**, even when all wrong answers fall on one day (do NOT hide it when `min == max`; pass that single date as both `value` ends + `min_value`/`max_value`). Keep a row when (no domain selected OR its `DOMAIN_NAME` is in the selection) AND its cast `LOGGED_AT` date is within `[start, end]`. Filtering is **client-side in Python over the cached frame** — the loader takes no params and never filters server-side. Show a `st.caption` with the filtered count.
 
-Wrong answer cards: `st.container(border=True)` with domain badge + difficulty badge + date badge, question text, correct answer, mnemonic caption, doc link caption.
+Wrong answer cards: `st.container(border=True)` with domain badge + difficulty badge + date (`:gray-badge[YYYY-MM-DD]`) badge, question text, **correct answer in FULL TEXT**, mnemonic (`st.info` 🧠) only-when-present, doc link only-when-present.
 
-**Date handling** (filters + dashboard): values from `.collect()` are Snowflake datetimes - cast with `datetime.date(raw.year, raw.month, raw.day)` before feeding any widget or doing date arithmetic. The Wrong-Answers date filter is an **`st.date_input` range** (always rendered - see above); compare each row's cast `LOGGED_AT` date against the selected `[start, end]` in Python. For any `TIMESTAMP_LTZ` range query in SQL, pass dates as `strftime("%Y-%m-%d")` strings with an exclusive upper bound (`< end + 1 day`) to include the full last day. Never pass a `datetime.date` to `st.slider` (`$sis`).
+**Correct answer — FULL TEXT, NEVER a bare letter.** Render `**Correct answer:** {md(CORRECT_ANSWER)}` straight from the `QUIZ_REVIEW_LOG.CORRECT_ANSWER` column. That column is **already stored resolved** as `"{letter}) {full_text}"` (joined with ` & ` for multi-answer) by the Write-Back Contract — so the card does a **plain passthrough with NO letter→option lookup** (the review log has no `OPTION_*` columns to look up anyway). A card reading `Correct: A` is the exact app-v4 anti-pattern to avoid; it must read e.g. `Correct answer: B) Time Travel lets you query historical data`. Do NOT show the user's pick (the log never stores it). Escape through `md()` so a `$` in the answer text doesn't render as LaTeX (`$quiz/design`).
+
+**Mnemonic — render ONLY when a real one exists; guard the literal string `"None"`.** A wrong answer the user never opened the explanation on has an empty `mnemonic` (the column is `VARCHAR`, not VARIANT), and a Python `None` coerced via `str()` surfaces as the literal text `"None"`. Render the `st.info("🧠 …")` box **only** when the value is truthy AND not the literal `"None"` — e.g. `mnem = (row["MNEMONIC"] or "").strip()` then `if mnem and mnem.lower() != "none": st.info(f"🧠 {md(mnem)}")`. This prevents the app-v4 `🧠 None` box. `st.info` is mnemonic-only (`$quiz/design` — never for status). The doc link follows the same only-when-present guard and uses the standard format `📖 [Snowflake Documentation]({url})`.
+
+**Date handling** (filters + dashboard): values from the cached loader are Snowflake datetimes - cast with `datetime.date(raw.year, raw.month, raw.day)` before feeding any widget or doing date arithmetic. The Wrong-Answers date filter is an **`st.date_input` range** (always rendered - see above); `st.date_input` returns a 1- or 2-tuple mid-selection, so **defensively unpack** both ends before comparing. Compare each row's cast `LOGGED_AT` date against the selected `[start, end]` in Python. For any `TIMESTAMP_LTZ` range query in SQL, pass dates as `strftime("%Y-%m-%d")` strings with an exclusive upper bound (`< end + 1 day`) to include the full last day. Never pass a `datetime.date` to `st.slider` (`$sis`).
+
+## Reference code (COPY + ADAPT — Review Wrong-Answers handler)
+
+The prose above is the contract; this is the **reference implementation of the Review Wrong-Answers parts that one-shot generation gets wrong** (app-v4 shipped a bare-letter correct answer, a `🧠 None` mnemonic box, and a filterless log dump). **Copy this handler and adapt** — do not re-derive it from the prose. The Step-8 UX gate checks `review.py` against this shape. It is `st.pills`-driven tab content in `pages/review.py`; `load_review_log`/`clear_caches` are the `_data.py` loaders (no ttl), `md`/`render_domain_badge`/`render_difficulty_badge` are the `_ui.py` helpers (`$quiz/design`); `LETTERS = ["A","B","C","D","E"]`.
+
+```python
+# pages/review.py — reference for the WRONG ANSWERS sub-tab. LETTERS = ["A","B","C","D","E"]
+import datetime
+
+def _cast_date(raw):                                            # Snowflake datetime → date before any widget/math
+    return datetime.date(raw.year, raw.month, raw.day)
+
+def render_wrong_answers():
+    rows = load_review_log()       # cached (@st.cache_data, NO ttl, get_active_session() inside) → list[Row], newest first
+    if not rows:                   # list[Row] — read fields by row["UPPER"], never .get()/attr on a Row ($sis item 20)
+        st.markdown(":gray-badge[No wrong answers logged yet — finish a round to populate this.]"); return
+
+    # FILTERS — both always rendered. Domain pills (empty = all) + date-range (shown even when min == max).
+    dom_opts = sorted({r["DOMAIN_NAME"] for r in rows if r["DOMAIN_NAME"]})
+    doms = st.pills("Filter by domain", dom_opts, selection_mode="multi",
+                    default=[], key="wa_domain", label_visibility="collapsed")
+
+    dates = [_cast_date(r["LOGGED_AT"]) for r in rows]
+    min_d, max_d = min(dates), max(dates)                       # safe — rows is non-empty past the guard above
+    rng = st.date_input("Date range", value=(min_d, max_d),
+                        min_value=min_d, max_value=max_d, key="wa_dates")
+    start = rng[0] if isinstance(rng, (list, tuple)) and len(rng) >= 1 else min_d
+    end   = rng[1] if isinstance(rng, (list, tuple)) and len(rng) >= 2 else start   # mid-selection 1-tuple guard
+
+    filtered = [r for r in rows                                 # client-side filter over the cached list[Row]
+                if (not doms or r["DOMAIN_NAME"] in doms)
+                and start <= _cast_date(r["LOGGED_AT"]) <= end]
+    st.caption(f"{len(filtered)} wrong answer(s)")
+
+    for r in filtered:
+        with st.container(border=True):
+            d = _cast_date(r["LOGGED_AT"]).strftime("%Y-%m-%d")
+            st.markdown(f"{render_domain_badge(r['DOMAIN_NAME'] or '')}  "
+                        f"{render_difficulty_badge(r['DIFFICULTY'] or 'medium')}  :gray-badge[{d}]")
+            st.markdown(f"#### {md(r['QUESTION_TEXT'])}")
+            st.markdown(f"**Correct answer:** {md(r['CORRECT_ANSWER'])}")   # FULL TEXT, stored resolved — no letter lookup
+            mnem = (r["MNEMONIC"] or "").strip()
+            if mnem and mnem.lower() != "none":                  # guard None, "", AND the literal "None" → no 🧠 None box
+                st.info(f"🧠 {md(mnem)}")
+            doc = (r["DOC_URL"] or "").strip()
+            if doc:                                              # 📖 link only when present (never auto-shown)
+                st.markdown(f"📖 [Snowflake Documentation]({doc})")
+```
+
+Notes the gate enforces: the correct answer is the **full-text `CORRECT_ANSWER` passthrough** (never a bare letter, no `OPTION_*` lookup); the mnemonic `st.info` 🧠 box renders **only** when the value is truthy and not the literal `"None"`; **both** filters are present and the **date input is always rendered** (even when `min == max`); the loader is the **cached `load_review_log()`** (no direct query in page code) and all filtering is **client-side in Python**; every dynamic field routes through `md()`; cards are `st.container(border=True)` with the date `:gray-badge[…]`; no `st.success`/`st.warning`/`st.error`.
 
 ---
 
@@ -413,7 +467,8 @@ Charts: spend by feature, spend by model (now a haiku/sonnet/opus split, reflect
 
 A read-only log viewer plus a reset - the vendors02 logs page, no download:
 - **Both log tables shown**: `QUIZ_REVIEW_LOG` via `load_review_log()` and `QUIZ_SESSION_LOG` via **`load_session_log()`** - a new no-ttl cached loader for the full session-log table (`load_recent_sessions()` is the dashboard's last-10 aggregate, NOT this); **add `load_session_log` to `_data.py` and register it in `clear_caches()`** (`$sis` item 24, else it dangles). Read-only `st.dataframe`, newest first. **No `st.download_button`.**
-- **Filters + paging** (`QUIZ_REVIEW_LOG`): a **domain `st.multiselect`** (empty = all) applied in pandas over the cached frame, plus `Load N more` paging via a page-local `_log_limit` (don't render thousands of rows). The session-log table is shown as-is, newest first.
+- **Filters + paging** (`QUIZ_REVIEW_LOG`): a **domain `st.multiselect`** (empty = all) applied **in Python over the cached `list[Row]`** (`[r for r in rows if not doms or r["DOMAIN_NAME"] in doms]` - `load_review_log()` returns `.collect()` Rows, NOT a DataFrame), plus `Load N more` paging via a page-local `_log_limit` (don't render thousands of rows). `st.dataframe` accepts the `list[Row]` slice directly. The session-log table is shown as-is, newest first.
+- **Loader return-type convention** (`$sis` Caching): every cached loader returns a **`.collect()` `list[Row]`** (read fields by `row["UPPER"]`, never `.get()`/attr - `$sis` scan item 20) - `load_review_log`, `load_session_log`, `load_recent_sessions`, `load_domain_errors`, `load_bank_stats`, `load_domains`, `load_cortex_spend`. **The sole exception is `load_questions_page`** (the Questions-manager Bank table), which returns **`.to_pandas()`** because `st.data_editor` structurally requires a DataFrame. Do NOT "normalize" the two - a DataFrame handler against a `list[Row]` loader (or vice-versa) crashes on the first `.empty`/`.iterrows`/`[col]` call.
 - **Reset all logs** - a **frameless/borderless button** (`st.button(..., type="tertiary")`) below the tables, with **no expander and no "DANGER ZONE" label**, then a **two-step confirm** (a bordered `pending_reset` panel with Confirm / Cancel - NOT a type-`DELETE` text gate). Confirm runs `DELETE FROM` on the **two log tables only** (`QUIZ_REVIEW_LOG`, `QUIZ_SESSION_LOG`) - **NEVER `DROP`**, consistent with governance - then `clear_caches()` + `st.toast`. The reset lives **in this Logs tab**, never in App config (the app-v4 misplacement).
 
 ## Reference code (COPY + ADAPT — Admin handlers)
@@ -582,7 +637,7 @@ def render_generate():
 # 3. CORTEX SPEND — branch STRUCTURALLY: success-but-empty ≠ permission error. (app-v4 blamed every miss on a grant.)
 def render_spend():
     try:
-        df = load_cortex_spend()        # cached SELECT over SNOWFLAKE.ACCOUNT_USAGE.CORTEX_FUNCTIONS_USAGE_HISTORY
+        rows = load_cortex_spend()      # cached SELECT over SNOWFLAKE.ACCOUNT_USAGE.CORTEX_FUNCTIONS_USAGE_HISTORY → list[Row]
     except Exception as e:
         msg = str(e).lower()
         if any(sig in msg for sig in ("insufficient privileges", "not authorized", "does not exist")):
@@ -592,24 +647,25 @@ def render_spend():
         else:
             st.caption(f"Couldn't read Cortex spend: {e}")      # any OTHER error → caption, NOT the GRANT banner
         return
-    if df.empty:                        # ACCOUNTADMIN holds IMPORTED PRIVILEGES by default → empty ≠ no-grant
+    if not rows:                        # ACCOUNTADMIN holds IMPORTED PRIVILEGES by default → empty ≠ no-grant
         st.caption("No Cortex spend recorded yet — ACCOUNT_USAGE lags up to ~2 h, or no AI calls have run."); return
-    # ...render the two charts (spend by feature, spend by model: haiku/sonnet/opus) per $quiz/design...
+    # ...build a DataFrame inline from `rows` for the two Altair charts (spend by feature, spend by model:
+    #    haiku/sonnet/opus) per $quiz/design — same list[Row]→chart pattern as the Learning Dashboard...
     st.caption("ACCOUNT_USAGE lags up to ~2 h.")
 
 
 # 4. LOGS — both tables (filtered), then a FRAMELESS reset with a two-step confirm. Reset lives HERE, not App config.
 def render_logs():
     st.markdown("**REVIEW LOG**")
-    rdf = load_review_log()                                 # cached, newest first
-    doms = st.multiselect("Domain", sorted(rdf["DOMAIN_NAME"].dropna().unique()), key="log_dom")
-    view = rdf[rdf["DOMAIN_NAME"].isin(doms)] if doms else rdf
+    rows = load_review_log()                                # cached → list[Row] (.collect()), newest first
+    doms = st.multiselect("Domain", sorted({r["DOMAIN_NAME"] for r in rows if r["DOMAIN_NAME"]}), key="log_dom")
+    view = [r for r in rows if not doms or r["DOMAIN_NAME"] in doms]   # filter in Python over the cached list
     lim  = st.session_state.get("_log_limit", 50)
-    st.dataframe(view.head(lim), hide_index=True, use_container_width=True)   # NO download_button
+    st.dataframe(view[:lim], hide_index=True, use_container_width=True)   # st.dataframe accepts list[Row]; NO download_button
     if len(view) > lim and st.button("Load 50 more", key="log_more"):
         st.session_state["_log_limit"] = lim + 50; st.rerun()
     st.markdown("**SESSION LOG**")
-    st.dataframe(load_session_log(), hide_index=True, use_container_width=True)
+    st.dataframe(load_session_log(), hide_index=True, use_container_width=True)   # list[Row]
 
     if st.button("Reset all logs", type="tertiary", key="log_reset"):        # frameless, no DANGER ZONE
         st.session_state["pending_reset"] = True
