@@ -131,9 +131,17 @@ Keep the same workspace, run the **setup prompt** again with a different PDF. Th
 
 ---
 
+## Iterating - the work is not one-shot
+
+The first deploy is the **start, not the end**. Building a good quiz app with CoCo is a loop: deploy → **open the app and actually use it** → note what's off (a misbehaving screen, a wrong label, an awkward flow, a weak question) → ask CoCo to fix it → redeploy. **Flagging things to fix is a normal, core part of the work** - the best results come from a few rounds of feedback, not one perfect shot. To make each round land:
+
+- **Be concrete** - say *what* you saw, on *which* screen, and what you expected instead (a screenshot helps). "It looks wrong" forces guesses.
+- **Always ask for the pre-deploy checks before each redeploy** - end your fix request with: *"…then re-run the `$sis` scan and the `$quiz/screens` UX gate (re-read the files from disk, not from memory) before redeploying."* This is what stops CoCo from redeploying a change it only *thinks* it made.
+- **After a chat reload or page refresh** - ask CoCo to **re-read every app file from disk and re-run the scan + gate, NOT from memory**, before it changes anything. If it reports it can't read the files or run SQL, re-open the setup in the interactive Snowsight Workspace as your `ACCOUNTADMIN` role and resume.
+
 ## Something broke?
 
-Paste the **fix prompt** from [prompts.md](prompts.md) with a description of what happened. The agent will run the relevant diagnostic skill, fix the issue, and redeploy.
+Paste the **fix prompt** from [prompts.md](prompts.md) with a description of what happened. The agent will run the relevant diagnostic skill, fix the issue, and redeploy. **Always ask it to re-run the `$sis` scan + UX gate (fresh from disk) before the redeploy** - see "Iterating" above.
 
 **Seeing errors while you test:** the app ships with `[client] showErrorDetails = "none"` in `app/.streamlit/config.toml` - viewers get a generic message, never a traceback. While debugging your own setup, set it to `"full"` and redeploy to see the real traceback; set it back to `"none"` before sharing the app.
 

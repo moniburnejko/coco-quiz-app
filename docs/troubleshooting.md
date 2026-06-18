@@ -6,6 +6,16 @@ If none of these match: paste the **fix prompt** from [prompts.md](prompts.md) w
 
 ---
 
+## Working with CoCo is iterative - report fixes the right way
+
+The first deploy is rarely the last, and that's normal. A polished quiz app comes from a loop: **deploy → use the app → report what's off → CoCo fixes → redeploy**, repeated a few times. Treat "things to fix" as expected, not as a failure - it's the most valuable part of the process. The loop only works if you drive it correctly:
+
+- **Report concretely.** *What* you saw · *which* screen/page · *what you expected.* A screenshot beats a paragraph. Example: *"Quiz summary → the TO REMEMBER box shows `Correct: B`; it should show the full option text, e.g. `B) Time Travel lets you query historical data`."*
+- **ALWAYS ask for the pre-deploy checks before every redeploy.** End the request with: *"…then re-run the `$sis` pre-deploy scan and the `$quiz/screens` UX-conformance gate - re-reading the app files from disk, not from memory - and only redeploy if both are clean."* Both checks ground on a **fresh read of the files**; without this ask, CoCo can redeploy a change it only *thinks* it made (a from-memory "pass"). This one sentence is the single most useful habit for reliable iteration.
+- **After a chat reload, page refresh, or a "session stopped" message:** the chat can lose its working context, or the session can silently re-bind to a read-only connection. **First ask CoCo to re-read every app file from disk and re-run the scan + gate - explicitly "do NOT use your memory."** If it says it can't read the files or run SQL, re-open the setup in the interactive Snowsight Workspace as your `ACCOUNTADMIN` role (with the configured warehouse active) and resume - do not let it certify or redeploy from memory.
+
+---
+
 ## `AI_COMPLETE` fails with "not allowed to access this endpoint"
 
 **Cause:** Cross-region inference is disabled. `claude-sonnet-4-6` is hosted in US regions; accounts that cannot reach it in-region need explicit permission. (Accounts created after 2026-03-09 default to `ANY_REGION` and are not affected.)

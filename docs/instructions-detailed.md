@@ -409,7 +409,13 @@ Skip this step if you only plan one or two exams - the schema-per-exam + single-
 
 ---
 
-## Something broke
+## Iterating, and when something breaks
+
+**The first deploy is the start, not the end.** A good quiz app comes from a loop - **deploy → open the app and actually use it → report what's off → the agent fixes it → redeploy** - run a few times. Reporting things to improve (a misbehaving screen, a wrong label, an awkward flow, a weak question) is a **normal, core part of the work**, not a sign something failed. To make each round reliable:
+
+- **Report concretely:** *what* you saw, on *which* screen, and *what you expected* (a screenshot helps). Vague feedback forces the agent to guess.
+- **Always ask for the pre-deploy checks before each redeploy:** end your message with *"…then re-read the app files from disk (not from memory) and re-run the `$sis` scan + the `$quiz/screens` UX gate; redeploy only if both are clean."* Both checks must ground on a **fresh read of the files** - without that ask, the agent can redeploy a change it only *thinks* it made (a from-memory "pass"). This single habit is the most important one for trustworthy iteration.
+- **After a chat reload, page refresh, or a "session stopped" message:** the chat can lose its working context, or the Snowflake session can silently re-bind to a read-only connection. First tell the agent to **re-read every app file from disk and re-run the scan + gate - explicitly "do NOT use your memory"** - before it changes anything. If it reports it cannot read the files or run SQL, re-open the setup in the interactive Snowsight Workspace as your `ACCOUNTADMIN` role (configured warehouse active) and resume; never let it certify or redeploy from memory.
 
 Paste the **fix prompt** from [prompts.md](prompts.md), describe the symptom. The agent triages:
 
@@ -418,7 +424,7 @@ Paste the **fix prompt** from [prompts.md](prompts.md), describe the symptom. Th
 - Wrong content / shallow explanations > runs `$cortex`;
 - Screen flow glitches > reads `$quiz/screens`.
 
-After a fix it re-copies the changed files onto `STAGE_SIS_APP` and re-runs `CREATE OR REPLACE STREAMLIT` to redeploy.
+After a fix - and after the `$sis` scan + UX gate pass on a fresh re-read - it re-copies the changed files onto `STAGE_SIS_APP` and re-runs `CREATE OR REPLACE STREAMLIT` to redeploy.
 
 **Seeing errors while you test:** the app ships with `[client] showErrorDetails = "none"` in `app/.streamlit/config.toml` - viewers get a generic message, never a traceback (the production setting). While debugging your own setup, set it to `"full"` and redeploy (`COPY FILES` the `.streamlit/config.toml` + `CREATE OR REPLACE STREAMLIT`) to see the real traceback in the app; set it back to `"none"` before sharing.
 

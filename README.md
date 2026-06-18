@@ -66,6 +66,8 @@ Load a study guide PDF, and the agent creates the schema, extracts exam domains,
 
 Then paste the prompt from [docs/prompts.md](docs/prompts.md) into the CoCo chat.
 
+**Working with CoCo is iterative, not one-shot.** The first deploy is the start: use the app, report what's off, let the agent fix it, redeploy - a few rounds is normal and expected. The one habit that keeps it reliable: **always ask for the `$sis` pre-deploy scan + `$quiz/screens` UX gate (re-read from disk, not from memory) before every redeploy.** See [docs/instructions.md](docs/instructions.md) "Iterating" and [docs/troubleshooting.md](docs/troubleshooting.md).
+
 ### Two ways to load this asset into a workspace
 
 - **Via Git integration** (recommended): fork this repo on GitHub, register it in Snowflake (`CREATE API INTEGRATION` + `CREATE GIT REPOSITORY`), then **Projects > Workspaces > + Workspace > From Git repository**. Workspace opens with the full tree in place - skills, `AGENTS.md`, and `docs/` all accessible from the Snowsight file browser. You also get version control: edits to skills / `AGENTS.md` / the generated `app/` project can be committed back to your fork from inside Snowsight.

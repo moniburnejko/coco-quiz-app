@@ -40,8 +40,9 @@ Add anything optional on that line - advanced mode ("use the quality model profi
 ```
 @AGENTS.md
 
-Something broke: [paste the error text / describe the wrong behaviour].
-Triage with the relevant skill (/cortex, /sis, or /quiz) and propose a fix before changing anything. Never redeploy on a failing pre-deploy scan.
+Something broke: [paste the error text / describe the wrong behaviour, on which screen, and what you expected].
+Triage with the relevant skill (/cortex, /sis, or /quiz) and propose a fix before changing anything.
+Before redeploying, RE-READ the affected app files from disk (not from memory) and re-run the $sis pre-deploy scan and the $quiz/screens UX gate; only redeploy if both are clean.
 ```
 
 The parent skills route by intent: Cortex/AI errors → `/cortex`; app crash, deploy, or pre-deploy scan → `/sis`; page or generation behaviour → `/quiz`.
@@ -53,10 +54,30 @@ The parent skills route by intent: Cortex/AI errors → `/cortex`; app crash, de
 
 ---
 
+## Iterate / improve prompt - paste after using the app
+
+The first deploy is the start, not the end - using the app and feeding back what's off is a normal, core part of the work. Paste this when you've tried the app and want changes (not just crashes):
+
+```
+@AGENTS.md
+
+I tried the app. Things to improve:
+- [screen/page]: [what you saw] → [what you expected]. (attach a screenshot if you can)
+- ...
+Apply these via the relevant /quiz sub-skill or /sis. After fixing, RE-READ the app files
+from disk (not from memory) and re-run the $sis scan + the $quiz/screens UX gate; redeploy
+only if both are clean.
+```
+
+**After a chat reload / "session stopped" / page refresh,** add a first line: *"Re-read every app file from disk and re-run the scan + gate - do NOT use your memory - before changing anything."*
+
+---
+
 ## Tips
 
 - **`AGENTS.md` is always in context** (`@AGENTS.md`) - project constraints, env table, data model, skill index.
 - **Skills carry the procedure** - `/setup-exam` has its own Step 0-10 with mandatory stops (placeholder guard, stage verify, deploy preflight, domain approval, pre-deploy scan, deploy).
 - If the agent drifts, nudge it: "what did the `/sis` scan return?" or "show me the `EXAM_DOMAINS` rows".
+- **Iteration is normal** - the first deploy is the start, not the end. Expect a few rounds of *use it → report what's off → fix → redeploy*, and **always ask for the `$sis` scan + `$quiz/screens` UX gate (re-read from disk, not memory) before each redeploy**.
 
 Invoke a skill directly when you want just one piece: `/sis` (the pre-deploy scan), `/cortex` (a prompt audit), or a `/quiz` sub-skill like `/quiz/design`.
