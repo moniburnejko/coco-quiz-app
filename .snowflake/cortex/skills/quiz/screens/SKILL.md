@@ -510,14 +510,30 @@ def render_questions_manager():
 def _is_append(prev, sig):                                  # append = prev is a prefix of the new id slice
     return len(sig) >= len(prev) and sig[:len(prev)] == prev
 
+@st.cache_data(show_spinner=False)
+def load_questions_page(flt, limit):                        # the ONE .to_pandas() loader — st.data_editor needs a DataFrame
+    where, params = [], []
+    for col, key in [("domain_name", "dom"), ("difficulty", "diff"), ("source", "src")]:
+        vals = flt.get(key) or []
+        if vals:
+            where.append(f"{col} IN ({','.join(['?'] * len(vals))})"); params += vals
+    clause = ("WHERE " + " AND ".join(where)) if where else ""
+    return get_active_session().sql(
+        f"SELECT question_id, domain_name, difficulty, source, question_text, "
+        f"option_a, option_b, option_c, option_d, option_e, correct_answer "
+        f"FROM {SCHEMA}.QUIZ_QUESTIONS {clause} ORDER BY question_id DESC LIMIT {int(limit)}",
+        params=params).to_pandas()                          # UPPERCASE cols; register in clear_caches()
+
 def render_bank():
-    s = load_bank_stats()                                   # cached coverage loader; KPIs are st.metric, NOT a table
-    cols = st.columns(4)
-    cols[0].metric("Total", s["total"]);   cols[1].metric("Manual", s["manual"])
-    cols[2].metric("AI", s["ai"]);         cols[3].metric("Domains", s["domains"])
+    rows = load_bank_stats()                                # cached coverage loader → list[Row] (domain × difficulty × source, CNT)
+    cols = st.columns(4)                                    # KPIs are st.metric, NOT a table — derive them from the rows
+    cols[0].metric("Total",  sum(r["CNT"] for r in rows))
+    cols[1].metric("Manual", sum(r["CNT"] for r in rows if r["SOURCE"] == "MANUAL"))
+    cols[2].metric("AI",     sum(r["CNT"] for r in rows if r["SOURCE"] == "AI_GENERATED"))
+    cols[3].metric("Domains", len({r["DOMAIN_NAME"] for r in rows}))
 
     with st.expander("Filters", expanded=True):             # commit filters on Search, don't query live off widgets
-        f_dom  = st.multiselect("Domain", [d["DOMAIN_NAME"] for d in load_domains()], key="qm_f_dom")
+        f_dom  = st.pills("Domain", [d["DOMAIN_NAME"] for d in load_domains()], selection_mode="multi", key="qm_f_dom")
         f_diff = st.pills("Difficulty", ["easy","medium","hard"], selection_mode="multi", key="qm_f_diff")
         f_src  = st.pills("Source", ["MANUAL","AI_GENERATED"], selection_mode="multi", key="qm_f_src")
         fc = st.columns(2)

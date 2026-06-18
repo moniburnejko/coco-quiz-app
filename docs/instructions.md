@@ -105,7 +105,7 @@ The agent then copies the file onto `STAGE_QUIZ_DATA` with `COPY FILES` and veri
 
 ## Step 5 - preview and deploy the generated app
 
-After the agent finishes generation + passes the pre-deploy scan, the `app/` project sits in your workspace file tree.
+After the agent finishes generation + passes both pre-deploy checks (the `$sis` scan and the `$quiz/screens` UX-conformance gate), the `app/` project sits in your workspace file tree.
 
 **The agent deploys it for you:** your workspace files already live on an internal stage, so the agent copies them onto `STAGE_SIS_APP` with `COPY FILES` (preserving `pages/` and `.streamlit/`), then runs `CREATE OR REPLACE STREAMLIT … MAIN_FILE = 'main.py' QUERY_WAREHOUSE = …` and verifies with `SHOW STREAMLITS`. After later edits it re-copies the changed files and re-creates the app.
 

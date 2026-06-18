@@ -28,8 +28,8 @@ Trade-off: `claude-sonnet-4-6` is the best quality for question generation and e
 Ask Snowflake CoCo to change it. :) 
 
 Or:
-- For round size: Open `pages/quiz.py`, find the home-screen block, look for the `st.selectbox("Questions", options=[...])` widget. Default options are typically `[5, 10, 20, 50]`. Change to taste and redeploy (+ re-run `$sis`).
-- For question source: In `render_home` find the `question_source` selectbox. Options are `mix`, `db`, `ai`. If the user chose "No CSV/JSON" during `$setup-exam`, the default is already `ai`; otherwise `mix`. Change `index=` to change the default.
+- For round size: Open `pages/quiz.py`, find the home-screen block, look for the `st.slider("Questions", 1, 100, …)` widget. Adjust the min/max/initial value to taste (round size is chosen per round on Home, not an Admin setting) and redeploy (+ re-run the `$sis` scan and the UX-conformance gate).
+- For question source: In `render_home` the source is an `st.pills(... selection_mode="multi")` over "QUESTION BANK" / "AI GENERATED" (both selected = mix). Change its `default=` to bias which sources are pre-selected. If the user chose "No CSV/JSON" during `$setup-exam`, only AI generation is available.
 - And so on.
 
 ### 1c - AI explanation format
