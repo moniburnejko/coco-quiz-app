@@ -457,11 +457,22 @@ Two nested `st.tabs` - **Bank** and **Generate**.
 
 ## 3. Cortex spend (graceful - distinguish "no grant" from "no data")
 
-`_cortex.py` sets a session `QUERY_TAG` (JSON: app, feature, model) per call. Read `SNOWFLAKE.ACCOUNT_USAGE.CORTEX_AISQL_USAGE_HISTORY` (the **current** view — `CORTEX_FUNCTIONS_USAGE_HISTORY` is deprecated/"no longer updated" per Snowflake docs; columns `FUNCTION_NAME` / `MODEL_NAME` / `TOKENS` / `TOKEN_CREDITS`) inside try/except and branch **structurally**, not "any-exception → GRANT" (an ACCOUNTADMIN holds `IMPORTED PRIVILEGES` by default, so blaming every empty/error result on permissions shows a false GRANT banner):
+`_cortex.py` sets a `QUERY_TAG` (JSON: `app`, `feature`, `model`) per call. Read `SNOWFLAKE.ACCOUNT_USAGE.CORTEX_AISQL_USAGE_HISTORY` (the **current** view — `CORTEX_FUNCTIONS_USAGE_HISTORY` is deprecated/"no longer updated" per Snowflake docs; columns `USAGE_TIME` / `MODEL_NAME` / `FUNCTION_NAME` / `TOKENS` / `TOKEN_CREDITS` / **`QUERY_TAG`** — the view **echoes the per-call `QUERY_TAG` directly**, so feature attribution needs **no** `QUERY_HISTORY` join) inside try/except and branch **structurally**, not "any-exception → GRANT" (an ACCOUNTADMIN holds `IMPORTED PRIVILEGES` by default, so blaming every empty/error result on permissions shows a false GRANT banner):
 - **Success path** - the query returned. If the result is **empty** → a plain caption: "No Cortex spend recorded yet - ACCOUNT_USAGE lags up to ~2 h, or no AI calls have run." (This is the ACCOUNTADMIN-on-a-fresh-account case; ACCOUNTADMIN holds `IMPORTED PRIVILEGES` by default, so **never** show the GRANT banner here.) Otherwise render the charts.
 - **Exception path** - inspect the error. Only when its message signals a **privilege/visibility problem on the SNOWFLAKE share** (e.g. it contains `Insufficient privileges`, `not authorized`, or `does not exist or not authorized` - the symptom of a role lacking `IMPORTED PRIVILEGES`) → the info banner with the exact `GRANT IMPORTED PRIVILEGES ON DATABASE SNOWFLAKE TO ROLE <role>;` (substitute the live `CURRENT_ROLE()`). For any **other** exception → a generic "couldn't read Cortex spend: {error}" caption, NOT the GRANT banner.
 
-Charts: spend by feature, spend by model (now a haiku/sonnet/opus split, reflecting the App-config model choices). Caption: ACCOUNT_USAGE lags up to ~2 h. When doc grounding is on, add a "docs search" line (Cortex Search query compute is billed to the consumer; small per query).
+**Charts** - both aggregate `SUM(TOKEN_CREDITS)` over rows **scoped to THIS app**. The view holds the whole account's Cortex usage, so always filter to the app's own tag, and parse with **`TRY_PARSE_JSON` (never bare `PARSE_JSON`** - other queries leave non-JSON/empty `QUERY_TAG`s that would raise). The loader's base query:
+```sql
+SELECT model_name,
+       TRY_PARSE_JSON(query_tag):feature::VARCHAR AS feature,
+       token_credits
+FROM SNOWFLAKE.ACCOUNT_USAGE.CORTEX_AISQL_USAGE_HISTORY
+WHERE TRY_PARSE_JSON(query_tag):app::VARCHAR = 'snowpro_quiz'   -- the value _cortex.py writes
+```
+- **Spend by model** - `GROUP BY MODEL_NAME` (the haiku/sonnet/opus split, reflecting the App-config model choices).
+- **Spend by feature** - `GROUP BY` the parsed `feature` (question / explanation / hint / deep_dive / debrief / batch). `FUNCTION_NAME` can't do this (it is `AI_COMPLETE`/`COMPLETE` for every call) - the `QUERY_TAG` `feature` is the grouping key.
+
+Caption: ACCOUNT_USAGE has reporting latency (up to ~2 h; this view only covers usage from 2025-11-17 on). When doc grounding is on, add a "docs search" line (Cortex Search query compute is billed to the consumer; small per query).
 
 ## 4. Logs (was "Tools")
 
@@ -653,7 +664,8 @@ def render_generate():
 # 3. CORTEX SPEND — branch STRUCTURALLY: success-but-empty ≠ permission error. (app-v4 blamed every miss on a grant.)
 def render_spend():
     try:
-        rows = load_cortex_spend()      # cached SELECT over SNOWFLAKE.ACCOUNT_USAGE.CORTEX_AISQL_USAGE_HISTORY → list[Row]
+        rows = load_cortex_spend()      # cached → list[Row]; SELECT over CORTEX_AISQL_USAGE_HISTORY scoped to this app
+                                        # via WHERE TRY_PARSE_JSON(query_tag):app::VARCHAR = 'snowpro_quiz' (see §3 query)
     except Exception as e:
         msg = str(e).lower()
         if any(sig in msg for sig in ("insufficient privileges", "not authorized", "does not exist")):
@@ -665,8 +677,9 @@ def render_spend():
         return
     if not rows:                        # ACCOUNTADMIN holds IMPORTED PRIVILEGES by default → empty ≠ no-grant
         st.caption("No Cortex spend recorded yet — ACCOUNT_USAGE lags up to ~2 h, or no AI calls have run."); return
-    # ...build a DataFrame inline from `rows` for the two Altair charts (spend by feature, spend by model:
-    #    haiku/sonnet/opus) per $quiz/design — same list[Row]→chart pattern as the Learning Dashboard...
+    # ...build a DataFrame inline from `rows` for the two Altair charts, SUM(token_credits):
+    #    by MODEL_NAME (haiku/sonnet/opus) and by the parsed QUERY_TAG :feature — per $quiz/design,
+    #    same list[Row]→chart pattern as the Learning Dashboard...
     st.caption("ACCOUNT_USAGE lags up to ~2 h.")
 
 
