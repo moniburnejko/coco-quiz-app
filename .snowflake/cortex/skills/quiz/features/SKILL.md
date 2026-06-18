@@ -70,7 +70,7 @@ pages/exam_simulation.py (own page):
 
 ## Session state keys
 
-`_quiz_mode` (str: "PRACTICE"/"EXAM SIMULATION"), `_sim_start_time` (datetime), `_sim_end_time` (datetime — `start + limit`; the single source of truth for the timer), `_sim_time_limit` (int, seconds), `_sim_questions` (int), `_sim_screen` (str: "config"/"quiz"/"results"). Initialized in the feature page — NOT in the core `init_session_state` 28-key contract.
+`_quiz_mode` (str: "PRACTICE"/"EXAM SIMULATION"), `_sim_start_time` (datetime), `_sim_end_time` (datetime — `start + limit`; the single source of truth for the timer), `_sim_time_limit` (int, seconds), `_sim_questions` (int), `_sim_screen` (str: "config"/"quiz"/"results"). Initialized in the feature page — NOT in the core `init_session_state` contract (`$quiz/screens`).
 
 ## Implementation notes
 

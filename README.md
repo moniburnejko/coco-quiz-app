@@ -16,13 +16,13 @@ Load a study guide PDF, and the agent creates the schema, extracts exam domains,
   - **Quiz** - configure round, answer single-/multi-select questions, see score + pass/fail (75% threshold) with wrong-answer cards.
   - **Review** - filterable history of every mistake + learning dashboard (score trend, per-domain error distribution, session history).
   - **Admin** - app configuration (toggles/sliders), question manager with one-click AI batch generation, bank stats, Cortex spend dashboard, maintenance tools.
-- **A learning loop, not just a quiz**: Socratic hints before answering (never spoil), AI explanations + concept contrast ("how does A differ from C?") after, an AI debrief of round patterns, and a remedial round when you fail (your wrong answers, reshuffled).
+- **A learning loop, not just a quiz**: Socratic hints before answering (never spoil), an on-demand AI explanation after (for correct answers too) with a 🔬 deep dive on one option, an AI debrief of round patterns, and a remedial round when you fail (your wrong answers, reshuffled). Comparing two options side-by-side is the optional Comparison add-on.
 - **AI-grounded content**: domains and key facts come from the official study guide PDF (`AI_PARSE_DOCUMENT`); questions are AI-generated at runtime (`AI_COMPLETE`), with an optional question bank you can seed from CSV/JSON, the Admin panel, or a scheduled recipe (resilience + speed when AI calls are unavailable).
-- **Real documentation grounding** (optional, default-on when available): if you install the free **Snowflake Documentation** Cortex Knowledge Extension from Marketplace, questions and explanations are grounded in actual Snowflake docs and cite the **exact `SOURCE_URL`** (with a readable excerpt) — no more guessed search links. Falls back cleanly when absent.
-- **Persistent progress** across sessions via `QUIZ_SESSION_LOG` + `QUIZ_REVIEW_LOG` - the app remembers your weak domains between logins.
+- **Real documentation grounding** (required for Snowflake exams): questions and explanations are generated ONLY from real Snowflake docs — the free **Snowflake Documentation** Cortex Knowledge Extension (install from Marketplace), citing the **exact `SOURCE_URL`** with a readable excerpt, never the model's built-in knowledge. The grounding mode is fixed once at setup (`cke` by default); `$setup-exam` treats the CKE as a hard gate and stops until it's reachable. Only a non-Snowflake exam can opt into the ungrounded `none` mode.
+- **Persistent progress** across sessions via five tables (`EXAM_DOMAINS`, `QUIZ_QUESTIONS`, `QUIZ_REVIEW_LOG`, `QUIZ_SESSION_LOG`, `QUIZ_CONFIG`) - the app remembers your weak domains between logins.
 - **Schema-per-exam isolation** (`QUIZ_<EXAM_CODE>`) so multiple certifications coexist in one database.
 - **Custom CoCo skills** in `.snowflake/cortex/skills/` drive the whole pipeline end to end.
-- **Optional add-ons**: spaced repetition, flashcards, exam-simulation mode, achievement badges, AI study recommendations (`$quiz/features`).
+- **Optional add-ons** (exactly four, off by default): exam-simulation mode, flashcards (atomic recall cards + Leitner spaced repetition), AI study recommendations, and concept comparison (`$quiz/features`). Five further ideas (Quick Stats, Smart Review, Achievement Badges, Misconception Analysis, Flag a Question) are designed-but-deferred in [docs/future-features.md](docs/future-features.md).
 - **Advanced mode (opt-in)**: quality model profile (`claude-opus-4-7`), agent self-verify via Cloud Agents, scheduled maintenance via Automations (**Preview**) — all off by default ([docs/customization.md](docs/customization.md) section 5).
 
 ## What is different from the CLI version
@@ -30,13 +30,13 @@ Load a study guide PDF, and the agent creates the schema, extracts exam domains,
 | | CLI variant | Snowsight variant (this branch) |
 |---|---|---|
 | environment | terminal + `snow` CLI + bash | browser workspace, zero local tooling |
-| input file uploads | `snow stage copy` | manual upload via Snowsight UI |
+| input file uploads | `snow stage copy` | user drops PDF/CSV into the workspace; agent stages them with `COPY FILES` onto `STAGE_QUIZ_DATA` (no manual upload) |
 | app deploy | `snow streamlit deploy` | agent copies `app/` to a stage with `COPY FILES` + runs `CREATE STREAMLIT` (warehouse); Workspaces **Run + Deploy** for the container opt-in |
 | isolation | Git branch per exam + schema (agent-automated) | schema per exam always; optional branch per exam if workspace is Git-backed (user creates the branch manually) |
 | custom skills path | `.cortex/skills/` | `.snowflake/cortex/skills/` |
 | global skills | `~/.snowflake/cortex/skills/` | built into CoCo |
 | app code | tracked in repo | generated `app/` project (multi-file), not committed |
-| input data (`data/`) | tracked in repo | user uploads PDF/CSV directly to stage |
+| input data (`data/`) | tracked in repo | user drops PDF/CSV into the workspace file tree; agent copies them to the stage via `COPY FILES` |
 
 ---
 

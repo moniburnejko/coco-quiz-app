@@ -73,21 +73,21 @@ If `SYSTEM_COMPUTE_POOL_CPU` is present, point the app at it. If it's absent or 
 
 ---
 
-## Upload UI rejects a file with "too large"
+## Study-guide PDF won't stage / is too large
 
-**Cause:** Single-file upload via Snowsight UI is capped at **250 MB**.
+**Cause:** The PDF is added to the **workspace file tree** and CoCo stages it onto `STAGE_QUIZ_DATA` via `COPY FILES` (no manual stage upload). An oversized scanned PDF can be slow to stage or parse, or hit workspace file limits.
 
 **Fix options:**
-- Compress the PDF (most study guides are under 10 MB; if yours is 300 MB it is scanned images - run it through a PDF optimiser first).
-- If you must upload >250 MB, use `snow stage copy` or `snowsql PUT` from a machine with the Snowflake CLI and keep the chat in Snowsight. The agent will verify via `LIST @stage` after your upload - it does not care how the file arrived.
+- Compress the PDF first (most study guides are under 10 MB; a 300 MB file is almost always scanned images — run it through a PDF optimiser).
+- After CoCo stages it, it verifies with `LIST @STAGE_QUIZ_DATA` — confirm the file appears there before extraction proceeds.
 
 ---
 
-## Agent proceeds past a checkpoint without waiting for my "uploaded"
+## Agent proceeds past the PDF checkpoint without confirming the file
 
-**Cause:** Snowflake CoCo sometimes optimistically assumes upload completion when the chat is active.
+**Cause:** Snowflake CoCo sometimes optimistically assumes the PDF is in place when the chat is active.
 
-**Fix:** Cut it off with "stop - did you verify `LIST @STAGE_QUIZ_DATA`?" The agent backs up, runs `LIST`, and reports actual contents. If the file is missing it asks you to retry.
+**Fix:** Cut it off with "stop - did you `COPY FILES` the PDF and verify `LIST @STAGE_QUIZ_DATA`?" The agent backs up, stages the file, runs `LIST`, and reports actual contents. If the file isn't in the workspace it asks you to add it.
 
 ---
 
@@ -172,7 +172,7 @@ run $quiz/screens and $sis on the current app files. focus on the finish-round h
 
 ## Questions/explanations aren't grounded in docs (no real citations)
 
-**Cause:** Doc grounding is off or the Snowflake Documentation CKE isn't reachable. Grounding is default-on only when the service is available, and is forced off for non-Snowflake exams.
+**Cause:** The exam's `grounding_mode` is `cke`/`custom` but the Snowflake Documentation CKE (or your custom Cortex Search service) isn't reachable — uninstalled, no grant, or unreachable from your region. In `cke`/`custom` mode grounding is **mandatory**: the app will not generate from built-in knowledge, so when the service is down the Home screen disables **Start Round** and shows an install/grant message rather than producing ungrounded content. (`none` mode — non-Snowflake exams, chosen at setup — is the only ungrounded path.)
 
 **Fix:**
 1. Confirm the free **Snowflake Documentation** listing is installed (Snowsight » Data Products » Marketplace) and your role can query it:
@@ -182,10 +182,10 @@ run $quiz/screens and $sis on the current app files. focus on the finish-round h
      '{"query": "time travel", "columns": ["DOCUMENT_TITLE"], "limit": 1}');
    ```
    Empty/error → install the listing or get access granted. If the imported database has a different name, set `DOCS_SEARCH_SERVICE` in `_config.py`.
-2. On the **Admin** page, set **docs grounding** to `on` (or `auto`).
-3. Cross-region: if your account's region can't reach the shared service, the probe fails and the app falls back silently — no error, just no grounding.
+2. Confirm the exam's `grounding_mode` (shown **read-only** on the Admin → App config tab). It is fixed at setup — `cke` / `custom` / `none` — with **no runtime toggle**; to change it, re-run `$setup-exam` Step 1g.
+3. Cross-region: if your account's region can't reach the shared service, the runtime probe fails — and because `cke`/`custom` grounding is mandatory, the app does **not** silently continue ungrounded. It surfaces the unreachable-service message and blocks generation until access is restored (enable cross-region inference, or use a service your region can reach).
 
-This never blocks the app: without grounding it uses `key_facts` + the generic `doc_search` link, exactly as before.
+In `cke`/`custom` mode, unavailable grounding **does** block generation — the app refuses to produce ungrounded content (no built-in-knowledge fallback). The `key_facts` + generic `doc_search` search-link path applies only in `none` mode, where generation is intentionally ungrounded.
 
 ---
 

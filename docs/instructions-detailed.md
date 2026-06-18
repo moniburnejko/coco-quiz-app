@@ -9,15 +9,15 @@ A full walk-through for someone who has never used Snowflake CoCo in Snowsight. 
 You give CoCo a Snowflake certification **study guide PDF**. The agent:
 
 1. Creates a dedicated schema `QUIZ_<EXAM_CODE>` inside your database.
-2. Creates 2 stages (one for input data, one for the Streamlit app) and 4 tables (`EXAM_DOMAINS`, `QUIZ_QUESTIONS`, `QUIZ_REVIEW_LOG`, `QUIZ_SESSION_LOG`).
+2. Creates 2 stages (one for input data, one for the Streamlit app), a file format, and 5 tables (`EXAM_DOMAINS`, `QUIZ_QUESTIONS`, `QUIZ_REVIEW_LOG`, `QUIZ_SESSION_LOG`, `QUIZ_CONFIG`) — plus a transient `_DOC_CONTENT` that holds the parsed PDF during setup and is dropped afterward.
 3. Extracts domain list, weights, topics, and testable facts from the PDF using `AI_PARSE_DOCUMENT` + `AI_COMPLETE`.
 4. Loads a question bank if you provide one (CSV/JSON); otherwise the bank stays empty and questions are AI-generated at runtime (you can seed the bank later from the Admin page, a worksheet recipe, or a scheduled task).
-5. Generates the multipage `app/` Streamlit project in the workspace (`main.py`, `_*.py` modules, `pages/`, configs — container runtime).
+5. Generates the multipage `app/` Streamlit project in the workspace (`main.py`, `_*.py` modules, `pages/`, configs — warehouse runtime by default, with `environment.yml` from the Snowflake Anaconda channel; the container runtime is an opt-in).
 6. Runs a mandatory pre-deploy scan to catch Streamlit-in-Snowflake footguns.
 7. Deploys the app — by default the agent copies `app/` from the workspace stage onto `STAGE_SIS_APP` and runs `CREATE STREAMLIT` on the warehouse runtime (no manual upload); the container runtime instead deploys via the Workspaces **Run + Deploy** flow.
 
 You never leave the browser. You never run `bash`, `git`, `snow`, or `PUT`. You only:
-- Click around Snowsight UI to upload input files to a stage;
+- Drop the study-guide PDF (and any CSV) into the workspace file tree — the agent stages it via `COPY FILES` (no manual stage upload);
 - Read what the agent proposes and say "go" or "no, do X differently";
 - Click **Run** to preview and **Deploy** to publish the app at the end.
 
@@ -51,9 +51,9 @@ The **default `warehouse` runtime needs nothing extra** — no compute pool, no 
 
 `$setup-exam` Step 1f checks these **only if you opted into the container runtime**. Can't create the EAI (trial)? The default warehouse runtime needs neither.
 
-### Optional — doc grounding (recommended)
+### Doc grounding (required for Snowflake exams)
 
-Get the free **Snowflake Documentation** listing (Snowsight » Data Products » Marketplace; `IMPORT SHARE`/ACCOUNTADMIN). It gives the app a Cortex Search service over real Snowflake docs, so questions/explanations are grounded and cite exact pages. `$setup-exam` Step 1g detects it; if it's absent the app falls back cleanly (no grounding, no error). Toggle later on the Admin page (`docs grounding`).
+Get the free **Snowflake Documentation** listing (Snowsight » Data Products » Marketplace; `IMPORT SHARE`/ACCOUNTADMIN). It gives the app a Cortex Search service over real Snowflake docs. `$setup-exam` Step 1g probes it and sets `grounding_mode = cke` for a Snowflake exam. For a Snowflake exam this is a **hard gate**: if the CKE listing is absent, setup stops and asks you to install it — the app never generates from built-in knowledge. The mode is fixed once at setup (stored in `QUIZ_CONFIG`); the Admin page shows it read-only — there is no runtime toggle. (`none`, an explicitly ungrounded mode, is only for non-Snowflake exams.)
 
 ### Role-level
 
@@ -76,7 +76,7 @@ Typical source:
 - SnowPro Core: [SnowProCoreStudyGuide.pdf](https://learn.snowflake.com/) (the baseline of this repo is COF-C03).
 - SnowPro Advanced / Specialty tracks: each has its own study guide.
 
-Save it locally with a clean filename. You will upload it to a Snowflake stage via UI in step 4.
+Save it locally with a clean filename. You will drop it into the workspace file tree in step 4; the agent stages it for you.
 
 ### Question bank CSV/JSON (optional)
 
@@ -108,7 +108,7 @@ Benefits:
 
 #### 1a - fork the repo
 
-Fork `coco-cli-quiz-app` on GitHub. The fork is your own copy. Upstream pulls are optional later.
+Fork `coco-quiz-app` on GitHub. The fork is your own copy. Upstream pulls are optional later.
 
 #### 1b - create the Snowflake-side integration objects
 
@@ -116,7 +116,7 @@ As a role with `CREATE INTEGRATION` — run these in a Snowflake worksheet:
 
 ```sql
 -- 1. API INTEGRATION: authorises Snowflake to reach GitHub's API.
-CREATE OR REPLACE API INTEGRATION gih_integration
+CREATE OR REPLACE API INTEGRATION gh_integration
   API_PROVIDER = GIT_HTTPS_API
   API_ALLOWED_PREFIXES = ('https://github.com/<your_github_user>')
   ENABLED = TRUE;
@@ -203,8 +203,7 @@ Drag-drop `AGENTS.md` from your local clone into the workspace root (or use **+*
 ### 1d - what you do NOT load, either way
 
 - The `app/` project (`main.py`, `_*.py` modules, `pages/`, configs) - the agent generates it into the workspace on each `$setup-exam` run.
-- Your study guide PDF - uploaded to a **Snowflake stage** in step 4, not the workspace.
-- Your optional CSV/JSON - same as the PDF.
+- Your study guide PDF and optional CSV/JSON - you add these to the **workspace file tree** later, when the agent asks (step 4); it stages them for you via `COPY FILES`. Not now.
 
 Note on Git integration: the generated `app/` files land in the workspace file tree and can optionally be committed to your fork - an explicit choice, not automatic.
 
@@ -246,36 +245,32 @@ The agent will:
 
 1. Ask you for the exam name and exam code (e.g. "SnowPro Core" / "COF-C03").
 2. Ask for the PDF filename (required) and optionally the CSV filename.
-3. Ask about additional customisations (optional features from `$quiz/features` - exam simulation mode, flashcards, AI study recommendations, misconception analysis, question flagging, etc.).
+3. Ask about additional customisations (the four optional features from `$quiz/features` - exam simulation mode, flashcards, AI study recommendation, comparison). Five further ideas (Quick Stats, Smart Review, Achievement Badges, Misconception Analysis, Flag a Question) are deferred to `docs/future-features.md`, not available out of the box.
 4. Ask whether you want the **default look or a custom one** - custom means a short style dialog (light/dark, accent color, roundness, fonts), applied via Streamlit theming only.
 5. Create the schema, stages, tables, file format (SQL visible in the chat - approve or reject each step).
-6. Stop and ask you to upload the PDF.
+6. Stop and ask you to add the PDF to the workspace (it stages it via `COPY FILES`).
 
 Do **not** try to pre-empt the agent by creating objects manually. Let it drive.
 
 ---
 
-## Step 4 - upload the study guide PDF (and optional CSV/JSON)
+## Step 4 - add the study guide PDF (and optional CSV/JSON) to the workspace
 
-When the agent says something like *"please upload SnowProCoreStudyGuide.pdf to STAGE_QUIZ_DATA"*:
+When the agent says something like *"drop SnowProCoreStudyGuide.pdf into the workspace"*:
 
-1. Open a new browser tab to Snowsight (keep the CoCo tab open - you'll come back).
-2. Navigate: **Data > Databases > `<your_db>` > `QUIZ_<CODE>` > Stages > STAGE_QUIZ_DATA**.
-3. Top-right: click **+ Files**.
-4. Drag-drop the PDF (or browse). Single files up to **250 MB**.
-5. Click **Upload**. Wait for the progress bar to complete.
-6. (If you also have a CSV/JSON) click **+ Files** again, repeat.
+1. In the workspace file tree (the same place the `app/` project lives), add the PDF — drag-drop it, or use the file-browser **+** / upload control.
+2. (If you also have a CSV/JSON question bank) add it alongside.
+3. Return to the CoCo chat and reply: **"added"** (or just "done").
 
-Alternative UI path: **Ingestion > Add Data > Load files into a Stage > STAGE_QUIZ_DATA**. Same outcome.
-
-Return to the CoCo tab and reply: **"uploaded"** (or just "done"). The agent will run:
+You never open the Stages UI or upload to a stage by hand. The agent stages the file for you:
 
 ```sql
+COPY FILES INTO @...STAGE_QUIZ_DATA FROM @<workspace_stage>/...;
 ALTER STAGE ... STAGE_QUIZ_DATA REFRESH;
 LIST @...STAGE_QUIZ_DATA;
 ```
 
-and confirm the file(s) are visible.
+and confirms the file(s) are visible before extraction.
 
 ### Stage encryption - why it matters
 
@@ -339,8 +334,8 @@ Other sections (table schemas, platform constraints, Cortex LLM patterns, app st
 The agent reads the updated `AGENTS.md` plus all `$quiz/*` skills (screens, questions, style, optionally features) and writes the decomposed multipage project into the workspace:
 
 - `app/main.py` - entry point: `st.set_page_config`, session-state init, `st.navigation`;
-- `app/_config.py`, `app/_cortex.py`, `app/_data.py`, `app/_questions.py`, `app/_ui.py` - constants, Cortex calls, cached loaders, question engine, shared UI helpers;
-- `app/pages/quiz.py` + `app/pages/review.py` - the two pages (plus one page per requested optional feature);
+- `app/_config.py`, `app/_cortex.py`, `app/_data.py`, `app/_questions.py`, `app/_ui.py`, `app/_search.py` - constants, Cortex calls, cached loaders, question engine, shared UI helpers, docs-CKE retrieval;
+- `app/pages/quiz.py` + `app/pages/review.py` + `app/pages/admin.py` - the core pages (plus one page per requested optional feature, e.g. `exam_simulation.py` / `recommendations.py`);
 - `app/.streamlit/config.toml` + `app/environment.yml` + `app/snowflake.yml` - app config, warehouse-runtime dependencies (Snowflake Anaconda channel), deploy descriptor. *(Container opt-in uses `pyproject.toml` instead.)*
 
 Everything appears in the workspace file tree under `app/`.
@@ -396,12 +391,12 @@ The SQL equivalent adds `RUNTIME_NAME = 'SYSTEM$ST_CONTAINER_RUNTIME_PY3_11'`, `
 
 Snowsight > **Projects > Streamlit > SNOWPRO_QUIZ**.
 
-- On **Home**: pick 5 questions, medium difficulty, any domain, "AI Generated" source, explanations ON. Click **Start Round**.
-- On **Quiz**: wait a couple seconds for the first AI-generated question to load. Try the **💡 Podpowiedź** button *before* answering (two levels, never spoils). Answer, submit, check the explanation — and try **⚖️ Porównaj** on two options.
-- Click through all 5, then **Finish**.
-- **Summary**: score, pass/fail vs threshold, wrong-answer cards, the AI debrief. If you failed, you'll also see **Runda poprawkowa** — your wrong answers back, reshuffled (it doesn't write to stats).
-- **Review** page: filter by domain; click **Learning Dashboard** - you should see your first session plotted (remedial rounds excluded by design).
-- **Admin** page: check bank stats, flip a toggle (e.g. hints off/on), optionally **Generate batch (AI)** to start seeding the bank.
+- On **Home**: pick 5 questions, medium difficulty, any domain, "AI Generated" source (there is no explanations toggle — the explanation is on-demand). Click **Start Round**.
+- On **Quiz**: wait a couple seconds for the first AI-generated question to load. Try the **💡 Hint** button *before* answering (two levels, never spoils). Answer, submit, then click **💡 AI explanation** to load it on demand (works for correct answers too). Inside the expander, try **🔬 Deep dive** on one option; if you enabled the Comparison feature, **⚖️ Compare two** contrasts two options.
+- Click through all 5, then **Finish Round**.
+- **Summary**: score, pass/fail vs threshold, a collapsed **WRONG ANSWERS** expander, and an on-demand **Round Brief**. If you failed and remedial rounds are enabled, you'll also see **Remedial Round** — your wrong answers back, reshuffled (it doesn't write to stats).
+- **Review** page (tabs: Wrong Answers · Learning Dashboard, plus Flashcards if enabled): filter Wrong Answers by domain and date; open **Learning Dashboard** - you should see your first session plotted (remedial rounds excluded by design).
+- **Admin** page (5 tabs: App config · Question manager · Bank stats · Cortex spend · Tools): check Bank stats, flip an App-config toggle (e.g. hints off/on), and in Question manager optionally **Generate batch (AI)** to start seeding the bank.
 
 Confirm:
 

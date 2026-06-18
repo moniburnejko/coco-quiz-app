@@ -18,7 +18,7 @@ flowchart TB
         direction TB
         SCHEMA["&lt;database&gt;.QUIZ_&lt;EXAM_CODE&gt;"]
         STAGES["Stages<br/>STAGE_QUIZ_DATA - PDF + optional CSV<br/>STAGE_SIS_APP - app files"]
-        TABLES["Tables<br/>EXAM_DOMAINS, QUIZ_QUESTIONS,<br/>QUIZ_REVIEW_LOG, QUIZ_SESSION_LOG"]
+        TABLES["Tables<br/>EXAM_DOMAINS, QUIZ_QUESTIONS, QUIZ_REVIEW_LOG,<br/>QUIZ_SESSION_LOG, QUIZ_CONFIG (+ transient _DOC_CONTENT)"]
         APP["Streamlit app: SNOWPRO_QUIZ"]
         AI["Cortex AI<br/>claude-sonnet-4-6"]
         SCHEMA --> STAGES
@@ -30,15 +30,15 @@ flowchart TB
     Browser -->|"SQL · AI_COMPLETE · AI_PARSE_DOCUMENT · CREATE STREAMLIT"| Snowflake
 ```
 
-Nothing runs locally. The PDF lives in a Snowflake stage. CoCo lives in the Snowsight browser tab. The Streamlit app runs server-side in Snowflake (container runtime). The workspace is the bridge - it holds `AGENTS.md` (project context), the skills (orchestration logic), and the generated `app/` project (app code). The agent never touches the user's local filesystem because there isn't one involved.
+Nothing runs locally. The PDF lives in a Snowflake stage. CoCo lives in the Snowsight browser tab. The Streamlit app runs server-side in Snowflake (default warehouse runtime — `environment.yml`, Snowflake Anaconda channel, no compute pool/EAI, trial-safe; container is an opt-in). The workspace is the bridge - it holds `AGENTS.md` (project context), the skills (orchestration logic), and the generated `app/` project (app code). The agent never touches the user's local filesystem because there isn't one involved.
 
 ---
 
 ## Setup data flow
 
-The setup pipeline runs once per exam, orchestrated by `$setup-exam`. It has three hand-off points where the user acts: once to upload the study guide PDF (and optionally a CSV/JSON question bank) to a stage, once to approve the extracted domain list, and once to upload the generated Streamlit files to a second stage. Everything between those hand-offs is SQL the agent runs.
+The setup pipeline runs once per exam, orchestrated by `$setup-exam`. It has **one** data hand-off where the user acts — dropping the study-guide PDF (and optionally a CSV/JSON question bank) into the workspace file tree — plus the domain-approval checkpoint. The agent stages and deploys everything else via `COPY FILES`; there is no manual stage upload.
 
-The pipeline starts after the user drops the PDF into `STAGE_QUIZ_DATA` via Snowsight's UI. The agent confirms the upload with `LIST @...`, then calls `AI_PARSE_DOCUMENT` in `LAYOUT` mode to convert the PDF into Markdown. That Markdown stays in the agent's working memory - it gets reused twice without a re-parse: first by `AI_COMPLETE` to extract domain names, weights (summing to 100), and topic taxonomies into `EXAM_DOMAINS`, then once per domain (in a second pass) to extract free-form `key_facts` that will later ground question generation and AI explanations.
+The pipeline starts after the user drops the PDF into the workspace. The agent copies it onto `STAGE_QUIZ_DATA` with `COPY FILES`, confirms with `LIST @...`, then calls `AI_PARSE_DOCUMENT` in `LAYOUT` mode to convert the PDF into Markdown. That Markdown stays in the agent's working memory - it gets reused twice without a re-parse: first by `AI_COMPLETE` to extract domain names, weights (summing to 100), and topic taxonomies into `EXAM_DOMAINS`, then once per domain (in a second pass) to extract free-form `key_facts` that will later ground question generation and AI explanations.
 
 At this point the user gets a checkpoint: approve the domain list, re-extract with a tweaked prompt, or abort. No write to `QUIZ_QUESTIONS` runs until approval.
 
@@ -66,17 +66,17 @@ On the **default `warehouse` runtime** the agent deploys without any manual uplo
 
 ## Runtime data flow
 
-Once the app is deployed, the agent is out of the loop. The user interacts with the deployed app running as Streamlit-in-Snowflake. The app talks directly to the four tables and (when needed) to `AI_COMPLETE`.
+Once the app is deployed, the agent is out of the loop. The user interacts with the deployed app running as Streamlit-in-Snowflake. The app talks directly to the five tables and (when needed) to `AI_COMPLETE` — every runtime generation grounded on the docs CKE.
 
-The user lands on the **Home** screen. Cached calls (`load_domains`, `load_session_stats`, `load_recent_sessions`, `load_domain_errors`) populate the sidebar with domain filters and recent progress. Caching matters here because Streamlit-in-Snowflake re-runs the entire render function tree on every widget interaction - without `@st.cache_data`, the Home screen would re-query four tables on every keystroke. TTLs are unbounded (cache per SiS session).
+The user lands on the **Home** screen. Cached calls (`load_domains`, `load_session_stats`, `load_recent_sessions`, `load_domain_errors`) populate the sidebar with domain filters and recent progress. Caching matters here because Streamlit-in-Snowflake re-runs the entire render function tree on every widget interaction - without `@st.cache_data`, the Home screen would re-query several tables on every keystroke. TTLs are unbounded (cache per SiS session).
 
-The user configures a round: size (5-50), domain filter (all or one), difficulty (any/easy/medium/hard), question source (`db` / `ai` / `mix`), and whether AI explanations should be generated on submit. Clicking **Start Round** initialises `round_history` in session state and calls `get_question()`, which decides where to fetch the next question based on `source`: from `QUIZ_QUESTIONS` (excluding already-shown texts via `_get_shown_texts()` on the round history), or via a live `AI_COMPLETE` grounded on `key_facts`, or a mix.
+The user configures a round: size (5-50), domain filter (all or one), difficulty (any/easy/medium/hard), and question source (`db` / `ai` / `mix`). (There is no explanations toggle — the AI explanation is on-demand per question.) Clicking **Start Round** initialises `round_history` in session state and calls `get_question()`, which decides where to fetch the next question based on `source`: from `QUIZ_QUESTIONS` (excluding already-shown texts via `_get_shown_texts()` on the round history, selected with `ORDER BY RANDOM()`), or via a live `AI_COMPLETE` grounded on the docs CKE, or a mix. Every runtime-generated AI question is also persisted back to `QUIZ_QUESTIONS` (`source='AI_GENERATED'`), so the bank fills as the user practices.
 
-On the **Quiz** screen, the user selects options and submits. Each answer is recorded in `round_history` (with a snapshot of question text, chosen answer, correct answer, and domain). If the answer is wrong and explanations are enabled, a second `AI_COMPLETE` call generates `why_correct`, `why_wrong`, a mnemonic, and a documentation link - rendered in an expander below the feedback. When **doc grounding** is active (the Snowflake Documentation CKE is installed), the explanation first retrieves real doc chunks via `_search.py`, grounds the reasoning on them, and cites the chunk's exact `SOURCE_URL` (plus a short excerpt) instead of a generic search link; otherwise it falls back to the `doc_search` heuristic. These are on-demand on purpose: explanations cost ~3 seconds of model latency each, so we generate them only for wrong answers and only once the user expands the disclosure.
+On the **Quiz** screen, the user selects options and submits. Each answer is recorded in `round_history` (with a snapshot of question text, chosen answer, correct answer, and domain). After submitting — for correct answers too — the user can click **💡 AI explanation** to generate `why_correct`, `why_wrong`, a mnemonic, and a documentation link on demand, rendered in an expander; the same expander offers a 🔬 Deep dive on one option (and a ⚖️ Compare-two control when the Comparison feature is enabled). In `cke`/`custom` mode the explanation first retrieves real doc chunks via `_search.py`, grounds the reasoning on them, and cites the chunk's exact `SOURCE_URL` (plus a short excerpt), never built-in knowledge; the generic `doc_search` search-link heuristic applies only in the ungrounded `none` mode. Explanations are on-demand on purpose: each costs ~1-3 seconds of model latency, so they generate only when the user asks.
 
 When the round ends (last question submitted or user clicks **Finish**), the app transitions to the **Summary** screen and writes to two tables in a single batch: one `INSERT` into `QUIZ_SESSION_LOG` with the round aggregate (score_pct, correct_count, filters used), and one `INSERT` per wrong answer into `QUIZ_REVIEW_LOG`. The write happens once, atomically at round end - not per-question. This keeps the session log tidy and avoids a partial-round artefact if the user bails mid-round (intentionally - bailing is "discard this round").
 
-The **Review** page (separate sidebar pill) has two tabs: **Wrong Answers** shows filtered `QUIZ_REVIEW_LOG` history with domain and date filters, and **Learning Dashboard** shows session trends (score-per-session line chart from `QUIZ_SESSION_LOG`, error distribution from `QUIZ_REVIEW_LOG` grouped by domain, readiness score against the 75% threshold). Optional features like flashcards, exam simulation, or achievement badges live as additional tabs or sidebar widgets - they read the same four tables, they don't add new ones.
+The **Review** page (separate sidebar pill) has tabs: **Wrong Answers** (filtered `QUIZ_REVIEW_LOG` history with domain and date-range filters), **Learning Dashboard** (session trends — score-per-session line chart from `QUIZ_SESSION_LOG`, error distribution from `QUIZ_REVIEW_LOG` grouped by domain, readiness score against the 75% threshold), and **Flashcards** when that feature is enabled. The four optional features are Exam Simulation, Flashcards, AI Study Recommendation, and Comparison; most read the existing tables, though Flashcards adds `FLASHCARD_PROGRESS` and Exam Simulation adds a `session_type` column to `QUIZ_SESSION_LOG`.
 
 ### Invariants (things that must stay true)
 
@@ -118,10 +118,8 @@ erDiagram
         varchar difficulty
         varchar question_text "snapshot"
         varchar correct_answer "snapshot"
-        varchar selected_answer "snapshot"
-        varchar mnemonic "if explanations on"
-        varchar doc_url "if explanations on"
-        varchar misconception "feature 7, write-once"
+        varchar mnemonic "if explanation generated"
+        varchar doc_url "if explanation generated"
     }
     QUIZ_SESSION_LOG {
         int session_id PK
@@ -138,9 +136,9 @@ erDiagram
     EXAM_DOMAINS ||--o{ QUIZ_REVIEW_LOG : "snapshot ref"
 ```
 
-(A fifth table, `QUIZ_CONFIG`, holds runtime app configuration for the Admin page — key-value, outside the ER above; the optional flag-a-question feature adds `QUIZ_FLAGS`.)
+(A fifth table, `QUIZ_CONFIG`, holds runtime app configuration for the Admin page — key-value, outside the ER above; it also stores `grounding_mode`, fixed at setup. A transient `_DOC_CONTENT` holds the parsed PDF during setup and is dropped afterward. Enabled optional features add their own schema: Flashcards → `FLASHCARD_PROGRESS`; Exam Simulation → a `session_type` column on `QUIZ_SESSION_LOG`.)
 
-**Why four learning tables, not three.** `QUIZ_REVIEW_LOG` stores per-wrong-question data for the Review tab and per-domain error analysis. `QUIZ_SESSION_LOG` stores per-round aggregates needed for progress metrics. The tables must be separate because a round with zero wrong answers produces zero review rows but still needs a session row - merging the two would lose session data for perfect rounds, which is exactly the signal "am I ready for the exam?" depends on.
+**Why `QUIZ_REVIEW_LOG` and `QUIZ_SESSION_LOG` are separate tables.** `QUIZ_REVIEW_LOG` stores per-wrong-question data for the Review tab and per-domain error analysis. `QUIZ_SESSION_LOG` stores per-round aggregates needed for progress metrics. The tables must be separate because a round with zero wrong answers produces zero review rows but still needs a session row - merging the two would lose session data for perfect rounds, which is exactly the signal "am I ready for the exam?" depends on.
 
 **Why `QUIZ_REVIEW_LOG` is not FK-linked to `QUIZ_QUESTIONS`.** Review rows are historical snapshots. They copy `question_text`, `correct_answer`, `domain_name` at the moment the answer was logged, so deleting or regenerating a question later doesn't orphan the history. The `domain_id` in `QUIZ_REVIEW_LOG` is a semantic reference to `EXAM_DOMAINS` (for grouping and dashboards), not an enforced FK.
 
@@ -180,6 +178,6 @@ A few architectural decisions worth knowing:
 
 - **Schema-per-exam** is the mandatory isolation boundary, because Snowsight has no `git` the agent can run to isolate code per exam. A schema is the cleanest isolation Snowflake offers natively. (If the workspace is Git-backed the user can optionally create a branch per exam on top - same category as uploading files manually.)
 - **`AI_PARSE_DOCUMENT` + `AI_COMPLETE`** instead of `AI_EXTRACT` because we need both structured extraction (domains, weights, topic taxonomies) and free-form extraction (key_facts) from the same PDF. Re-parsing per pass would be wasteful; parse once, reuse the Markdown for both extractions.
-- **Cached `load_*` functions** in `_data.py` because Streamlit-in-Snowflake re-renders the whole function tree on every widget interaction. Without `@st.cache_data`, every Next/Submit would re-query four tables. TTL is unbounded (cache per SiS session).
+- **Cached `load_*` functions** in `_data.py` because Streamlit-in-Snowflake re-renders the whole function tree on every widget interaction. Without `@st.cache_data`, every Next/Submit would re-query several tables. TTL is unbounded (cache per SiS session).
 - **`st.rerun()` discipline, not a fixed count** - handlers pair `st.spinner()` with a single final `st.rerun()` (see `$sis`).
 - **Explanations on-demand, not eager**: each explanation is ~1-3 seconds of `AI_COMPLETE`. Generating for every answer would make the app feel broken. Generating on expand-disclosure hides the latency behind the click.

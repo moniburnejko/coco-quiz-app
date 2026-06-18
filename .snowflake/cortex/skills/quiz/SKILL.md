@@ -43,7 +43,7 @@ Multiple sub-skills may apply to a single task (e.g., adding a new page needs bo
 
 ## Capabilities
 
-- **Screens**: Screen flow (home/quiz/summary + review tabs), session state contract (28 keys), history item schema, write-back, explanation state machine
+- **Screens**: Screen flow (home/quiz/summary + review tabs), session state contract, history item schema, write-back, explanation state machine
 - **Questions**: DIFFICULTY_GUIDE (3-tier with CONSTRAINT/STYLE), topic scheduling, deduplication, source logic (db/ai/mix), fallback chain, validation, answer shuffling
 - **Design**: Theme (config.toml keys), badge palette, section labels, chart colors + axis formatting, cards, buttons, titles, docs-link — the single source for all visual rules
 - **Features**: OPTIONAL add-ons — exam simulation mode, flashcard review, AI study recommendation, comparison (compare two options)

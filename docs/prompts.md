@@ -26,12 +26,13 @@ Add anything optional on that line — features ("add exam simulation and flashc
 
 ### What the skill will ask you during the run (in order)
 1. Exam name + code (e.g. "SnowPro Core", "COF-C03").
-2. PDF filename (required) — the study guide you'll upload.
+2. PDF filename (required) — the study guide you drop into the workspace file tree (CoCo stages it for you via `COPY FILES`; no manual stage upload).
 3. CSV/JSON question-bank filename — optional; without one the bank starts empty (runtime AI questions; seed it later from Admin / worksheet / Automation).
 4. Optional features + advanced mode (quality model / self-verify / Automations).
 5. Default look, or a short custom-theming dialog.
 6. Deploy prerequisites — the default `warehouse` runtime needs none; only the container opt-in needs a compute pool + PyPI EAI (not available on trial).
-7. "uploaded" after the PDF stage upload → Approve/Re-extract/Abort after domain extraction → deploy → final report.
+7. Doc grounding mode — set once and stored in `QUIZ_CONFIG` (no runtime toggle): `cke` (default, Snowflake-docs CKE; a hard gate that stops the run if the CKE listing isn't installed), `custom` (your own Cortex Search service), or `none` (ungrounded — non-Snowflake exams only).
+8. Confirm the PDF is in the workspace (CoCo stages it via `COPY FILES`) → Approve/Re-extract/Abort after domain extraction → deploy → final report.
 
 ---
 

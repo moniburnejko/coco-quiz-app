@@ -28,7 +28,7 @@ Can't create the EAI (e.g. trial account)? Just use the default warehouse runtim
 
 In Snowsight: **AI & ML > Agents > Settings > Tools and connectors > Web search → enable**.
 
-Optional (recommended): get the free **Snowflake Documentation** listing in Snowsight » Data Products » Marketplace. It lets the app ground questions/explanations in real docs and cite exact pages. Skippable — the app falls back cleanly without it.
+**Required for Snowflake exams** (recommended for all): install the free **Snowflake Documentation** listing in Snowsight » Data Products » Marketplace. Snowflake-exam apps default to CKE doc-grounding (`grounding_mode = cke`) — questions and explanations are generated ONLY from real docs, never built-in knowledge — so `$setup-exam` treats the CKE as a hard gate and stops until it's reachable (free, works on trial). Grounding mode is fixed once at setup; only a non-Snowflake exam can opt into the ungrounded `none` mode.
 
 ---
 
@@ -42,7 +42,7 @@ Fork this repo on GitHub. Then, as a role with `CREATE INTEGRATION`:
 
 ```sql
 -- 1. API INTEGRATION: authorises Snowflake to reach GitHub's API.
-CREATE OR REPLACE API INTEGRATION gih_integration
+CREATE OR REPLACE API INTEGRATION gh_integration
   API_PROVIDER = GIT_HTTPS_API
   API_ALLOWED_PREFIXES = ('https://github.com/<your_github_user>')
   ENABLED = TRUE;
@@ -75,7 +75,7 @@ Benefits: `docs/` accessible inside Snowsight, commit and branch from the worksp
 
 Clone the repo locally. In Snowsight: **Projects > Workspaces > + Workspace** (empty). Then:
 
-1. **Custom skills**: in Snowflake CoCo chat, click **+** > **Upload Folder(s)** > select `.snowflake/cortex/skills/` from the clone. All skills (5 invocable — `$setup-exam`, `$adapt-questions`, `$cortex`, `$sis`, `$quiz` — across 13 files incl. sub-skills) become available as slash commands.
+1. **Custom skills**: in Snowflake CoCo chat, click **+** > **Upload Folder(s)** > select `.snowflake/cortex/skills/` from the clone. All skills (5 invocable — `$setup-exam`, `$adapt-questions`, `$cortex`, `$sis`, `$quiz` — across 9 `SKILL.md` files incl. the 4 `$quiz` sub-skills) become available as slash commands.
 2. **AGENTS.md**: drag-and-drop to the workspace root (or use **+** > **Upload File(s)**).
 
 `docs/` is not uploaded - reference it from your local clone or from GitHub.
@@ -83,7 +83,7 @@ Clone the repo locally. In Snowsight: **Projects > Workspaces > + Workspace** (e
 ### What you do NOT load either way
 
 - The `app/` project (`main.py`, `_*.py` modules, `pages/`, configs) - the agent generates it into the workspace on each `$setup-exam` run.
-- The PDF study guide and optional CSV - these go straight to a Snowflake stage in step 5, not the workspace.
+- The PDF study guide and optional CSV - you add these to the workspace file tree later, when the agent asks (step 4) - not now.
 
 ---
 
@@ -97,22 +97,21 @@ Open `AGENTS.md` in the workspace, find the `snowflake environment` table. Repla
 
 Paste the **setup prompt** from [prompts.md](prompts.md) into the CoCo chat — it attaches `@AGENTS.md` and invokes `/setup-exam`. The agent runs the skill end-to-end and stops at three checkpoints:
 
-- After asking you to upload the study guide PDF (and optionally a CSV) → you upload via Snowsight UI (step 4).
+- After asking you to add the study guide PDF (and optionally a CSV) → you drop it into the workspace file tree and the agent stages it via `COPY FILES` (step 4).
 - After extracting domains → approve / re-extract / abort.
 - Before deploy → the agent copies the generated `app/` onto `STAGE_SIS_APP` and deploys it on the warehouse runtime — nothing for you to upload (step 5).
 
 ---
 
-## Step 4 - upload the study guide PDF (and optional CSV)
+## Step 4 - add the study guide PDF (and optional CSV) to the workspace
 
 When the agent stops and asks for the PDF:
 
-1. Snowsight > **Data > Databases > `<your_db>` > `QUIZ_<CODE>` > Stages > STAGE_QUIZ_DATA**.
-2. **+ Files** (top-right) > drag-drop the PDF > **Upload**.
-3. (Optional) repeat for a CSV question bank if you have one.
-4. Reply to the agent: "uploaded".
+1. Drop the study-guide PDF into the **workspace file tree** (same place as the `app/` project) — not a stage.
+2. (Optional) drop a CSV/JSON question bank in alongside it.
+3. Reply to the agent: "added".
 
-The agent verifies with `LIST @STAGE_QUIZ_DATA` and continues.
+The agent then copies the file onto `STAGE_QUIZ_DATA` with `COPY FILES` and verifies with `LIST @STAGE_QUIZ_DATA` before continuing — you never upload to a stage by hand.
 
 ---
 
@@ -132,9 +131,9 @@ Snowsight > **Projects > Streamlit > SNOWPRO_QUIZ** (or whatever `app_name` is s
 
 Walk through the pages (navigation is native multipage):
 
-- **Quiz page** - home (round size, difficulty, domain, source, explanations toggle) → quiz (try the 💡 hint *before* answering; after submitting: feedback, AI explanation, ⚖️ contrast between two options) → summary (score, pass/fail vs threshold, wrong-answer cards, AI debrief; fail a round to see the **Runda poprawkowa** button — your wrong answers, reshuffled).
-- **Review page** - wrong-answer history with filters + Learning Dashboard tab.
-- **Admin page** - flip a config toggle (e.g. round-size default), check bank stats, try **Generate batch (AI)** to seed the question bank.
+- **Quiz page** - home (round size, difficulty, domain, source — no explanations toggle; the explanation is on-demand) → quiz (try the 💡 Hint *before* answering; after submitting: instant feedback, then an on-demand **💡 AI explanation** button — for correct answers too — opening an expander with the explanation, a 🔬 Deep dive on one option, and a ⚖️ Compare-two control if the Comparison feature was enabled) → summary (score, pass/fail vs threshold, a collapsed WRONG ANSWERS expander, an on-demand Round Brief; fail a round to see the **Remedial Round** button when `remedial_enabled` is on — your wrong answers, reshuffled).
+- **Review page** - sub-tabs (`st.pills`): **Wrong answers** (history with domain + date-range filters), **Learning Dashboard** (charts), and **Flashcards** when that feature is enabled (atomic recall cards built from wrong answers, Leitner spaced repetition).
+- **Admin page** (5 tabs: App config, Question manager, Bank stats, Cortex spend, Tools) - flip a config toggle (e.g. round-size default) in App config, check Bank stats, and in Question manager try **Generate batch (AI)** to seed the question bank.
 
 Complete at least one round so `QUIZ_SESSION_LOG` and `QUIZ_REVIEW_LOG` get data for dashboard charts.
 
@@ -148,6 +147,6 @@ Keep the same workspace, run the **setup prompt** again with a different PDF. Th
 
 ## Something broke?
 
-Paste the **fix prompt** from [prompts.md](prompts.md) with a description of what happened. The agent will run the relevant diagnostic skill, fix the issue, and ask you to re-upload.
+Paste the **fix prompt** from [prompts.md](prompts.md) with a description of what happened. The agent will run the relevant diagnostic skill, fix the issue, and redeploy.
 
 See also [troubleshooting.md](troubleshooting.md) for common Snowsight-specific pitfalls.

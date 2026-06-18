@@ -2,7 +2,7 @@
 
 > ## ⛔ How to run this project — do NOT improvise
 > To set up an exam you **MUST** open `.snowflake/cortex/skills/setup-exam/SKILL.md` and execute it **step by step, top to bottom**, honoring every mandatory STOP. Read the whole skill first; create nothing before its Step 2.
-> The sections below are **reference context** (what the app is, the data model, constraints) — they are **NOT the build procedure** and are not detailed enough to improvise from. Improvising from this overview instead of loading the skill causes known failures (stage without encryption, unfilled placeholders, deploy without compute pool + PyPI EAI).
+> The sections below are **reference context** (what the app is, the data model, constraints) — they are **NOT the build procedure** and are not detailed enough to improvise from. Improvising from this overview instead of loading the skill causes known failures (stage without `SNOWFLAKE_SSE` encryption → `AI_PARSE_DOCUMENT` fails, unfilled `<...>` placeholders → wrong objects, an incomplete `artifacts` list → a partial/broken deploy).
 
 ## What this project is
 
@@ -42,15 +42,17 @@ All sections reference these values. Never hardcode environment names elsewhere 
 
 ## Domain model
 
-Five tables in `{database}.{schema}` (a sixth, `QUIZ_FLAGS`, only when the flag-a-question feature is enabled). Full DDL and column details live in `$setup-exam` Step 3 — the single source.
+Five tables in `{database}.{schema}`, plus a transient `_DOC_CONTENT` used only during setup (dropped after the PDF is parsed). Enabled optional features add their own schema: Flashcards → `FLASHCARD_PROGRESS`; Exam Simulation → `QUIZ_SESSION_LOG.session_type`. (`QUIZ_FLAGS` and the misconception columns are deferred backlog — `docs/future-features.md` — not built.) Full DDL and column details live in `$setup-exam` Step 3 — the single source.
 
 | Table | Purpose |
 |-------|---------|
 | `EXAM_DOMAINS` | Domains, weights, topics, key_facts — extracted once from the study-guide PDF. |
-| `QUIZ_QUESTIONS` | Optional question bank (CSV / seeded); runtime AI questions are ephemeral and bypass it. |
-| `QUIZ_REVIEW_LOG` | Per-question wrong-answer history — drives Review + misconception analysis. |
+| `QUIZ_QUESTIONS` | Question bank: CSV/seeded `'MANUAL'` rows plus every runtime AI question persisted as `'AI_GENERATED'`; the bank fills organically and is reused (randomized selection). |
+| `QUIZ_REVIEW_LOG` | Per-question wrong-answer history — drives the Review page and (when enabled) Flashcards. |
 | `QUIZ_SESSION_LOG` | Per-round summary — drives the Learning Dashboard. |
-| `QUIZ_CONFIG` | Runtime key-value app config edited from Admin (defaults in `_config.py`; `docs_grounding` etc.). |
+| `QUIZ_CONFIG` | Runtime key-value app config edited from Admin (defaults in `_config.py`); also stores `grounding_mode`, set once at setup and read-only at runtime. |
+
+Exam structure (question count, time limit) is captured from the study guide at setup and baked into `_config.py` as `EXAM_QUESTION_COUNT` / `EXAM_TIME_LIMIT_MIN` (read by the Exam Simulation feature).
 
 ---
 
@@ -69,7 +71,7 @@ For calling patterns, dollar-quoting, structured outputs (`response_format`), di
 | Skill | Invoke | Purpose | Sub-skills |
 |-------|--------|---------|------------|
 | `$cortex` | Cortex AI work | Structured outputs, injection delimiting, CKE grounding, diagnostics, prompt audit | (standalone) |
-| `$sis` | SiS code or deploy | Container-runtime gotchas + mandatory pre-deploy scan | (standalone) |
+| `$sis` | SiS code or deploy | SiS runtime gotchas (warehouse default + container opt-in) + mandatory pre-deploy scan | (standalone) |
 | `$quiz` | app code work | App module map + screen contracts, question generation, design (visuals), optional features | `$quiz/screens`, `$quiz/questions`, `$quiz/design`, `$quiz/features` |
 | `$setup-exam` | new exam | Full 10-step pipeline (schema, stages, tables, domains, questions, app build, deploy) | (standalone) |
 | `$adapt-questions` | question bank import | Schema mapping, loading strategies, domain coverage | (standalone) |
