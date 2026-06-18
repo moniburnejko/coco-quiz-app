@@ -46,7 +46,7 @@ Run `$cortex` after the prompt change to catch JSON key mismatches.
 
 Two moments to style the app:
 
-**At build time** — `$setup-exam` Step 1e asks: default look or custom? Custom = a short guided dialog with CoCo (light/dark, accent color, roundness, font stack, sidebar tint), mapped to native Streamlit `[theme]` / `[theme.sidebar]` keys in `.streamlit/config.toml`. No CSS is ever used.
+**At build time** — `$setup-exam` Step 1e asks: default look or custom? Custom focuses on the essentials (base light/dark + accent color); roundness, font stack, and sidebar tint are optional. Anything you state up front (e.g. "dark + violet") is taken as-is, not re-asked. All of it maps to native Streamlit `[theme]` / `[theme.sidebar]` keys in `.streamlit/config.toml` — no CSS is ever used.
 
 **After build** — invoke `$quiz/design` and describe the change. Modern theming covers much more than colors:
 

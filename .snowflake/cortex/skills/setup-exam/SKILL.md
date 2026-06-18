@@ -76,7 +76,7 @@ Ask: *"Any additional requirements? (optional features, AI study recommendations
 
 ### 1e — Look & feel
 
-`ask_user_question`: **Default look** (clean Snowflake-blue — no further questions) or **Custom**. Custom → a short one-question-at-a-time dialog (light/dark base; accent color; corner roundness; font stack; sidebar tint), mapped ONLY to native `[theme]`/`[theme.sidebar]` keys per the `$quiz/design` theming contract — **never CSS, `unsafe_allow_html`, or external fonts (CSP)**. Confirm the palette in words. Store the choice for Step 8.
+`ask_user_question`: **Default look** (clean Snowflake-blue — no further questions) or **Custom**. For Custom, ask only for what the user hasn't already given — the essentials are **base** (light/dark) and **accent** color; if they already stated a look (e.g. "dark + violet"), confirm it and move on, don't re-ask. Offer the finer knobs (corner roundness, font stack, sidebar tint) as **one optional question** ("any of these, or sensible defaults?"), not a forced one-at-a-time sequence. Every answer maps ONLY to native `[theme]`/`[theme.sidebar]` keys per the `$quiz/design` theming contract (corner roundness = `baseRadius`/`buttonRadius`, fonts = `font`/`headingFont` built-in stacks — all native, no CSS) — **never CSS, `unsafe_allow_html`, or external fonts (CSP)**. Confirm the palette in words. Store the choice for Step 8.
 
 ### 1f — Deploy prerequisites
 
@@ -110,7 +110,7 @@ CREATE SCHEMA IF NOT EXISTS {database}.QUIZ_<EXAM_CODE>;
 USE SCHEMA {database}.QUIZ_<EXAM_CODE>;
 ```
 
-## Step 3 — Create stages, tables, file format (this skill is the sole owner of the data model)
+## Step 3 — Create stages and tables (this skill is the sole owner of the data model)
 
 **Stages** — `STAGE_QUIZ_DATA` MUST have SSE + directory for `AI_PARSE_DOCUMENT`. **Copy this DDL verbatim — do NOT write `CREATE STAGE` from memory** (a bare `CREATE STAGE` defaults to client-side encryption → `AI_PARSE_DOCUMENT` fails "Client Side Encryption is not supported"):
 ```sql
@@ -182,11 +182,7 @@ CREATE OR ALTER TABLE {database}.QUIZ_<CODE>.QUIZ_CONFIG (
 ```
 `QUIZ_REVIEW_LOG` = per-wrong-answer history; `QUIZ_SESSION_LOG` = per-round summary (a perfect round writes a session row but no review rows, so they can't merge); `QUIZ_CONFIG` = runtime config (defaults in `_config.py`, DB overrides). The **Flashcards** feature adds a `FLASHCARD_PROGRESS` table when enabled (`$quiz/features`); the Exam Simulation feature adds `QUIZ_SESSION_LOG.session_type`. Add no other table or column.
 
-**File format:**
-```sql
-CREATE FILE FORMAT IF NOT EXISTS {database}.QUIZ_<CODE>.FF_CSV
-  TYPE = 'CSV' SKIP_HEADER = 1 FIELD_OPTIONALLY_ENCLOSED_BY = '"';
-```
+**No file format here.** `FF_CSV` is created in Step 6 **only when a CSV bank is actually loaded** — an AI-only setup (no bank) never creates it, and a JSON bank doesn't use it (`$adapt-questions` reads JSON with an inline `TYPE=JSON` format).
 
 ## Step 4 — Stage the study guide (agent-driven — no manual stage upload)
 
@@ -265,7 +261,12 @@ Expected: N domains, weights sum to 100, all `key_facts` non-empty. Present the 
 
 ## Step 6 — Load the question bank (optional)
 
-**With a CSV** (uploaded in Step 4): if `SELECT COUNT(*) FROM QUIZ_QUESTIONS` already has rows (e.g. `$adapt-questions` ran), skip to verify. Else `COPY INTO QUIZ_QUESTIONS FROM @…STAGE_QUIZ_DATA/<csv> FILE_FORMAT = …FF_CSV;` then backfill `domain_name` from `EXAM_DOMAINS`. If columns/types differ from the target schema, run `$adapt-questions` first.
+**With a CSV** (uploaded in Step 4): if `SELECT COUNT(*) FROM QUIZ_QUESTIONS` already has rows (e.g. `$adapt-questions` ran), skip to verify. Else **create the CSV file format now** — only on this path, because a CSV is actually being loaded:
+```sql
+CREATE FILE FORMAT IF NOT EXISTS {database}.QUIZ_<CODE>.FF_CSV
+  TYPE = 'CSV' SKIP_HEADER = 1 FIELD_OPTIONALLY_ENCLOSED_BY = '"';
+```
+then `COPY INTO QUIZ_QUESTIONS FROM @…STAGE_QUIZ_DATA/<csv> FILE_FORMAT = …FF_CSV;` and backfill `domain_name` from `EXAM_DOMAINS`. If columns/types differ from the target schema, run `$adapt-questions` first (it uses its own inline formats — CSV or JSON — and needs no `FF_CSV`).
 
 **Without a CSV — the bank starts empty; do NOT mass-generate at build time.** The app is fully functional on runtime AI questions (`question_source` defaults to `'ai'`), and **every runtime AI question is saved to the bank** (`$quiz/questions` — Bank persistence), so "Question Bank" mode then serves stored questions with no AI call. The user can also seed it deliberately: CSV/JSON + `$adapt-questions`, the Admin **Generate batch** button, the worksheet recipe (`docs/customization.md` §6), or a scheduled task/Automation.
 
@@ -300,7 +301,7 @@ Edit `AGENTS.md` within these boundaries.
    ```
    **Generate `snowflake.yml` + `.streamlit/config.toml` FIRST** — `snowflake.yml` at the project root is what makes the Workspace recognize the folder as a Streamlit app (no "Convert to Streamlit app" click). If the user chose "No CSV", default `question_source = 'ai'`.
 
-4. **`main.py`**: `st.set_page_config(layout="centered", …)` first; `init_session_state()`; shared sidebar title; build navigation explicitly (with `st.navigation` the `pages/` dir is NOT auto-discovered):
+4. **`main.py`**: `st.set_page_config(layout="centered", …)` first; `init_session_state()`; the shared sidebar title/caption (rendered **above** the nav); build navigation explicitly with `st.navigation` (and set `showSidebarNavigation = false` in config.toml — item 6 — so the native lowercase page nav can't appear alongside it):
    ```python
    pages = [st.Page("pages/quiz.py", title="Quiz", default=True),
             st.Page("pages/review.py", title="Review"),
@@ -317,7 +318,7 @@ Edit `AGENTS.md` within these boundaries.
    ```
    `snowflake` (the Snowflake Python API, unpinned) provides `snowflake.core`, which the CKE doc-grounding helper (`_search.py`, `$cortex`) imports — omit it and the app dies at load with `ModuleNotFoundError: No module named 'snowflake.core'`.
 
-6. **`.streamlit/config.toml`** — `[client] showErrorDetails = "none"` (the string, NOT `false`, which leaks tracebacks) + `toolbarMode = "minimal"`. The `[theme]`/`[theme.sidebar]` block comes from **`$quiz/design`** (the canonical default theme lives there; or the user's Step 1e custom palette) — never author theme values here from memory.
+6. **`.streamlit/config.toml`** — `[client] showErrorDetails = "none"` (the string, NOT `false`, which leaks tracebacks), `toolbarMode = "minimal"`, and **`showSidebarNavigation = false`** (with `st.navigation` + a `pages/` dir, the pinned SiS Streamlit otherwise also renders its native page nav — lowercase filenames — beside the `st.navigation` menu; `$sis`). The `[theme]`/`[theme.sidebar]` block comes from **`$quiz/design`** (the canonical default theme lives there; or the user's Step 1e custom palette) — never author theme values here from memory.
 
 7. **`snowflake.yml`** — `identifier` = `app_name` from AGENTS.md; **list EVERY generated file in `artifacts`** (an incomplete list = a partial / broken deploy):
    ```yaml
@@ -373,6 +374,8 @@ CREATE OR REPLACE STREAMLIT {database}.QUIZ_<CODE>.SNOWPRO_QUIZ
 ```
 **Redeploy after an edit:** save the file in the workspace, re-run the relevant `COPY FILES` (it overwrites same-named files) + `CREATE OR REPLACE STREAMLIT`; confirm with `LIST` that the changed file's size updated before assuming it took.
 
+**`.streamlit/config.toml` must actually deploy** — it governs the running app (`showErrorDetails`, `showSidebarNavigation`, theme). If after deploy the sidebar shows lowercase page filenames, or viewers see full tracebacks, the config didn't land: re-`COPY FILES` it into the `.streamlit/` subfolder and `CREATE OR REPLACE`. `showErrorDetails = "none"` is the viewer-facing error setting — generic message, no traceback.
+
 Verify:
 ```sql
 SHOW STREAMLITS LIKE 'SNOWPRO_QUIZ' IN SCHEMA {database}.QUIZ_<CODE>;
@@ -382,11 +385,11 @@ SHOW STREAMLITS LIKE 'SNOWPRO_QUIZ' IN SCHEMA {database}.QUIZ_<CODE>;
 
 Confirm `SHOW STREAMLITS LIKE 'SNOWPRO_QUIZ' IN SCHEMA {database}.QUIZ_<CODE>;` returns 1 row and the previous exam's schema is untouched.
 
-**App URL — do NOT use `CURRENT_ACCOUNT()`** (that's the account locator, not the URL slug). Use org + account name:
+**App URL — do NOT use `CURRENT_ACCOUNT()`** (that's the account locator, not the URL slug). Use org + account name, and run this as its **own statement** (in a batch with `SHOW`/other queries only the last result comes back, so the slug would be lost):
 ```sql
 SELECT LOWER(CURRENT_ORGANIZATION_NAME()) AS org, LOWER(CURRENT_ACCOUNT_NAME()) AS account;
 ```
-→ `https://app.snowflake.com/{org}/{account}/#/streamlit-apps/{database}.QUIZ_<CODE>.SNOWPRO_QUIZ`. If either function is NULL, ask the user for their Snowsight base URL (the part up to `/#/`).
+**Read both values from this result and build the URL from them — never hand-fill or guess the slug.** → `https://app.snowflake.com/{org}/{account}/#/streamlit-apps/{database}.QUIZ_<CODE>.SNOWPRO_QUIZ`. If either value is NULL/empty, ask the user for their Snowsight base URL (the part up to `/#/`).
 
 Report: exam name + code, schema, domains extracted (N), questions loaded (N or 0=AI-only), app name, **app URL**, features implemented, advanced options active. Then `ask_user_question`: **Done** / **Review**.
 

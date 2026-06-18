@@ -91,7 +91,7 @@ CoCo in Snowsight ships with built-in skills, available natively from any worksp
 
 1. **Isolation**: all DDL/DML in `{database}.{schema}` only. Never cross schemas.
 2. **No DROP** on existing objects. Never `DROP SCHEMA`, `DROP DATABASE`, `DROP TABLE`.
-3. **Idempotent DDL**: `CREATE OR ALTER TABLE` for the data-model tables (reconciles columns to the definition; never `DROP TABLE`); `CREATE … IF NOT EXISTS` for schema, stages, and the file format. `CREATE OR REPLACE` only for `STREAMLIT` (the redeployed app).
+3. **Idempotent DDL**: `CREATE OR ALTER TABLE` for the data-model tables (reconciles columns to the definition; never `DROP TABLE`); `CREATE … IF NOT EXISTS` for schema and stages (and the CSV file format, created only when a bank CSV is loaded). `CREATE OR REPLACE` only for `STREAMLIT` (the redeployed app).
 4. **Parameterized SQL** for all user-derived values. Never interpolate widget values into f-string SQL.
 5. **AI_COMPLETE**: dollar-quote the prompt, sanitize any `$$` in interpolated content to `$ $`. `CORTEX_MODEL` is a hardcoded constant.
 6. **Schema-per-exam** is the mandatory isolation boundary the agent enforces. The user may additionally create a Git branch per exam.

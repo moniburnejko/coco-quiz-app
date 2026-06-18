@@ -80,11 +80,13 @@ No fixed `st.rerun()` budget. Per handler: a button doing slow work (DB write, A
 
 `st.session_state` is scoped to the browser session, so it **persists across `st.navigation` page switches** — all keys are initialized once in `main.py` (`init_session_state()`); pages share them. A filter set on one page is still set when the user returns; clear stale state explicitly if that surprises the flow. Cross-page redirect: set the target state, then `st.switch_page("pages/quiz.py")`.
 
+**`st.navigation` + a `pages/` dir → set `[client] showSidebarNavigation = false`.** Without it, the pinned SiS Streamlit can render its **native** page navigation (the lowercase `pages/` filenames) in the sidebar *alongside* the `st.navigation` menu. Setting `showSidebarNavigation = false` (config.toml) leaves only the explicit `st.navigation` titles. The shared sidebar caption (`EXAM_NAME`) is rendered above the nav in `main.py`.
+
 ## Still-constrained on SiS
 
 - **No `unsafe_allow_html`.** Inline HTML/CSS is blocked by platform CSP (no external `<script src>`, no dynamic eval, no external iframes). Visual styling lives in `.streamlit/config.toml` (`$quiz/design`) and native components.
 - **`.applymap(`** — removed in pandas 3.0; use `.map(` / `.map_index(`.
-- **`config.toml`:** `showErrorDetails = "none"` — the string `"none"`, **not** `false` (deprecated `false` maps to "stacktrace" and still leaks tracebacks to viewers).
+- **`config.toml`:** `showErrorDetails = "none"` — the string `"none"`, **not** `false` (deprecated `false` maps to "stacktrace" and still leaks tracebacks to viewers); and `[client] showSidebarNavigation = false` when using `st.navigation` + a `pages/` dir (see Multipage state).
 - **Uppercase columns:** Snowflake returns UPPERCASE column names; normalize every `.as_dict()`: `{k.upper(): v for k, v in row.as_dict().items()}` (lowercase keys return `None` silently).
 
 ## SQL safety
@@ -124,7 +126,7 @@ Only `DATABASE`, `SCHEMA`, `CORTEX_MODEL`, and `RESPONSE_FORMATS` constants may 
 12. **`get_active_session()` inside every `@st.cache_data`** — not the module-level session.
 13. **No `ttl` on loaders + `clear_caches()`** defined and called after every INSERT/UPDATE.
 14. **`st.set_page_config(layout="centered", …)`** — first `st.` call in `main.py`, and ONLY there (never `layout="wide"`, never in a page/module).
-15. **`.streamlit/config.toml`** — `[client] showErrorDetails = "none"` (string, not `false`) and `toolbarMode = "minimal"` present.
+15. **`.streamlit/config.toml`** — `[client] showErrorDetails = "none"` (string, not `false`), `toolbarMode = "minimal"`, and `showSidebarNavigation = false` (suppresses the native lowercase page nav — see Multipage state) all present.
 16. **Screen transitions** — every slow handler (Start Round, Submit, Finish, Next) wraps work in `st.spinner()` and ends with a single `st.rerun()`.
 
 ### Date handling  (see `$quiz/screens` Review)

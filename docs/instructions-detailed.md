@@ -9,7 +9,7 @@ A full walk-through for someone who has never used Snowflake CoCo in Snowsight. 
 You give CoCo a Snowflake certification **study guide PDF**. The agent:
 
 1. Creates a dedicated schema `QUIZ_<EXAM_CODE>` inside your database.
-2. Creates 2 stages (one for input data, one for the Streamlit app), a file format, and 5 tables (`EXAM_DOMAINS`, `QUIZ_QUESTIONS`, `QUIZ_REVIEW_LOG`, `QUIZ_SESSION_LOG`, `QUIZ_CONFIG`) — plus a transient `_DOC_CONTENT` that holds the parsed PDF during setup and is dropped afterward.
+2. Creates 2 stages (one for input data, one for the Streamlit app) and 5 tables (`EXAM_DOMAINS`, `QUIZ_QUESTIONS`, `QUIZ_REVIEW_LOG`, `QUIZ_SESSION_LOG`, `QUIZ_CONFIG`) — plus a transient `_DOC_CONTENT` that holds the parsed PDF during setup and is dropped afterward (and a CSV file format only if you load a bank CSV).
 3. Extracts domain list, weights, topics, and testable facts from the PDF using `AI_PARSE_DOCUMENT` + `AI_COMPLETE`.
 4. Loads a question bank if you provide one (CSV/JSON); otherwise the bank stays empty and questions are AI-generated at runtime (you can seed the bank later from the Admin page, a worksheet recipe, or a scheduled task).
 5. Generates the multipage `app/` Streamlit project in the workspace (`main.py`, `_*.py` modules, `pages/`, configs — with `environment.yml` from the Snowflake Anaconda channel).
@@ -234,7 +234,7 @@ The agent will:
 2. Ask for the PDF filename (required) and optionally the CSV filename.
 3. Ask about additional customisations (the four optional features from `$quiz/features` - exam simulation mode, flashcards, AI study recommendation, remedial round).
 4. Ask whether you want the **default look or a custom one** - custom means a short style dialog (light/dark, accent color, roundness, fonts), applied via Streamlit theming only.
-5. Create the schema, stages, tables, file format (SQL visible in the chat - approve or reject each step).
+5. Create the schema, stages, and tables (and a CSV file format only if you're loading a bank CSV) — SQL visible in the chat, approve or reject each step.
 6. Stop and ask you to add the PDF to the workspace (it stages it via `COPY FILES`).
 
 Do **not** try to pre-empt the agent by creating objects manually. Let it drive.
