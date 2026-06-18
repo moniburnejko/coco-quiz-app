@@ -377,7 +377,7 @@ Admin's widget / pagination / pending-confirm keys - `_qm_filters`, `_qm_select_
 
 Each defaults to `CORTEX_MODEL` (`load_config().get(f"model_{group}", CORTEX_MODEL)`); the call sites read it via `model_for(group)` and pass it to `call_cortex`/`call_cortex_json` (`$cortex`). The Cortex-spend "by model" chart reflects these choices.
 
-**Do NOT show:** `grounding_mode` (fixed at setup, `$setup-exam` Step 1g - not a runtime toggle, so don't surface it at all), `pass_threshold_override` (the official threshold doesn't change - removed), or `default_round_size` (set on Home before each round - redundant). The only grounding UI here is the guard: in `cke`/`custom` mode, if `docs_available()` is False, a red caption - "The doc grounding service is unavailable - install/grant the Snowflake Documentation CKE; the app can't generate until it's reachable." Every change → the **`save_config()` helper** (the `PARSE_JSON` round-trip from Config layer — NEVER inline a config MERGE here, NEVER `TO_VARIANT(json.dumps())`) → `clear_caches()` (clears `docs_available`/`search_docs` too) → `st.toast`. The three model `st.selectbox`es seed their `index` via `cfg_index(MODEL_OPTIONS, cfg.get(f"model_{group}", CORTEX_MODEL))` (never a bare `.index()` — see Config layer).
+**Do NOT show:** `grounding_mode` (fixed at setup, `$setup-exam` Step 1g - not a runtime toggle, so don't surface it at all), `pass_threshold_override` (the official threshold doesn't change - removed), `default_round_size` (set on Home before each round - redundant), and `question_source` / `difficulty` (these are **per-round Home choices**, never global config - re-adding them here as selectboxes is the exact app-v4 regression to avoid; App config holds ONLY the two toggles + the three model selectboxes). The only grounding UI here is the guard: in `cke`/`custom` mode, if `docs_available()` is False, a red caption - "The doc grounding service is unavailable - install/grant the Snowflake Documentation CKE; the app can't generate until it's reachable." Every change → the **`save_config()` helper** (the `PARSE_JSON` round-trip from Config layer — NEVER inline a config MERGE here, NEVER `TO_VARIANT(json.dumps())`) → `clear_caches()` (clears `docs_available`/`search_docs` too) → `st.toast`. The three model `st.selectbox`es seed their `index` via `cfg_index(MODEL_OPTIONS, cfg.get(f"model_{group}", CORTEX_MODEL))` (never a bare `.index()` — see Config layer).
 
 ## 2. Questions manager
 
@@ -399,7 +399,7 @@ Two nested `st.tabs` - **Bank** and **Generate**.
   - **Editor-state discipline (the hard part - follow vendors02 `01_ai_recommendations.py`):** keep a signature of the rendered slice (tuple of `QUESTION_ID`s). On a **non-append** change (filters/Search/Delete changed the set) drop the `data_editor` widget key and reset `_qm_select_all` so the checkbox column re-seeds cleanly; on a **pure append** (Load-10-more extends the slice) keep the selection. Without this, selection jumps on every Load-more/Search.
   - **Edit vs Add form (one form, a mode flag):** `_qm_mode` ∈ `"add"`/`"edit"` (+ `_qm_edit_id` for edit). **Add** renders the empty `st.form(clear_on_submit=True)` → INSERT. **Edit** seeds the form from the selected row by writing the field values into the widget `session_state` keys at the **top of the run, before the widgets render** (flag-at-top - `$sis` widget lifecycle); **never pass both `value=`/`default=` and also set the `session_state` key** (raises "created with a default value but also had its value set"). Switching Add↔Edit clears the prior field keys via the same flag-at-top reset.
 
-**Generate** - Generate batch with options: **count** (`st.number_input`), **difficulty** (pills, incl. "mixed"), **domain** (`st.selectbox`/multiselect over `EXAM_DOMAINS`), and **model** (`st.selectbox` over `MODEL_OPTIONS`, default = the `model_generation` config) → generates via the **same grounded `_questions.py` path** (`$quiz/questions`: in `cke`/`custom` mode each question embeds retrieved `<doc_context>` as the primary source with `key_facts` as supporting scope, answers ONLY from the docs, fails visibly on empty retrieval - never built-in) → INSERT `source='AI_GENERATED'` → report count; caption with an approximate-cost note. The batch passes its chosen model through `call_cortex_json(..., model=…)`.
+**Generate** - Generate batch with options: **count** (`st.slider`, 1-20 - each item is its own grounded LLM call, so the batch is capped to stay well under the statement timeout; never an unbounded `st.number_input`), **difficulty** (pills, incl. "mixed"), **domain** (`st.selectbox`/multiselect over `EXAM_DOMAINS`), and **model** (`st.selectbox` over `MODEL_OPTIONS`, `index` seeded via `cfg_index(MODEL_OPTIONS, cfg.get("model_generation", CORTEX_MODEL))`) → generates via the **same grounded `_questions.py` path** (`$quiz/questions`: in `cke`/`custom` mode each question embeds retrieved `<doc_context>` as the primary source with `key_facts` as supporting scope, answers ONLY from the docs, fails visibly on empty retrieval - never built-in) → INSERT `source='AI_GENERATED'` → `clear_caches()`. **Feedback is mandatory** (the app-v4 "silent batch" bug): run the loop under one `st.spinner`, then on completion fire an `st.toast` **and** render a transient `:green-badge[Added N question(s)]` line (NEVER `st.success`/`st.warning` - `$quiz/design`); a `st.caption` notes larger batches take longer and cost more. The batch passes its chosen model through `call_cortex_json(..., model=…)`.
 
 ## 3. Cortex spend (graceful - distinguish "no grant" from "no data")
 
@@ -412,8 +412,222 @@ Charts: spend by feature, spend by model (now a haiku/sonnet/opus split, reflect
 ## 4. Logs (was "Tools")
 
 A read-only log viewer plus a reset - the vendors02 logs page, no download:
-- **Both log tables shown**: `QUIZ_REVIEW_LOG` via `load_review_log()` and `QUIZ_SESSION_LOG` via **`load_session_log()`** - a new no-ttl cached loader for the full session-log table (`load_recent_sessions()` is the dashboard's last-10 aggregate, NOT this); **add `load_session_log` to `_data.py` and register it in `clear_caches()`** (`$sis` item 24, else it dangles). Read-only `st.dataframe`, newest first, `Load N more` if long. **No `st.download_button`.**
-- **Reset all logs** - a **frameless/borderless button** (`st.button(..., type="tertiary")`) below the tables, with **no expander and no "DANGER ZONE" label**, then a **two-step confirm** (a bordered `pending_reset` panel with Confirm / Cancel - NOT a type-`DELETE` text gate). Confirm runs `DELETE FROM` on the **two log tables only** (`QUIZ_REVIEW_LOG`, `QUIZ_SESSION_LOG`) - **NEVER `DROP`**, consistent with governance - then `clear_caches()` + `st.toast`.
+- **Both log tables shown**: `QUIZ_REVIEW_LOG` via `load_review_log()` and `QUIZ_SESSION_LOG` via **`load_session_log()`** - a new no-ttl cached loader for the full session-log table (`load_recent_sessions()` is the dashboard's last-10 aggregate, NOT this); **add `load_session_log` to `_data.py` and register it in `clear_caches()`** (`$sis` item 24, else it dangles). Read-only `st.dataframe`, newest first. **No `st.download_button`.**
+- **Filters + paging** (`QUIZ_REVIEW_LOG`): a **domain `st.multiselect`** (empty = all) applied in pandas over the cached frame, plus `Load N more` paging via a page-local `_log_limit` (don't render thousands of rows). The session-log table is shown as-is, newest first.
+- **Reset all logs** - a **frameless/borderless button** (`st.button(..., type="tertiary")`) below the tables, with **no expander and no "DANGER ZONE" label**, then a **two-step confirm** (a bordered `pending_reset` panel with Confirm / Cancel - NOT a type-`DELETE` text gate). Confirm runs `DELETE FROM` on the **two log tables only** (`QUIZ_REVIEW_LOG`, `QUIZ_SESSION_LOG`) - **NEVER `DROP`**, consistent with governance - then `clear_caches()` + `st.toast`. The reset lives **in this Logs tab**, never in App config (the app-v4 misplacement).
+
+## Reference code (COPY + ADAPT — Admin handlers)
+
+The prose above is the contract; this is the **reference implementation of the Admin parts that one-shot generation gets wrong** (app-v4 shipped App config with the wrong fields, a Questions manager with no editable table, a spend panel that blamed every empty result on permissions, and the log reset on the wrong tab). **Copy these handlers and adapt** — do not re-derive them from the prose. The Step-8 UX gate checks `admin.py` against these shapes. All four are `st.tabs` contents in `pages/admin.py`; `LETTERS = ["A","B","C","D","E"]`; `save_config`/`load_config`/`cfg_index`/`clear_caches` are the Config-layer helpers; `SCHEMA`/`MODEL_OPTIONS`/`CORTEX_MODEL` are `_config.py` constants.
+
+```python
+# 1. APP CONFIG — ONLY two toggles + three model selectboxes. No source/round/difficulty/grounding/threshold.
+def render_app_config():
+    cfg = load_config()
+    st.markdown("**FEATURES**")
+    hints   = st.toggle("Hints (before answering)", value=cfg.get("hints_enabled", True), key="cfg_hints")
+    debrief = st.toggle("Round Summary (end of round)", value=cfg.get("debrief_enabled", True), key="cfg_debrief")
+    st.markdown("**AI MODEL PER CALL-GROUP**")
+    picks = {}
+    for label, group in [("Question generation", "generation"),
+                         ("Explanations & study aids", "explanation"),
+                         ("Meta-analysis (Round Summary)", "meta")]:
+        picks[group] = st.selectbox(label, MODEL_OPTIONS,
+            index=cfg_index(MODEL_OPTIONS, cfg.get(f"model_{group}", CORTEX_MODEL)),   # guarded, never bare .index()
+            key=f"cfg_model_{group}")
+    if grounding_required() and not docs_available():
+        st.markdown(":red-badge[DOC GROUNDING UNAVAILABLE] Install/grant the Snowflake Documentation CKE; "
+                    "the app can't generate until it's reachable.")
+    if st.button("Save", type="primary"):
+        save_config("hints_enabled", hints)                # PARSE_JSON round-trip; NEVER TO_VARIANT(json.dumps())
+        save_config("debrief_enabled", debrief)
+        for group, model in picks.items():
+            save_config(f"model_{group}", model)
+        st.toast("Settings saved")                         # save_config already clears caches
+
+
+# 2. QUESTIONS MANAGER — nested tabs; Bank = KPIs + editable/filterable/deletable table (the app-v4 gap).
+def render_questions_manager():
+    bank_tab, gen_tab = st.tabs(["Bank", "Generate"])
+    with bank_tab:    render_bank()
+    with gen_tab:     render_generate()
+
+def _is_append(prev, sig):                                  # append = prev is a prefix of the new id slice
+    return len(sig) >= len(prev) and sig[:len(prev)] == prev
+
+def render_bank():
+    s = load_bank_stats()                                   # cached coverage loader; KPIs are st.metric, NOT a table
+    cols = st.columns(4)
+    cols[0].metric("Total", s["total"]);   cols[1].metric("Manual", s["manual"])
+    cols[2].metric("AI", s["ai"]);         cols[3].metric("Domains", s["domains"])
+
+    with st.expander("Filters", expanded=True):             # commit filters on Search, don't query live off widgets
+        f_dom  = st.multiselect("Domain", [d["DOMAIN_NAME"] for d in load_domains()], key="qm_f_dom")
+        f_diff = st.pills("Difficulty", ["easy","medium","hard"], selection_mode="multi", key="qm_f_diff")
+        f_src  = st.pills("Source", ["MANUAL","AI_GENERATED"], selection_mode="multi", key="qm_f_src")
+        fc = st.columns(2)
+        if fc[0].button("Search"):
+            st.session_state["_qm_filters"] = {"dom": f_dom, "diff": f_diff or [], "src": f_src or []}
+            st.session_state["_qm_limit"] = 10
+        if fc[1].button("Reset filters"):
+            st.session_state.pop("_qm_filters", None); st.session_state["_qm_limit"] = 10
+
+    flt   = st.session_state.get("_qm_filters", {})
+    limit = st.session_state.get("_qm_limit", 10)
+    df = load_questions_page(flt, limit)                    # cached, .to_pandas() → UPPERCASE cols, no Row access
+    df.insert(0, "select", False)
+
+    sig  = tuple(df["QUESTION_ID"].tolist())                # editor-state discipline (vendors02)
+    prev = st.session_state.get("_qm_sig")
+    if prev is not None and not _is_append(prev, sig):      # non-append change → re-seed checkbox column cleanly
+        st.session_state.pop("editor_qm", None); st.session_state["_qm_select_all"] = False
+    st.session_state["_qm_sig"] = sig
+
+    sc = st.columns(2)
+    if sc[0].button("Select all"): st.session_state["_qm_select_all"] = True;  st.session_state.pop("editor_qm", None)
+    if sc[1].button("Clear"):      st.session_state["_qm_select_all"] = False; st.session_state.pop("editor_qm", None)
+    if st.session_state.get("_qm_select_all"): df["select"] = True
+
+    edited = st.data_editor(df, key="editor_qm", hide_index=True, use_container_width=True,
+        column_config={"select": st.column_config.CheckboxColumn("", default=False)},
+        disabled=[c for c in df.columns if c != "select"])  # every column but the checkbox is read-only
+    sel = edited[edited["select"]]                          # read selection back as a DataFrame slice
+
+    if len(df) >= limit and st.button("Load 10 more"):
+        st.session_state["_qm_limit"] = limit + 10; st.rerun()
+
+    bc = st.columns(3)
+    if bc[0].button("Edit", disabled=len(sel) != 1):        # enabled only when exactly 1 row is selected
+        st.session_state["_qm_mode"] = "edit"
+        st.session_state["_qm_edit_id"] = int(sel.iloc[0]["QUESTION_ID"])
+        st.session_state["_qm_seed"]    = sel.iloc[0].to_dict(); st.rerun()
+    if bc[1].button("Add"):
+        st.session_state["_qm_mode"] = "add"; st.session_state.pop("_qm_seed", None); st.rerun()
+    if bc[2].button("Delete", disabled=len(sel) < 1):
+        st.session_state["pending_delete"] = [int(x) for x in sel["QUESTION_ID"]]
+
+    if st.session_state.get("pending_delete"):              # two-step confirm, NOT a type-DELETE gate
+        ids = st.session_state["pending_delete"]
+        with st.container(border=True):
+            st.markdown(f"**Delete {len(ids)} question(s)?**")
+            dc = st.columns(2)
+            if dc[0].button("Confirm", type="primary"):
+                marks = ",".join(["?"] * len(ids))          # bind params, never f-string the ids
+                get_active_session().sql(
+                    f"DELETE FROM {SCHEMA}.QUIZ_QUESTIONS WHERE question_id IN ({marks})", params=ids).collect()
+                clear_caches(); st.session_state.pop("pending_delete", None)
+                st.toast(f"Deleted {len(ids)}"); st.rerun()
+            if dc[1].button("Cancel"):
+                st.session_state.pop("pending_delete", None); st.rerun()
+
+    if st.session_state.get("_qm_mode"):
+        _render_question_form()
+
+def _render_question_form():
+    mode = st.session_state["_qm_mode"]
+    seed = st.session_state.pop("_qm_seed", None)           # flag-at-top: seed widget KEYS once, before they render
+    if seed is not None:                                    # (never also pass value=/default= to the same widget)
+        st.session_state["qf_text"] = seed.get("QUESTION_TEXT", "")
+        for lt in LETTERS: st.session_state[f"qf_{lt}"] = seed.get(f"OPTION_{lt}") or ""
+        st.session_state["qf_diff"]    = seed.get("DIFFICULTY", "medium")
+        st.session_state["qf_correct"] = [c.strip() for c in (seed.get("CORRECT_ANSWER") or "").split(",") if c.strip()]
+    st.markdown(f"**{'EDIT QUESTION' if mode == 'edit' else 'ADD QUESTION'}**")
+    with st.form("qform", clear_on_submit=True):            # one form → all fields commit together, no per-field Enter
+        text = st.text_area("Question", key="qf_text", max_chars=2000)
+        opts = {lt: st.text_input(f"Option {lt}", key=f"qf_{lt}", max_chars=500) for lt in LETTERS}
+        diff = st.pills("Difficulty", ["easy","medium","hard"], key="qf_diff")
+        # a form can't live-filter options as the user types; offer all letters, enforce ⊆ non-empty options ON SUBMIT
+        correct = st.multiselect("Correct answer(s)", LETTERS, key="qf_correct")
+        fc = st.columns(2)
+        submitted = fc[0].form_submit_button("Save", type="primary")
+        cancelled = fc[1].form_submit_button("Cancel")
+    if cancelled:
+        _close_question_form(); st.rerun()
+    if submitted:
+        present = [lt for lt in LETTERS if (opts[lt] or "").strip()]      # validate the committed values
+        correct = [c for c in correct if c in present]
+        if len(present) < 2 or not correct:
+            st.markdown(":orange-badge[Need ≥2 options and ≥1 correct answer among the filled options]"); return
+        _save_question(mode, st.session_state.get("_qm_edit_id"), text.strip(), opts, correct, diff)  # bind params
+        clear_caches(); _close_question_form()
+        st.toast("Saved" if mode == "edit" else "Added"); st.rerun()
+
+def _close_question_form():                                 # flag-at-top reset of every form key
+    for k in ["_qm_mode", "_qm_edit_id", "qf_text", "qf_diff", "qf_correct", *[f"qf_{lt}" for lt in LETTERS]]:
+        st.session_state.pop(k, None)
+
+def render_generate():
+    cfg = load_config()
+    if grounding_required() and not docs_available():
+        st.markdown(":red-badge[DOC GROUNDING UNAVAILABLE] Can't generate until the CKE is reachable."); return
+    n     = st.slider("Count", 1, 20, 5, key="gen_n")       # SLIDER, capped — each item is a grounded LLM call
+    diff  = st.pills("Difficulty", ["mixed","easy","medium","hard"], default="mixed", key="gen_diff") or "mixed"
+    doms  = st.multiselect("Domains", [d["DOMAIN_NAME"] for d in load_domains()], key="gen_dom")
+    model = st.selectbox("Model", MODEL_OPTIONS,
+        index=cfg_index(MODEL_OPTIONS, cfg.get("model_generation", CORTEX_MODEL)), key="gen_model")
+    st.caption("Larger batches take longer and cost more — each question is its own grounded generation.")
+    if st.button("Generate batch", type="primary", disabled=st.session_state.get("_gen_busy", False)):
+        st.session_state["_gen_busy"] = True; made = 0
+        with st.spinner(f"Generating {n} question(s)…"):
+            for _ in range(n):
+                if generate_ai_question(diff, doms or None, model=model):   # same grounded _questions.py path
+                    made += 1
+        clear_caches(); st.session_state["_gen_busy"] = False
+        st.session_state["_gen_result"] = made
+        st.toast(f"Generated {made} question(s)"); st.rerun()
+    if "_gen_result" in st.session_state:                   # transient feedback — never st.success ($quiz/design)
+        st.markdown(f":green-badge[Added {st.session_state.pop('_gen_result')} question(s)] to the bank.")
+
+
+# 3. CORTEX SPEND — branch STRUCTURALLY: success-but-empty ≠ permission error. (app-v4 blamed every miss on a grant.)
+def render_spend():
+    try:
+        df = load_cortex_spend()        # cached SELECT over SNOWFLAKE.ACCOUNT_USAGE.CORTEX_FUNCTIONS_USAGE_HISTORY
+    except Exception as e:
+        msg = str(e).lower()
+        if any(sig in msg for sig in ("insufficient privileges", "not authorized", "does not exist")):
+            role = get_active_session().get_current_role().strip('"')
+            st.markdown(":orange-badge[NO ACCESS] Grant ACCOUNT_USAGE to read Cortex spend:")
+            st.code(f"GRANT IMPORTED PRIVILEGES ON DATABASE SNOWFLAKE TO ROLE {role};", language="sql")
+        else:
+            st.caption(f"Couldn't read Cortex spend: {e}")      # any OTHER error → caption, NOT the GRANT banner
+        return
+    if df.empty:                        # ACCOUNTADMIN holds IMPORTED PRIVILEGES by default → empty ≠ no-grant
+        st.caption("No Cortex spend recorded yet — ACCOUNT_USAGE lags up to ~2 h, or no AI calls have run."); return
+    # ...render the two charts (spend by feature, spend by model: haiku/sonnet/opus) per $quiz/design...
+    st.caption("ACCOUNT_USAGE lags up to ~2 h.")
+
+
+# 4. LOGS — both tables (filtered), then a FRAMELESS reset with a two-step confirm. Reset lives HERE, not App config.
+def render_logs():
+    st.markdown("**REVIEW LOG**")
+    rdf = load_review_log()                                 # cached, newest first
+    doms = st.multiselect("Domain", sorted(rdf["DOMAIN_NAME"].dropna().unique()), key="log_dom")
+    view = rdf[rdf["DOMAIN_NAME"].isin(doms)] if doms else rdf
+    lim  = st.session_state.get("_log_limit", 50)
+    st.dataframe(view.head(lim), hide_index=True, use_container_width=True)   # NO download_button
+    if len(view) > lim and st.button("Load 50 more", key="log_more"):
+        st.session_state["_log_limit"] = lim + 50; st.rerun()
+    st.markdown("**SESSION LOG**")
+    st.dataframe(load_session_log(), hide_index=True, use_container_width=True)
+
+    if st.button("Reset all logs", type="tertiary", key="log_reset"):        # frameless, no DANGER ZONE
+        st.session_state["pending_reset"] = True
+    if st.session_state.get("pending_reset"):
+        with st.container(border=True):
+            st.markdown("**Delete all review + session log rows?**")
+            rc = st.columns(2)
+            if rc[0].button("Confirm", type="primary", key="reset_yes"):
+                s = get_active_session()
+                s.sql(f"DELETE FROM {SCHEMA}.QUIZ_REVIEW_LOG").collect()      # DELETE the two log tables — NEVER DROP
+                s.sql(f"DELETE FROM {SCHEMA}.QUIZ_SESSION_LOG").collect()
+                clear_caches(); st.session_state.pop("pending_reset", None)
+                st.toast("Logs reset"); st.rerun()
+            if rc[1].button("Cancel", key="reset_no"):
+                st.session_state.pop("pending_reset", None); st.rerun()
+```
+
+Notes the gate enforces: App config exposes **only** the two toggles + three model selectboxes (no source/round/difficulty); the Questions Bank has the **editable `st.data_editor` table** with the checkbox column + editor-state signature; every config/question/delete write uses **bind params** + `clear_caches()`; the spend panel **branches structurally** (empty-on-success → caption, privilege-signal → GRANT, other → caption); the log **reset is in the Logs tab**, frameless, two-step. Batch generation uses a **slider** and always fires **toast + transient badge** feedback.
 
 ---
 
