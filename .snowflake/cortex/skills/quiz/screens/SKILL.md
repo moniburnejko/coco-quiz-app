@@ -30,12 +30,12 @@ Navigation is native multipage (`st.Page` + `st.navigation`), built in `main.py`
 main.py  ->  st.navigation([
     pages/quiz.py      "Quiz"   (default)   home -> quiz -> summary  (internal state machine)
     pages/review.py    "Review"             WRONG ANSWERS | [FLASHCARDS] | LEARNING DASHBOARD  (st.pills sub-tabs; FLASHCARDS only if enabled)
-    pages/admin.py     "Admin"              app config, question manager, bank stats, spend, tools
+    pages/admin.py     "Admin"              app config (+ per-call model) · questions manager · Cortex spend · logs
     pages/<feature>.py                      only when the feature was requested
 ])
 ```
 
-**Config layer**: runtime behavior toggles live in `QUIZ_CONFIG` (defaults in `_config.py` `CONFIG_DEFAULTS`, DB overrides; `load_config()` cached + `save_config()` in `_data.py`, both with `clear_caches()` on write). Gates used below: `hints_enabled`, `debrief_enabled`, `default_round_size`, `pass_threshold_override`. (There is no `explanations_default`/`contrast_enabled` config — the explanation + deep-dive are always on-demand.)
+**Config layer**: runtime behavior toggles live in `QUIZ_CONFIG` (defaults in `_config.py` `CONFIG_DEFAULTS`, DB overrides; `load_config()` cached + `save_config()` in `_data.py`, both with `clear_caches()` on write). Gates used below: `hints_enabled`, `debrief_enabled` (both in `CONFIG_DEFAULTS`), and the **per-call-group model** keys `model_generation` / `model_explanation` / `model_meta` — these **default inline to `CORTEX_MODEL`** via `.get(key, CORTEX_MODEL)` (NOT a `CONFIG_DEFAULTS` entry), so they always track the base model instead of pinning a second hardcoded default; see Admin App config. (There is no `explanations_default`/`contrast_enabled` config — the explanation + deep-dive are always on-demand. There is **no** `default_round_size` or `pass_threshold_override` config — round size is set on Home each round, and the pass threshold is the fixed `PASS_THRESHOLD` study proxy, not user-tunable.)
 
 **Entry point (`main.py`)**: `st.set_page_config` (first `st.` call) -> `init_session_state()` -> shared sidebar title -> `st.navigation(pages).run()`. Pages share `st.session_state` (it persists across page switches).
 
@@ -104,7 +104,9 @@ Pair this with the spinner + single-`st.rerun()` rule in `$sis`.
 
 **On-demand only** — generated when the user clicks **"💡 AI explanation"**, never automatically. State machine in `st.session_state["explanation"]`: `None` (not requested yet — just show the button), `{}` (tried and failed; do NOT retry), `{dict}` (success; render the expander). On "Next": reset to `None`.
 
-`_generate_explanation()` calls `call_cortex_json(prompt, "explanation")` — the `RESPONSE_FORMATS["explanation"]` schema (`$cortex`) guarantees `why_correct` (array), `why_wrong` (object), `mnemonic`, `doc_search`. No fence parsing; retry only on `None`.
+`_generate_explanation()` calls `call_cortex_json(prompt, "explanation", model=model_for("explanation"))` — the `RESPONSE_FORMATS["explanation"]` schema (`$cortex`) guarantees `why_correct` (array), `why_wrong` (object), `mnemonic`, `doc_search`. No fence parsing; retry only on `None`.
+
+**Model routing (MANDATORY) for the learning loop** (`$cortex` `model_for`): explanation, **hint**, and **deep dive** pass `model=model_for("explanation")`; the **Round Brief debrief** passes `model=model_for("meta")`. Every `call_cortex_json`/`call_cortex` in these handlers takes the `model=` arg — omitting it silently pins the call to `CORTEX_MODEL` and the Admin model selector does nothing.
 
 **Same flow for correct AND incorrect answers** — clicking the button opens `st.expander("💡 AI EXPLANATION", expanded=True)` containing, in order:
 - `st.container(border=True)` **✅ WHY CORRECT** — `why_correct` bullet list
@@ -174,7 +176,7 @@ Each submitted answer is appended to `round_history`:
 - **Perfect** (all correct): **"Configure New Round"** only.
 - **Passed, some wrong**: **"Round Brief"** + **"Configure New Round"**.
 - **Failed**: **"Round Brief"** + **"Configure New Round"**.
-- Threshold = `pass_threshold_override` if set, else `PASS_THRESHOLD`. All buttons set state and call `st.rerun()`.
+- Threshold = `PASS_THRESHOLD` (the fixed study proxy — not user-overridable; there is no `pass_threshold_override`). All buttons set state and call `st.rerun()`.
 
 The optional **Remedial Round** feature (`$quiz/features`), when enabled, inserts a **"Remedial Round"** button into a *failed* round's outcome here and owns the re-test pass (which writes nothing). Core summary write-back never depends on it.
 
@@ -217,17 +219,59 @@ Optional features (`$quiz/features`) are generated as **separate pages** (`pages
 
 # Admin Page (`pages/admin.py` — core)
 
-Five **`st.tabs`** — **App config · Question manager · Bank stats · Cortex spend · Tools** (not one long scrolling page); the five subsections below are the tab contents in order. Single-user app → visible to the owner; when multi-user lands, gate via restricted caller's rights (fail-closed) — do NOT build RBAC now.
+Four **`st.tabs`** — **App config · Questions manager · Cortex spend · Logs** (not one long scrolling page); the four subsections below are the tab contents in order. Single-user app → visible to the owner; when multi-user lands, gate via restricted caller's rights (fail-closed) — do NOT build RBAC now.
 
-**1. App configuration**: toggles for `hints_enabled`, `debrief_enabled`; slider `default_round_size` (5–50); `pass_threshold_override` slider with an "exam default (75%)" reset button + warning caption that the official exam threshold does not change. **Grounding** is shown **read-only** — `grounding_mode` is fixed at setup (`$setup-exam` Step 1g), never a runtime toggle. In `cke`/`custom` mode, if `docs_available()` is False, show a red caption: "The doc grounding service is unavailable — install/grant the Snowflake Documentation CKE; the app can't generate until it's reachable." Every config change → `save_config(key, value)` (MERGE by key, bind params) → `clear_caches()` (clears `docs_available`/`search_docs` too) → `st.toast`.
+Admin's widget / pagination / pending-confirm keys — `_qm_filters`, `_qm_select_all`, `_qm_limit`, `_qm_mode`/`_qm_edit_id`, `pending_delete`, `pending_reset` — are **page-local**: initialized/guarded with `.get()` defaults in `admin.py`, NOT added to the core `init_session_state` contract (same as feature-page state). The core contract carries only cross-page shared state.
 
-**2. Question manager**: filter pills (domain / difficulty / source) → cached query → `st.dataframe(..., on_select="rerun", selection_mode="single-row")` → selected row loads into an edit form below (question `st.text_area`, options A–E inputs, `correct_answer` multiselect restricted to NON-EMPTY options, difficulty pills; `is_multi` derived = len(correct) > 1) → UPDATE by `question_id`. "Add new question" = the same form, empty → INSERT with `source='MANUAL'`. **Hard rules**: every write via bind params (NEVER f-string); length caps enforced in the form AND by truncation (question 2000, options 500); `correct_answer` ⊆ non-empty options; ≥2 options. **"Generate batch (AI)"** button: pick domain + difficulty mix → generates 10 questions via the **same grounded `_questions.py` path** (`$quiz/questions`: in `cke`/`custom` mode each question embeds retrieved `<doc_context>` as the primary source with `key_facts` as supporting scope, answers ONLY from the docs, and fails visibly on empty retrieval — never built-in knowledge) → INSERT with `source='AI_GENERATED'` → report count; caption with an approximate-cost note.
+## 1. App config
 
-**3. Bank stats**: cached coverage table — questions per domain × difficulty × source.
+**Two toggles** — `hints_enabled`, `debrief_enabled` ("Round Brief"). Plus **AI model per call-group** (3 `st.selectbox`, options from `_config.py` `MODEL_OPTIONS = ["claude-haiku-4-5", "claude-sonnet-4-6", "claude-opus-4-8"]`):
 
-**4. Cortex spend (graceful)**: `_cortex.py` sets a session `QUERY_TAG` (JSON: app, feature, model) and passes the feature per call. The dashboard reads `SNOWFLAKE.ACCOUNT_USAGE.CORTEX_FUNCTIONS_USAGE_HISTORY` inside try/except: on a permissions error render an info banner with the exact statement (`GRANT IMPORTED PRIVILEGES ON DATABASE SNOWFLAKE TO ROLE <role>;`) instead of crashing. Charts: spend by feature, spend by model (sonnet vs opus comparison). Caption: ACCOUNT_USAGE lags up to ~2h. When doc grounding is on, add a "docs search" line (Cortex Search query compute is billed to the consumer; small per query).
+| Selector (label) | Config key | Covers |
+|---|---|---|
+| Question generation | `model_generation` | `get_question`/`generate_ai_question`, Admin Generate batch, Exam-Simulation sourcing |
+| Explanations & study aids | `model_explanation` | explanation, hint, deep dive, flashcards |
+| Meta-analysis | `model_meta` | Round Brief debrief, AI study recommendations |
 
-**5. Tools**: "Refresh data" (`clear_caches()`); CSV export of `QUIZ_REVIEW_LOG` / `QUIZ_SESSION_LOG` (`st.download_button`); danger zone in an expander — "Reset logs" requires typing `DELETE` to confirm, runs `DELETE FROM` on the two log tables only (NEVER DROP, consistent with governance).
+Each defaults to `CORTEX_MODEL` (`load_config().get(f"model_{group}", CORTEX_MODEL)`); the call sites read it via `model_for(group)` and pass it to `call_cortex`/`call_cortex_json` (`$cortex`). The Cortex-spend "by model" chart reflects these choices.
+
+**Do NOT show:** `grounding_mode` (fixed at setup, `$setup-exam` Step 1g — not a runtime toggle, so don't surface it at all), `pass_threshold_override` (the official threshold doesn't change — removed), or `default_round_size` (set on Home before each round — redundant). The only grounding UI here is the guard: in `cke`/`custom` mode, if `docs_available()` is False, a red caption — "The doc grounding service is unavailable — install/grant the Snowflake Documentation CKE; the app can't generate until it's reachable." Every change → `save_config(key, value)` (MERGE by key, bind params) → `clear_caches()` (clears `docs_available`/`search_docs` too) → `st.toast`.
+
+## 2. Questions manager (merges the old Question manager + Bank stats)
+
+Two nested `st.tabs` — **Bank** and **Generate**.
+
+**Bank** — KPIs above an editable table (the vendors02 reference pattern):
+- **KPIs as `st.metric`, NOT a table**: Total questions · MANUAL · AI_GENERATED · domains covered (in `st.columns`, `$quiz/design` KPI cards). Backed by **`load_bank_stats()`** — a no-ttl cached coverage loader (per domain × difficulty × source) in `_data.py`, registered in `clear_caches()` (`$sis` item 24). The editable table below uses its own filtered loader (next).
+- **Editable / filterable / deletable table**:
+  1. **Filters** in an `st.expander("Filters", expanded=True)` — domain / difficulty / source pills — then a **"Search"** button commits them to a `_qm_filters` session dict (don't query live off widget state). A "Reset filters" button.
+  2. **`Select All` / `Clear`** buttons above the table (toggle a `_qm_select_all` flag).
+  3. **`st.data_editor`** with a leading `select` `st.column_config.CheckboxColumn`; **every other column `disabled`**; read the selection back as `edited[edited["select"]]`. The table's source is a **no-ttl cached loader returning a pandas DataFrame** (`.to_pandas()`) — `data_editor` preserves its checkbox selection across reruns ONLY when its input is byte-identical (a ttl that expired mid-edit would wipe the selection — `$sis` caching), and `.to_pandas()` columns come back UPPERCASE so there is **no `Row` access at all** (the selected-row fields are read as `row["QUESTION_TEXT"]`, never `.get()`/attr on a `Row` — `$sis` scan item 20; that was the `Row object has no attribute get` crash).
+  4. **`Load 10 more`** (page cap 10 — don't render 1000 rows; paginate via a `_qm_limit` that grows by 10).
+  5. Below the table: **`Edit` · `Delete` · `Add`**.
+     - **Edit** (enabled when exactly 1 row selected): loads that row into the form below → UPDATE by `question_id`.
+     - **Add**: opens the same form **empty** → INSERT `source='MANUAL'`.
+     - The form (Edit + Add) is an **`st.form(clear_on_submit=True)`** so all fields commit together on submit and the form resets after Insert (fixes the per-field Cmd+Enter + "form stays filled" problem): question `st.text_area`, options A–E `st.text_input`, `correct_answer` `st.multiselect` **restricted to the NON-EMPTY option values** (read inside the form on submit, so no per-field Enter), difficulty pills; `is_multi` derived = `len(correct) > 1`.
+     - **Delete** (enabled when ≥1 selected): **two-step confirm** — a bordered `pending_delete` panel ("Delete N question(s)?") with **Confirm / Cancel** (vendors02 `pending_*` pattern, NOT a type-`DELETE` text gate) → `DELETE FROM QUIZ_QUESTIONS WHERE question_id IN (?, …)`.
+  - **Hard rules** (`$sis` scan item 21): every write via bind params (`?`, NEVER f-string); length caps in the form AND by truncation (question 2000, options 500); `correct_answer` ⊆ non-empty options; ≥2 options. Every write → `clear_caches()` → `st.toast`.
+  - **Editor-state discipline (the hard part — follow vendors02 `01_ai_recommendations.py`):** keep a signature of the rendered slice (tuple of `QUESTION_ID`s). On a **non-append** change (filters/Search/Delete changed the set) drop the `data_editor` widget key and reset `_qm_select_all` so the checkbox column re-seeds cleanly; on a **pure append** (Load-10-more extends the slice) keep the selection. Without this, selection jumps on every Load-more/Search.
+  - **Edit vs Add form (one form, a mode flag):** `_qm_mode` ∈ `"add"`/`"edit"` (+ `_qm_edit_id` for edit). **Add** renders the empty `st.form(clear_on_submit=True)` → INSERT. **Edit** seeds the form from the selected row by writing the field values into the widget `session_state` keys at the **top of the run, before the widgets render** (flag-at-top — `$sis` widget lifecycle); **never pass both `value=`/`default=` and also set the `session_state` key** (raises "created with a default value but also had its value set"). Switching Add↔Edit clears the prior field keys via the same flag-at-top reset.
+
+**Generate** — Generate batch with options: **count** (`st.number_input`), **difficulty** (pills, incl. "mixed"), **domain** (`st.selectbox`/multiselect over `EXAM_DOMAINS`), and **model** (`st.selectbox` over `MODEL_OPTIONS`, default = the `model_generation` config) → generates via the **same grounded `_questions.py` path** (`$quiz/questions`: in `cke`/`custom` mode each question embeds retrieved `<doc_context>` as the primary source with `key_facts` as supporting scope, answers ONLY from the docs, fails visibly on empty retrieval — never built-in) → INSERT `source='AI_GENERATED'` → report count; caption with an approximate-cost note. The batch passes its chosen model through `call_cortex_json(..., model=…)`.
+
+## 3. Cortex spend (graceful — distinguish "no grant" from "no data")
+
+`_cortex.py` sets a session `QUERY_TAG` (JSON: app, feature, model) per call. Read `SNOWFLAKE.ACCOUNT_USAGE.CORTEX_FUNCTIONS_USAGE_HISTORY` inside try/except and branch **structurally**, not "any-exception → GRANT" (the live bug: an ACCOUNTADMIN who already holds the grant saw the GRANT banner because the code blamed *any* exception/empty result on permissions):
+- **Success path** — the query returned. If the result is **empty** → a plain caption: "No Cortex spend recorded yet — ACCOUNT_USAGE lags up to ~2 h, or no AI calls have run." (This is the ACCOUNTADMIN-on-a-fresh-account case; ACCOUNTADMIN holds `IMPORTED PRIVILEGES` by default, so **never** show the GRANT banner here.) Otherwise render the charts.
+- **Exception path** — inspect the error. Only when its message signals a **privilege/visibility problem on the SNOWFLAKE share** (e.g. it contains `Insufficient privileges`, `not authorized`, or `does not exist or not authorized` — the symptom of a role lacking `IMPORTED PRIVILEGES`) → the info banner with the exact `GRANT IMPORTED PRIVILEGES ON DATABASE SNOWFLAKE TO ROLE <role>;` (substitute the live `CURRENT_ROLE()`). For any **other** exception → a generic "couldn't read Cortex spend: {error}" caption, NOT the GRANT banner.
+
+Charts: spend by feature, spend by model (now a haiku/sonnet/opus split, reflecting the App-config model choices). Caption: ACCOUNT_USAGE lags up to ~2 h. When doc grounding is on, add a "docs search" line (Cortex Search query compute is billed to the consumer; small per query).
+
+## 4. Logs (was "Tools")
+
+A read-only log viewer plus a reset — the vendors02 logs page, no download:
+- **Both log tables shown**: `QUIZ_REVIEW_LOG` via `load_review_log()` and `QUIZ_SESSION_LOG` via **`load_session_log()`** — a new no-ttl cached loader for the full session-log table (`load_recent_sessions()` is the dashboard's last-10 aggregate, NOT this); **add `load_session_log` to `_data.py` and register it in `clear_caches()`** (`$sis` item 24, else it dangles). Read-only `st.dataframe`, newest first, `Load N more` if long. **No `st.download_button`.**
+- **Reset all logs** — a **frameless/borderless button** (`st.button(..., type="tertiary")`) below the tables, with **no expander and no "DANGER ZONE" label**, then a **two-step confirm** (a bordered `pending_reset` panel with Confirm / Cancel — NOT a type-`DELETE` text gate). Confirm runs `DELETE FROM` on the **two log tables only** (`QUIZ_REVIEW_LOG`, `QUIZ_SESSION_LOG`) — **NEVER `DROP`**, consistent with governance — then `clear_caches()` + `st.toast`.
 
 ---
 

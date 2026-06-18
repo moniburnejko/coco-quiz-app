@@ -43,7 +43,7 @@ Collects exam metadata + file names + optional features + look; validates AGENTS
 Dispatches across four sub-skills. Also carries the **app module map** (which `app/` file owns what).
 
 ### /quiz/screens
-Behavioural contracts: page flow (`st.navigation`), the home/quiz/summary state machine, the session-state key table, `history_item` schema, the learning loop (Socratic hint, on-demand AI explanation + deep dive, AI debrief), write-back + `clear_caches()`, the Review page (wrong-answers history with a date filter, learning dashboard, and the Flashcards tab when enabled), the 5-tab Admin page (App config · Question manager · Bank stats · Cortex spend · Tools), and the multi-answer/button-safety/date-handling widget patterns.
+Behavioural contracts: page flow (`st.navigation`), the home/quiz/summary state machine, the session-state key table, `history_item` schema, the learning loop (Socratic hint, on-demand AI explanation + deep dive, AI debrief), write-back + `clear_caches()`, the Review page (wrong-answers history with a date filter, learning dashboard, and the Flashcards tab when enabled), the 4-tab Admin page (App config with per-call-group model · Questions manager [bank KPIs + editable table + generate batch] · Cortex spend · Logs), and the multi-answer/button-safety/date-handling widget patterns.
 
 ### /quiz/questions
 Question selection/generation: `DIFFICULTY_GUIDE`, topic schedule, deduplication via `round_history`, fallback chain (DB → AI), retry, answer shuffling, hybrid doc-grounded generation.

@@ -166,6 +166,11 @@ Applies in: inside the on-demand AI-explanation expander (after the **💡 AI ex
 - No emoji in button labels: `"Start Round"` not `"▶️ Start Round"`
 - Action buttons: `type="primary"`, `use_container_width=True`
 - All pills: `label_visibility="collapsed"` (bold Markdown label above instead)
+- **Low-emphasis / deliberately understated destructive action** (e.g. Admin "Reset all logs"): `type="tertiary"` (borderless/frameless) — no expander, no "DANGER ZONE" framing; the safety is the **two-step Confirm/Cancel**, not visual alarm. (`type="tertiary"` is the borderless variant; `"secondary"` still draws a border.)
+
+# KPIs / metrics
+
+Headline numbers (Learning Dashboard, Admin bank stats) use **`st.metric`** in `st.columns` — never a table of counts. A KPI is a label + a big number (optionally a delta), not a row in a grid. Keep them on one row where they fit.
 
 ---
 

@@ -55,7 +55,7 @@ The generated app is a decomposed multipage project under `app/`. What each file
 | File | Responsibility |
 |------|----------------|
 | `main.py` | Entry: `st.set_page_config` (first `st.` call), `init_session_state()`, sidebar title, `st.navigation([...]).run()` |
-| `_config.py` | `EXAM_NAME`, `EXAM_CODE`, `CORTEX_MODEL`, `PASS_THRESHOLD`, `EXAM_QUESTION_COUNT`/`EXAM_TIME_LIMIT_MIN` (exam structure from setup — read by Exam Simulation), `DIFFICULTY_GUIDE`, color + `RESPONSE_FORMATS` constants |
+| `_config.py` | `EXAM_NAME`, `EXAM_CODE`, `CORTEX_MODEL`, `MODEL_OPTIONS` (per-call-group model picklist — `$cortex`), `PASS_THRESHOLD`, `EXAM_QUESTION_COUNT`/`EXAM_TIME_LIMIT_MIN` (exam structure from setup — read by Exam Simulation), `DIFFICULTY_GUIDE`, color + `RESPONSE_FORMATS` constants |
 | `_cortex.py` | `call_cortex` + `call_cortex_json` (see `$cortex`) |
 | `_data.py` | Cached loaders (`load_domains`, `load_session_stats`, `load_recent_sessions`, `load_domain_errors`, `load_config`) + `clear_caches()` |
 | `_questions.py` | Topic schedule, `get_question`, AI generation, answer shuffling, dedup (`questions/`) |
@@ -63,7 +63,7 @@ The generated app is a decomposed multipage project under `app/`. What each file
 | `_search.py` | Docs-CKE retrieval (`search_docs`/`docs_available`/`grounding_required`/`grounding_mode`) — MANDATORY doc grounding in cke/custom mode, never built-in knowledge; `none` = the only ungrounded path (see `$cortex`) |
 | `pages/quiz.py` | QUIZ: home → quiz → summary state machine (hints, deep dive, debrief) |
 | `pages/review.py` | REVIEW: wrong-answer history + learning dashboard |
-| `pages/admin.py` | ADMIN: config, question manager + Generate batch, bank stats, Cortex spend, tools |
+| `pages/admin.py` | ADMIN (4 tabs): app config (toggles + per-call-group model), questions manager (bank KPIs + editable table + generate batch), Cortex spend, logs |
 | `pages/<feature>.py` | ONLY when a feature is requested (`features/`) — e.g. `exam_simulation.py`, `recommendations.py` (flashcards is a Review tab, not a page — Feature 2) |
 
 Navigation is native multipage (`st.Page` + `st.navigation` in `main.py`); `st.session_state` is shared across pages; **most** optional features add their own pages, but a few hook into an existing page — the Flashcards feature adds a Review tab, the Comparison feature adds a control to the quiz explanation expander, and the Remedial Round feature adds a button to the summary screen. Full flow/state/write-back contracts → `screens/`.

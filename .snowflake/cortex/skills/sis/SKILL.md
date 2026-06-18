@@ -42,9 +42,10 @@ def load_domains():
 def clear_caches():                       # must clear EVERY @st.cache_data loader the app defines
     load_domains.clear(); load_session_stats.clear(); load_config.clear()
     load_recent_sessions.clear(); load_domain_errors.clear(); load_review_log.clear()
+    load_session_log.clear(); load_bank_stats.clear()  # Admin Logs + Questions-manager KPIs
     from _search import docs_available, search_docs   # function-local: _search imports _data, so a
     docs_available.clear(); search_docs.clear()        # module-level import here would be circular
-    # + any feature loaders when enabled: load_bank_stats, load_flashcard_progress, load_wrong_question_samples
+    # + any feature loaders when enabled: load_flashcard_progress, load_wrong_question_samples
 ```
 The list must stay in sync with the loaders actually defined — every `.clear()` here names a real `@st.cache_data` function (`$sis` pre-deploy scan item 24), the docs caches in `_search.py` included (`$cortex`, `$quiz/screens` Admin), and every loader added is added here (no ttl, so this is the only freshness mechanism).
 

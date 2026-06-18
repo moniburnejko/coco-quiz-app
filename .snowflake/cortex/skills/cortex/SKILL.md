@@ -45,23 +45,32 @@ RESPONSE_FORMATS = {
 ```
 Further schemas, same style (full key sets where each feature is specced): `"hint"` {hint_1, hint_2}; `"deep_dive"` {summary, how_it_works[], when_to_use, exam_traps[]} (the core Deep dive — explain ONE option, `$quiz/screens`); `"contrast"` {concept_a, concept_b, differences[], exam_trap} (the **Comparison** feature — compare two, `$quiz/features`); `"debrief"` {patterns[], priority_actions[], one_thing}; `"flashcards"` {cards[]: {card_type, card_front, card_back, topic}} (the **Flashcards** feature, `$quiz/features`).
 
-**Helpers live in `_cortex.py`:**
+**Helpers live in `_cortex.py`.** Both take an optional `model` (defaulting to `CORTEX_MODEL`) so a call can use its **per-group configured model** (Admin App config — `$quiz/screens`). The model is **never a user-typed value**: it is one of `_config.py` `MODEL_OPTIONS` chosen from a selectbox, so validate it against that whitelist before interpolating (same safety class as `CORTEX_MODEL`).
 ```python
-def call_cortex(prompt):
+MODEL_OPTIONS = ["claude-haiku-4-5", "claude-sonnet-4-6", "claude-opus-4-8"]  # _config.py
+
+def _model(model):
+    return model if model in MODEL_OPTIONS else CORTEX_MODEL   # whitelist guard before interpolation
+
+def model_for(group):                          # group in {"generation","explanation","meta"}
+    from _data import load_config              # function-local (avoid circular import)
+    return _model(load_config().get(f"model_{group}", CORTEX_MODEL))
+
+def call_cortex(prompt, model=None):
     """Free-text completion. Returns str or None."""
     try:
         safe = prompt.replace("$$", "$ $")
-        rows = session.sql(f"SELECT AI_COMPLETE(model => '{CORTEX_MODEL}', prompt => $${safe}$$)").collect()
+        rows = session.sql(f"SELECT AI_COMPLETE(model => '{_model(model)}', prompt => $${safe}$$)").collect()
         return str(rows[0][0]) if rows and rows[0][0] is not None else None
     except Exception as e:
         st.session_state["last_cortex_error"] = str(e); return None
 
-def call_cortex_json(prompt, fmt_key):
+def call_cortex_json(prompt, fmt_key, model=None):
     """Schema-constrained completion. Returns a dict or None."""
     try:
         safe = prompt.replace("$$", "$ $")
         rows = session.sql(
-            f"SELECT AI_COMPLETE(model => '{CORTEX_MODEL}', prompt => $${safe}$$, "
+            f"SELECT AI_COMPLETE(model => '{_model(model)}', prompt => $${safe}$$, "
             f"model_parameters => {{}}, response_format => {RESPONSE_FORMATS[fmt_key]})").collect()
         if not rows or rows[0][0] is None: return None
         raw = rows[0][0]
@@ -71,8 +80,10 @@ def call_cortex_json(prompt, fmt_key):
         st.session_state["last_cortex_error"] = str(e); return None
 ```
 
+**Per-call-group model:** call sites pass `model=model_for(group)` — `"generation"` (questions, Admin batch, sim sourcing), `"explanation"` (explanation, hint, deep dive, flashcards), `"meta"` (debrief, recommendations). Each group's model is set in Admin App config (`model_generation`/`model_explanation`/`model_meta` in `QUIZ_CONFIG`, default `CORTEX_MODEL`). The Admin Generate-batch button can override the generation model for that one call. `CORTEX_MODEL` stays the single default; `model_for` only redirects when a group has a saved override.
+
 Rules:
-- Schema strings are static project constants — safe to interpolate; never build them from user input.
+- Schema strings are static project constants — safe to interpolate; never build them from user input. The `model` is whitelist-guarded (`_model`) — never interpolate an unvalidated model string.
 - **No fence-stripping, no double-encode handling, no fence-aware parser** — the single `json.loads` guard above is the whole parse path.
 - Retry on `None` only (call failed / NULL) — not on "bad JSON" (structured output removes that case).
 - For an OpenAI `gpt-*` model the schema must also set `'additionalProperties': false` and list every property in `required` (Claude doesn't need it).
@@ -173,6 +184,7 @@ Run when a prompt produces wrong keys, shallow content, or unsafe interpolation.
 5. **Dollar-quoting** — `$${safe_prompt}$$`, not single quotes.
 6. **`$$` sanitization** — `.replace("$$", "$ $")` present.
 7. **`doc_search` not `doc_url`** — in `none` mode code converts `doc_search` → `https://docs.snowflake.com/en/search?q={query}`; in `cke`/`custom` mode the link is the chunk's real `SOURCE_URL` and `doc_search` is unused. Either way the prompt must never ask for a URL (the model hallucinates them).
+8. **Model routing** — every runtime generation call passes `model=model_for(<group>)` (NOT bare `call_cortex_json(prompt, key)`): `"generation"` for questions + Admin batch + sim sourcing, `"explanation"` for explanation/hint/deep-dive/flashcards, `"meta"` for debrief/recommendations. A call with no `model=` arg silently stays on `CORTEX_MODEL`, so the Admin per-call model selector is dead. The Admin Generate-batch call passes its own selected model. Flag any generation `call_cortex*` missing `model=`.
 
 Output: a table (# · check · PASS/FAIL/N·A · note). Verdict — all PASS → "reliable and safe"; any FAIL → "rewrite required," show the corrected prompt in full.
 

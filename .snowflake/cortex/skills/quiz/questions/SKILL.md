@@ -24,6 +24,8 @@ Parent skill `$quiz` routes here for QUESTIONS intent.
 
 All question logic lives in `_questions.py`: `parse_topics`, `_build_topic_schedule`, `generate_ai_question`, `get_question`, `_shuffle_options`, `_get_shown_texts`. AI calls go through `call_cortex_json` from `_cortex.py`; `DIFFICULTY_GUIDE` and `RESPONSE_FORMATS` come from `_config.py`. Pages never call Cortex directly.
 
+**Model routing (MANDATORY):** every question-generation call passes the **generation** group's model — `call_cortex_json(prompt, "question", model=model_for("generation"))` (`model_for` from `_cortex.py`, `$cortex`). Without the `model=` arg the call silently stays on `CORTEX_MODEL` and the Admin model selector does nothing.
+
 ---
 
 # DIFFICULTY_GUIDE
@@ -153,7 +155,7 @@ What the code still does:
 - **Retry loop**: retry only on `None` (call failed / returned NULL / guard tripped):
   ```python
   for _attempt in range(5):
-      data = call_cortex_json(prompt, "question")
+      data = call_cortex_json(prompt, "question", model=model_for("generation"))
       if data is None: continue
       if not _answers_valid(data): continue
       return build_question(data)  # success

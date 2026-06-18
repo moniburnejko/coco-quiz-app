@@ -371,7 +371,7 @@ Snowsight > **Projects > Streamlit > SNOWPRO_QUIZ**.
 - Click through all 5, then **Finish Round**.
 - **Summary**: score, pass/fail vs threshold, a collapsed **WRONG ANSWERS** expander, and an on-demand **Round Brief**. If you enabled the Remedial Round feature, a failed round also offers **Remedial Round** — your wrong answers back, reshuffled (it doesn't write to stats).
 - **Review** page (tabs: Wrong Answers · Learning Dashboard, plus Flashcards if enabled): filter Wrong Answers by domain and date; open **Learning Dashboard** - you should see your first session plotted (remedial rounds excluded by design).
-- **Admin** page (5 tabs: App config · Question manager · Bank stats · Cortex spend · Tools): check Bank stats, flip an App-config toggle (e.g. hints off/on), and in Question manager optionally **Generate batch (AI)** to start seeding the bank.
+- **Admin** page (4 tabs: App config · Questions manager · Cortex spend · Logs): flip an App-config toggle (e.g. hints off/on) or set a per-call-group model, check the bank KPIs in Questions manager, use its filter/edit/delete table, and optionally **Generate batch (AI)** to start seeding the bank; Logs shows the review + session tables with a guarded "reset all logs".
 
 Confirm:
 

@@ -24,6 +24,8 @@ This skill contains **OPTIONAL** features. Do NOT implement any feature unless t
 
 All **visual rendering** (badges, cards, callouts, buttons, charts) follows `$quiz/design`, the single source for styling — including the **`md()` `$`-escaping of every dynamic string** (question text, mnemonics, AI output) before `st.markdown`/`st.info`/`st.write`. Each feature below specifies *what* it shows and *where* in the flow — it never defines colors, theme keys, or chart formatting.
 
+**Model routing (MANDATORY):** any feature Cortex call passes `model=model_for(group)` (`$cortex`) — Flashcards → `"explanation"`; AI Study Recommendation → `"meta"`; Exam Simulation question sourcing → `"generation"` (it reuses the grounded `get_question()` path, already wired). Omitting `model=` silently pins the call to `CORTEX_MODEL` and the Admin model selector does nothing.
+
 Five features are specced here: **Exam Simulation, Flashcards, AI Study Recommendation, Comparison, Remedial Round.** Further ideas not yet implemented (Quick Stats, Smart Review, Achievement Badges, Misconception Analysis, Flag a Question) live in `docs/future-features.md` — re-add a spec here when one is requested.
 
 ---

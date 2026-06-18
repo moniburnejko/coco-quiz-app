@@ -119,7 +119,7 @@ Walk through the pages (navigation is native multipage):
 
 - **Quiz page** - home (round size, difficulty, domain, source — no explanations toggle; the explanation is on-demand) → quiz (try the 💡 Hint *before* answering; after submitting: instant feedback, then an on-demand **💡 AI explanation** button — for correct answers too — opening an expander with the explanation, a 🔬 Deep dive on one option, and a ⚖️ Compare-two control if the Comparison feature was enabled) → summary (score, pass/fail vs threshold, a collapsed WRONG ANSWERS expander, an on-demand Round Brief; if you enabled the Remedial Round feature, a failed round also offers a **Remedial Round** button — your wrong answers, reshuffled).
 - **Review page** - sub-tabs (`st.pills`): **Wrong answers** (history with domain + date-range filters), **Learning Dashboard** (charts), and **Flashcards** when that feature is enabled (atomic recall cards built from wrong answers, Leitner spaced repetition).
-- **Admin page** (5 tabs: App config, Question manager, Bank stats, Cortex spend, Tools) - flip a config toggle (e.g. round-size default) in App config, check Bank stats, and in Question manager try **Generate batch (AI)** to seed the question bank.
+- **Admin page** (4 tabs: App config, Questions manager, Cortex spend, Logs) - flip a feature toggle (hints / Round Brief) or pick a model per call-group in App config, check the bank KPIs, and in Questions manager use the filter/edit/delete table or **Generate batch (AI)** to seed the question bank; Logs shows the review + session tables with a guarded reset.
 
 Complete at least one round so `QUIZ_SESSION_LOG` and `QUIZ_REVIEW_LOG` get data for dashboard charts.
 
