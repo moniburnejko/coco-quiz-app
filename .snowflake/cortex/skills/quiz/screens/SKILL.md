@@ -119,19 +119,19 @@ Pair this with the spinner + single-`st.rerun()` rule in `$sis`.
 
 The 📖 doc link appears **only inside this expander, only after the button is clicked** - never auto-shown (not even for correct answers). Render every dynamic field (`why_correct`, `why_wrong`, `mnemonic`) through the `_ui.py` `md()` escaper before `st.markdown`/`st.info` (`$quiz/design` - escaping dynamic text). Store `mnemonic` + `doc_url` on `current_history_item` for the review log.
 
-**Doc grounding is MANDATORY in `cke`/`custom` mode (`$cortex`)**: retrieve `chunks = search_docs(question_text)` once; if `[]`, broaden once, else **fail visibly** (no built-in). Embed the top chunk(s) in the prompt as `<doc_context>` so `why_correct`/`why_wrong` are doc-grounded; `doc_url = chunks[0]["SOURCE_URL"]`. **`none` mode only**: the prompt asks for `doc_search` ("2-3 words, no URLs/commas") → `https://docs.snowflake.com/en/search?q={query}`.
+**Doc grounding is MANDATORY in `cke`/`custom` mode (`$cortex`)**: retrieve `chunks = search_docs(question_text)` once; if `[]`, broaden once, else **fail visibly** (no built-in). Embed the top chunk(s) in the prompt as `<doc_context>`; `doc_url = chunks[0]["SOURCE_URL"]`. This is a **teaching** call — use the **teaching grounding style** (`$cortex` "Grounded ≠ parroting"): ground every claim in the chunks, but **EXPLAIN the concept in your own words**; do NOT use the bare *"answer ONLY from the provided documentation"* line, do NOT quote the docs line-by-line, and do NOT write every bullet as "the documentation says…". **`none` mode only**: the prompt asks for `doc_search` ("2-3 words, no URLs/commas") → `https://docs.snowflake.com/en/search?q={query}`.
 
-**Explanation prompt content** - the schema guarantees shape, the prompt controls quality:
+**Explanation prompt content** - the schema guarantees shape, the prompt controls quality. Lead with: *"You are a SnowPro tutor. Explain comprehensively and holistically WHY the correct answer is right and each distractor is wrong — teach the underlying concept so it sticks. Ground every claim in `<doc_context>` but write in your own words; cite at most one short passage."* Then the fields:
 ```
-"why_correct": ["First key reason (Snowflake-specific)", "Second reason with technical detail", "Optional third"],
-"why_wrong": {"X": "one sentence why option X is wrong", "Y": "..."},
+"why_correct": ["First reason — a real explanation of the mechanism, not 'the docs say X'", "Second reason with technical detail", "Optional third"],
+"why_wrong": {"X": "one sentence explaining the actual misconception behind option X", "Y": "..."},
 "mnemonic": "a memorable phrase or acronym for the correct answer",
 "doc_search": "exactly 2-3 words for Snowflake docs search. No URLs. No commas. Max 3 words."
 ```
 
 ## Deep dive (inside the expander, below the explanation)
 
-A single **"🔬 Deep dive"** button - **NO option picker** → `call_cortex_json(prompt, "deep_dive", model=model_for("explanation"))` - an in-depth breakdown of the **question's topic** (how it works / when to use / exam traps), not a single answer option. `$cortex` `deep_dive` schema: `summary`, `how_it_works[]`, `when_to_use`, `exam_traps[]`. Render in `st.container(border=True)` with bold sub-labels + bullets. **Grounded** like the explanation: reuse the retrieved `<doc_context>`, broaden once then **fail visibly** on empty - never built-in; embed the **question + its topic/domain** per the delimiting rule (not a selected option), render through the `_ui.py` `md()` escaper, carry **more detail** than the base explanation. State: `deep_dive` (None/{}/dict), reset on Next.
+A single **"🔬 Deep dive"** button - **NO option picker** → `call_cortex_json(prompt, "deep_dive", model=model_for("explanation"))` - an in-depth breakdown of the **question's topic** (how it works / when to use / exam traps), not a single answer option. `$cortex` `deep_dive` schema: `summary`, `how_it_works[]`, `when_to_use`, `exam_traps[]`. Render in `st.container(border=True)` with bold sub-labels + bullets. **Grounded** like the explanation, and the **same teaching style** (`$cortex` "Grounded ≠ parroting"): reuse the retrieved `<doc_context>`, broaden once then **fail visibly** on empty - never built-in; embed the **question + its topic/domain** per the delimiting rule (not a selected option); EXPLAIN the topic in your own words (do not parrot the docs), carry **more depth** than the base explanation; render through the `_ui.py` `md()` escaper. State: `deep_dive` (None/{}/dict), reset on Next.
 
 ---
 
