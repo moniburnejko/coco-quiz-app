@@ -16,7 +16,7 @@ When building or modifying any part of quiz.py — screens, question generation,
 | SCREENS | screen flow, quiz screen, home screen, summary, review, session state, write-back, explanation, history_item | `screens/SKILL.md` |
 | QUESTIONS | generate questions, topic schedule, dedup, difficulty, fallback, DIFFICULTY_GUIDE, question validation | `questions/SKILL.md` |
 | DESIGN | theme, color, badge, chart, config.toml, section label, button, card, layout, styling | `design/SKILL.md` |
-| FEATURES | exam simulation, timed/mock exam, flashcard, study card, study recommendation, exam readiness, comparison, compare options, A vs B | `features/SKILL.md` |
+| FEATURES | exam simulation, timed/mock exam, flashcard, study card, study recommendation, exam readiness, comparison, compare options, A vs B, remedial round, retry wrong answers | `features/SKILL.md` |
 
 ## Workflow
 
@@ -46,7 +46,7 @@ Multiple sub-skills may apply to a single task (e.g., adding a new page needs bo
 - **Screens**: Screen flow (home/quiz/summary + review tabs), session state contract, history item schema, write-back, explanation state machine
 - **Questions**: DIFFICULTY_GUIDE (3-tier with CONSTRAINT/STYLE), topic scheduling, deduplication, source logic (db/ai/mix), fallback chain, validation, answer shuffling
 - **Design**: Theme (config.toml keys), badge palette, section labels, chart colors + axis formatting, cards, buttons, titles, docs-link — the single source for all visual rules
-- **Features**: OPTIONAL add-ons — exam simulation mode, flashcard review, AI study recommendation, comparison (compare two options)
+- **Features**: OPTIONAL add-ons — exam simulation mode, flashcard review, AI study recommendation, comparison (compare two options), remedial round (re-test wrong answers)
 
 ## App module map
 
@@ -61,12 +61,12 @@ The generated app is a decomposed multipage project under `app/`. What each file
 | `_questions.py` | Topic schedule, `get_question`, AI generation, answer shuffling, dedup (`questions/`) |
 | `_ui.py` | Shared render helpers — badges, cards, explanation expander, docs link (`design/`) |
 | `_search.py` | Docs-CKE retrieval (`search_docs`/`docs_available`/`grounding_required`/`grounding_mode`) — MANDATORY doc grounding in cke/custom mode, never built-in knowledge; `none` = the only ungrounded path (see `$cortex`) |
-| `pages/quiz.py` | QUIZ: home → quiz → summary state machine (hints, deep dive, debrief, remedial) |
+| `pages/quiz.py` | QUIZ: home → quiz → summary state machine (hints, deep dive, debrief) |
 | `pages/review.py` | REVIEW: wrong-answer history + learning dashboard |
 | `pages/admin.py` | ADMIN: config, question manager + Generate batch, bank stats, Cortex spend, tools |
 | `pages/<feature>.py` | ONLY when a feature is requested (`features/`) — e.g. `exam_simulation.py`, `recommendations.py` (flashcards is a Review tab, not a page — Feature 2) |
 
-Navigation is native multipage (`st.Page` + `st.navigation` in `main.py`); `st.session_state` is shared across pages; **most** optional features add their own pages, but a few hook into an existing page — the Flashcards feature adds a Review tab, the Comparison feature adds a control to the quiz explanation expander. Full flow/state/write-back contracts → `screens/`.
+Navigation is native multipage (`st.Page` + `st.navigation` in `main.py`); `st.session_state` is shared across pages; **most** optional features add their own pages, but a few hook into an existing page — the Flashcards feature adds a Review tab, the Comparison feature adds a control to the quiz explanation expander, and the Remedial Round feature adds a button to the summary screen. Full flow/state/write-back contracts → `screens/`.
 
 ## Output
 

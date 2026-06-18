@@ -1,6 +1,6 @@
 ---
 name: quiz-features
-description: "Optional features for the quiz app — exam simulation, flashcards, AI study recommendation, comparison. Implement ONLY features explicitly requested by the user, never by default. Triggers: exam simulation, timed exam, mock exam, flashcard, study card, study recommendation, exam readiness, comparison, compare options, A vs B. Do NOT use for the core quiz flow (quiz-screens)."
+description: "Optional features for the quiz app — exam simulation, flashcards, AI study recommendation, comparison, remedial round. Implement ONLY features explicitly requested by the user, never by default. Triggers: exam simulation, timed exam, mock exam, flashcard, study card, study recommendation, exam readiness, comparison, compare options, A vs B, remedial round, retry wrong answers. Do NOT use for the core quiz flow (quiz-screens)."
 ---
 
 # When to Load
@@ -24,7 +24,7 @@ This skill contains **OPTIONAL** features. Do NOT implement any feature unless t
 
 All **visual rendering** (badges, cards, callouts, buttons, charts) follows `$quiz/design`, the single source for styling — including the **`md()` `$`-escaping of every dynamic string** (question text, mnemonics, AI output) before `st.markdown`/`st.info`/`st.write`. Each feature below specifies *what* it shows and *where* in the flow — it never defines colors, theme keys, or chart formatting.
 
-Four features are specced here: **Exam Simulation, Flashcards, AI Study Recommendation, Comparison.** Further ideas not yet implemented (Quick Stats, Smart Review, Achievement Badges, Misconception Analysis, Flag a Question) live in `docs/future-features.md` — re-add a spec here when one is requested.
+Five features are specced here: **Exam Simulation, Flashcards, AI Study Recommendation, Comparison, Remedial Round.** Further ideas not yet implemented (Quick Stats, Smart Review, Achievement Badges, Misconception Analysis, Flag a Question) live in `docs/future-features.md` — re-add a spec here when one is requested.
 
 ---
 
@@ -234,6 +234,33 @@ In `cke`/`custom` mode embed the two option texts + the question as `<doc_contex
 ## Session state keys
 
 `comparison` (None/{}/dict), reset on Next.
+
+---
+
+# Feature 5: Remedial Round
+
+**OPTIONAL** — implement only if user requests remedial round, remedial quiz, retry wrong answers, or a re-test of missed questions.
+
+## What
+
+When enabled, a **failed practice round** gets a **"Remedial Round"** button on the summary screen (`$quiz/screens`) — a focused re-test of just the questions the user got wrong, reshuffled. It is NOT part of the core quiz: the basic summary on a failed round offers only Round Brief + Configure New Round; this feature inserts the Remedial Round button into that outcome.
+
+## UI hook
+
+On the summary of a **failed** practice round (`score < threshold`, ≥1 wrong) the feature adds a **"Remedial Round"** button (primary) alongside the core "Round Brief" + "Configure New Round". No new page, no Admin toggle — the feature's presence is the enable (a failed round always offers it). A perfect or passed round never shows it.
+
+## Remedial pass contract
+
+- **Queue**: the wrong items from `round_history`, **order shuffled**; `_shuffle_options` re-applied to every question so the option letters move (recall, not position memory).
+- **Setup**: set `_round_type="remedial"`, `_remedial_queue`; reset counters / `q_index` / `round_history` for the pass.
+- **During**: hints + the on-demand explanation behave normally.
+- **Writes NOTHING**: the pass must **bypass `_write_back_results()`, the Round Brief, and all logging** — re-testing just-seen questions would inflate readiness stats and duplicate `QUIZ_REVIEW_LOG` rows. The feature adds the `if _round_type == "remedial"` guard to the summary write-back; core write-back is otherwise unconditional.
+- **Remedial summary**: score + **"Configure New Round"** only (no chained remedials).
+- **Reset**: `_round_type` returns to `"practice"` on any new round.
+
+## Session state keys
+
+`_round_type` (str: "practice"/"remedial", default "practice"), `_remedial_queue` (list, the wrong items queued). Feature-local — NOT in the core `init_session_state` contract.
 
 ---
 

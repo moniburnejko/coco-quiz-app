@@ -35,7 +35,7 @@ main.py  ->  st.navigation([
 ])
 ```
 
-**Config layer**: runtime behavior toggles live in `QUIZ_CONFIG` (defaults in `_config.py` `CONFIG_DEFAULTS`, DB overrides; `load_config()` cached + `save_config()` in `_data.py`, both with `clear_caches()` on write). Gates used below: `hints_enabled`, `debrief_enabled`, `remedial_enabled`, `default_round_size`, `pass_threshold_override`. (There is no `explanations_default`/`contrast_enabled` config — the explanation + deep-dive are always-available on-demand, so they need no toggle.)
+**Config layer**: runtime behavior toggles live in `QUIZ_CONFIG` (defaults in `_config.py` `CONFIG_DEFAULTS`, DB overrides; `load_config()` cached + `save_config()` in `_data.py`, both with `clear_caches()` on write). Gates used below: `hints_enabled`, `debrief_enabled`, `default_round_size`, `pass_threshold_override`. (There is no `explanations_default`/`contrast_enabled` config — the explanation + deep-dive are always-available on-demand, so they need no toggle.)
 
 **Entry point (`main.py`)**: `st.set_page_config` (first `st.` call) -> `init_session_state()` -> shared sidebar title -> `st.navigation(pages).run()`. Pages share `st.session_state` (it persists across page switches).
 
@@ -170,14 +170,13 @@ Each submitted answer is appended to `round_history`:
 
 **Round Brief (on-demand; gate `debrief_enabled`; only when ≥1 wrong answer)**: a **"Round Brief"** button — NOT auto-generated. On click → `call_cortex_json(prompt, "debrief")` with per-question domain/topic/correctness/`hint_used` from `round_history` → open an **expander** with clean formatting: `st.container(border=True)` holding **PATTERNS** (bullets) and **PRIORITY ACTIONS** (max 3 bullets), then `one_thing` as a highlighted **🎯 FOCUS** line in its own bordered container (NOT `st.info` — that's reserved for the mnemonic per `$quiz/design`). **Grounding scope:** meta-analysis over the user's OWN round performance — names weak domains/topics + study actions but MUST NOT assert new Snowflake facts or emit doc links; the one runtime generation path exempt from doc-grounding (`$cortex`). State `debrief` (None=not requested / {}=failed / dict=success), reset on round start. A perfect round shows no Round Brief button. Render every dynamic field (PATTERNS, PRIORITY ACTIONS, `one_thing`) through the `md()` `$`-escaper before `st.markdown` (`$quiz/design`).
 
-**Action buttons (practice rounds, by outcome)** — `Round Brief` and `Remedial Round` only apply when there are wrong answers. When `_round_type == "remedial"`, ignore this table: the remedial summary shows only **"Configure New Round"** (see the Remedial round contract).
+**Action buttons (by outcome)** — `Round Brief` applies only when there is ≥1 wrong answer.
 - **Perfect** (all correct): **"Configure New Round"** only.
 - **Passed, some wrong**: **"Round Brief"** + **"Configure New Round"**.
-- **Failed, `remedial_enabled` ON**: **"Round Brief"** + **"Remedial Round"** (primary) + **"Configure New Round"**.
-- **Failed, `remedial_enabled` OFF**: **"Round Brief"** + **"Configure New Round"**. (Remedial Round is the ONLY button gated by `remedial_enabled` — a failed round always offers at least Round Brief + Configure New Round.)
+- **Failed**: **"Round Brief"** + **"Configure New Round"**.
 - No "Retry Same Config" button (removed). Threshold = `pass_threshold_override` if set, else `PASS_THRESHOLD`. All buttons set state and call `st.rerun()`.
 
-**Remedial round contract**: queue = the wrong items from `round_history` (order shuffled; `_shuffle_options` re-applied to every question so option letters move). Sets `_round_type="remedial"`, `_remedial_queue`, resets counters/q_index/history for the remedial pass. During remedial: hints/explanations behave normally; questions count toward nothing — **no `_write_back_results()`, no debrief, no logging** (a re-test of just-seen questions would inflate readiness stats and duplicate review entries). Remedial summary: score + only "Configure New Round" (no chained remedials) — this overrides the by-outcome button table above. `_round_type` resets to `"practice"` on any new round.
+The optional **Remedial Round** feature (`$quiz/features`), when enabled, inserts a **"Remedial Round"** button into a *failed* round's outcome here and owns the re-test pass (which writes nothing). Core summary write-back never depends on it.
 
 ---
 
@@ -220,7 +219,7 @@ Optional features (`$quiz/features`) are generated as **separate pages** (`pages
 
 Five **`st.tabs`** — **App config · Question manager · Bank stats · Cortex spend · Tools** (not one long scrolling page); the five subsections below are the tab contents in order. Single-user app → visible to the owner; when multi-user lands, gate via restricted caller's rights (fail-closed) — do NOT build RBAC now.
 
-**1. App configuration**: toggles for `hints_enabled`, `debrief_enabled`, `remedial_enabled`; slider `default_round_size` (5–50); `pass_threshold_override` slider with an "exam default (75%)" reset button + warning caption that the official exam threshold does not change. **Grounding** is shown **read-only** — `grounding_mode` is fixed at setup (`$setup-exam` Step 1g), never a runtime toggle (an "off" switch would be a built-in-knowledge backdoor). In `cke`/`custom` mode, if `docs_available()` is False, show a red caption: "The doc grounding service is unavailable — install/grant the Snowflake Documentation CKE; the app can't generate until it's reachable." Every config change → `save_config(key, value)` (MERGE by key, bind params) → `clear_caches()` (clears `docs_available`/`search_docs` too) → `st.toast`.
+**1. App configuration**: toggles for `hints_enabled`, `debrief_enabled`; slider `default_round_size` (5–50); `pass_threshold_override` slider with an "exam default (75%)" reset button + warning caption that the official exam threshold does not change. **Grounding** is shown **read-only** — `grounding_mode` is fixed at setup (`$setup-exam` Step 1g), never a runtime toggle (an "off" switch would be a built-in-knowledge backdoor). In `cke`/`custom` mode, if `docs_available()` is False, show a red caption: "The doc grounding service is unavailable — install/grant the Snowflake Documentation CKE; the app can't generate until it's reachable." Every config change → `save_config(key, value)` (MERGE by key, bind params) → `clear_caches()` (clears `docs_available`/`search_docs` too) → `st.toast`.
 
 **2. Question manager**: filter pills (domain / difficulty / source) → cached query → `st.dataframe(..., on_select="rerun", selection_mode="single-row")` → selected row loads into an edit form below (question `st.text_area`, options A–E inputs, `correct_answer` multiselect restricted to NON-EMPTY options, difficulty pills; `is_multi` derived = len(correct) > 1) → UPDATE by `question_id`. "Add new question" = the same form, empty → INSERT with `source='MANUAL'`. **Hard rules**: every write via bind params (NEVER f-string); length caps enforced in the form AND by truncation (question 2000, options 500); `correct_answer` ⊆ non-empty options; ≥2 options. **"Generate batch (AI)"** button: pick domain + difficulty mix → generates 10 questions via the **same grounded `_questions.py` path** (`$quiz/questions`: in `cke`/`custom` mode each question embeds retrieved `<doc_context>` as the primary source with `key_facts` as supporting scope, answers ONLY from the docs, and fails visibly on empty retrieval — never built-in knowledge) → INSERT with `source='AI_GENERATED'` → report count; caption with an approximate-cost note.
 
@@ -289,8 +288,6 @@ All keys initialized in `init_session_state()` in `main.py` (state is shared acr
 | `hint_level` | int | `0` | 0=none, 1=hint_1 shown, 2=hint_2 shown |
 | `deep_dive` | None/{}/ dict | `None` | Deep-dive result for the selected option (explain ONE; compare-two is the optional Comparison feature, key `comparison`); reset on Next |
 | `debrief` | None/{}/ dict | `None` | On-demand Round Brief (None=not requested, {}=failed, dict=success); generated from the Round Brief button, reset on round start |
-| `_round_type` | str | `"practice"` | practice / remedial |
-| `_remedial_queue` | list | `[]` | Wrong items queued for the remedial round |
 
 Navigation is owned by `st.navigation` (no `nav_pills` / `_current_page` / `_redirect_to_quiz` keys); cross-page redirects set the target state, then call `st.switch_page("pages/quiz.py")`.
 

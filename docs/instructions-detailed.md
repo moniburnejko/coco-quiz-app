@@ -17,9 +17,11 @@ You give CoCo a Snowflake certification **study guide PDF**. The agent:
 7. Deploys the app — by default the agent copies `app/` from the workspace stage onto `STAGE_SIS_APP` and runs `CREATE STREAMLIT` on the warehouse runtime (no manual upload); the container runtime instead deploys via the Workspaces **Run + Deploy** flow.
 
 You never leave the browser. You never run `bash`, `git`, `snow`, or `PUT`. You only:
-- Drop the study-guide PDF (and any CSV) into the workspace file tree — the agent stages it via `COPY FILES` (no manual stage upload);
-- Read what the agent proposes and say "go" or "no, do X differently";
-- Click **Run** to preview and **Deploy** to publish the app at the end.
+- Load this asset into a workspace — fork the repo and open a **Git-backed workspace**, or upload the `.snowflake/cortex/skills/` folder + `AGENTS.md` (Step 1);
+- Drop the study-guide PDF (and any optional CSV) into the workspace file tree when asked — the agent stages it via `COPY FILES` (no manual stage upload);
+- Read what the agent proposes and say "go" or "no, do X differently".
+
+The deploy itself is **scripted on the default warehouse runtime** (the agent runs `COPY FILES` + `CREATE STREAMLIT` — no clicks); only the **container opt-in** uses the Workspaces **Run → Deploy** toolbar.
 
 ---
 
@@ -245,7 +247,7 @@ The agent will:
 
 1. Ask you for the exam name and exam code (e.g. "SnowPro Core" / "COF-C03").
 2. Ask for the PDF filename (required) and optionally the CSV filename.
-3. Ask about additional customisations (the four optional features from `$quiz/features` - exam simulation mode, flashcards, AI study recommendation, comparison). Five further ideas (Quick Stats, Smart Review, Achievement Badges, Misconception Analysis, Flag a Question) are deferred to `docs/future-features.md`, not available out of the box.
+3. Ask about additional customisations (the five optional features from `$quiz/features` - exam simulation mode, flashcards, AI study recommendation, comparison, remedial round). Five further ideas (Quick Stats, Smart Review, Achievement Badges, Misconception Analysis, Flag a Question) are deferred to `docs/future-features.md`, not available out of the box.
 4. Ask whether you want the **default look or a custom one** - custom means a short style dialog (light/dark, accent color, roundness, fonts), applied via Streamlit theming only.
 5. Create the schema, stages, tables, file format (SQL visible in the chat - approve or reject each step).
 6. Stop and ask you to add the PDF to the workspace (it stages it via `COPY FILES`).
@@ -394,7 +396,7 @@ Snowsight > **Projects > Streamlit > SNOWPRO_QUIZ**.
 - On **Home**: pick 5 questions, medium difficulty, any domain, "AI Generated" source (there is no explanations toggle — the explanation is on-demand). Click **Start Round**.
 - On **Quiz**: wait a couple seconds for the first AI-generated question to load. Try the **💡 Hint** button *before* answering (two levels, never spoils). Answer, submit, then click **💡 AI explanation** to load it on demand (works for correct answers too). Inside the expander, try **🔬 Deep dive** on one option; if you enabled the Comparison feature, **⚖️ Compare two** contrasts two options.
 - Click through all 5, then **Finish Round**.
-- **Summary**: score, pass/fail vs threshold, a collapsed **WRONG ANSWERS** expander, and an on-demand **Round Brief**. If you failed and remedial rounds are enabled, you'll also see **Remedial Round** — your wrong answers back, reshuffled (it doesn't write to stats).
+- **Summary**: score, pass/fail vs threshold, a collapsed **WRONG ANSWERS** expander, and an on-demand **Round Brief**. If you enabled the Remedial Round feature, a failed round also offers **Remedial Round** — your wrong answers back, reshuffled (it doesn't write to stats).
 - **Review** page (tabs: Wrong Answers · Learning Dashboard, plus Flashcards if enabled): filter Wrong Answers by domain and date; open **Learning Dashboard** - you should see your first session plotted (remedial rounds excluded by design).
 - **Admin** page (5 tabs: App config · Question manager · Bank stats · Cortex spend · Tools): check Bank stats, flip an App-config toggle (e.g. hints off/on), and in Question manager optionally **Generate batch (AI)** to start seeding the bank.
 

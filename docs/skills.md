@@ -43,7 +43,7 @@ Collects exam metadata + file names + optional features + look; validates AGENTS
 Dispatches across four sub-skills. Also carries the **app module map** (which `app/` file owns what).
 
 ### /quiz/screens
-Behavioural contracts: page flow (`st.navigation`), the home/quiz/summary state machine, the session-state key table, `history_item` schema, the learning loop (Socratic hint, on-demand AI explanation + deep dive, AI debrief, fail-only remedial round), write-back + `clear_caches()`, the Review page (wrong-answers history with a date filter, learning dashboard, and the Flashcards tab when enabled), the 5-tab Admin page (App config · Question manager · Bank stats · Cortex spend · Tools), and the multi-answer/button-safety/date-handling widget patterns.
+Behavioural contracts: page flow (`st.navigation`), the home/quiz/summary state machine, the session-state key table, `history_item` schema, the learning loop (Socratic hint, on-demand AI explanation + deep dive, AI debrief), write-back + `clear_caches()`, the Review page (wrong-answers history with a date filter, learning dashboard, and the Flashcards tab when enabled), the 5-tab Admin page (App config · Question manager · Bank stats · Cortex spend · Tools), and the multi-answer/button-safety/date-handling widget patterns.
 
 ### /quiz/questions
 Question selection/generation: `DIFFICULTY_GUIDE`, topic schedule, deduplication via `round_history`, fallback chain (DB → AI), retry, answer shuffling, hybrid doc-grounded generation.
@@ -52,7 +52,7 @@ Question selection/generation: `DIFFICULTY_GUIDE`, topic schedule, deduplication
 **The single source for every visual rule** — theme/`config.toml` keys, badge palette, chart colors + axis formatting, cards, buttons, titles, docs-link. Other skills reference it; they never re-specify a color or chart rule.
 
 ### /quiz/features
-Optional features (only when explicitly requested) — exactly four: exam simulation, flashcards, AI study recommendation, comparison (compare two options). Each spec gives behavior/data/state; visuals follow `$quiz/design`. Five further ideas (quick stats, smart review, achievement badges, misconception analysis, flag a question) are deferred to `docs/future-features.md` — not implemented; re-add a spec here when one is requested.
+Optional features (only when explicitly requested) — exactly five: exam simulation, flashcards, AI study recommendation, comparison (compare two options), remedial round (re-test wrong answers). Each spec gives behavior/data/state; visuals follow `$quiz/design`. Five further ideas (quick stats, smart review, achievement badges, misconception analysis, flag a question) are deferred to `docs/future-features.md` — not implemented; re-add a spec here when one is requested.
 
 ---
 

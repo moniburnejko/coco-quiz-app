@@ -73,7 +73,7 @@ The agent updates `.streamlit/config.toml` (+ matching `_config.py` chart consta
 
 ## 3. Functional features
 
-`$quiz/features` implements **four** opt-in features: **Exam Simulation, Flashcards, AI Study Recommendation, Comparison**. They are **not** enabled by default. Add any combination to your setup prompt, or ask the agent to bolt them onto an already-deployed app. (Five further ideas — Quick Stats, Smart Review, Achievement Badges, Misconception Analysis, Flag a Question — are specced but **not implemented**; they live in [docs/future-features.md](future-features.md). Don't request them as if they exist.)
+`$quiz/features` implements **five** opt-in features: **Exam Simulation, Flashcards, AI Study Recommendation, Comparison, Remedial Round**. They are **not** enabled by default. Add any combination to your setup prompt, or ask the agent to bolt them onto an already-deployed app. (Five further ideas — Quick Stats, Smart Review, Achievement Badges, Misconception Analysis, Flag a Question — are specced but **not implemented**; they live in [docs/future-features.md](future-features.md). Don't request them as if they exist.)
 
 | Feature | What it adds | New session-state / data |
 |---|---|---|
@@ -81,6 +81,7 @@ The agent updates `.streamlit/config.toml` (+ matching `_config.py` chart consta
 | **Flashcards** | A **FLASHCARDS tab on the Review page** (not a separate page). Atomic, recall-forcing cards (qa / cloze / compare) AI-decomposed from your wrong answers — never the verbatim MCQ — reviewed with Leitner spaced repetition (boxes 1–5). On-demand "Build cards from my wrong answers"; deck = cards due today | `_flashcard_cards`, `_flashcard_index`, `_flashcard_revealed`; new table `FLASHCARD_PROGRESS` |
 | **AI Study Recommendation** | Own page (`pages/recommendations.py`): readiness math computed in Python from your error history (not the LLM), plus an AI-authored qualitative study plan / weak-domain + weak-topic recommendations grounded on the docs CKE | `_ai_recommendations`, `_rec_cache_key`; reads `QUIZ_REVIEW_LOG` + `EXAM_DOMAINS`, writes nothing |
 | **Comparison** | A "⚖️ Compare two" control in the quiz-screen AI-explanation expander: pick exactly two options for a side-by-side discrimination of the underlying concepts (the core Deep dive explains ONE option) | `comparison` |
+| **Remedial Round** | A "Remedial Round" button on the summary of a *failed* practice round: re-tests just your wrong answers, reshuffled (no Admin toggle — present = enabled). The pass writes nothing — no stats, no review log, no debrief | `_round_type`, `_remedial_queue` |
 
 ### How to request features
 
