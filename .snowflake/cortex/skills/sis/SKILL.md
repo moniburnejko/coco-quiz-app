@@ -39,10 +39,14 @@ def load_domains():
 **No `ttl` on any loader.** A ttl that expires mid-session silently swaps a stateful widget's input DataFrame and resets the widget (selections vanish, filters jump). Cache for the whole session and invalidate explicitly: `_data.py` defines `clear_caches()` (clears every loader) and **every DB write calls it** before the UI reads again.
 
 ```python
-def clear_caches():
-    load_domains.clear(); load_session_stats.clear()
+def clear_caches():                       # must clear EVERY @st.cache_data loader the app defines
+    load_domains.clear(); load_session_stats.clear(); load_config.clear()
     load_recent_sessions.clear(); load_domain_errors.clear(); load_review_log.clear()
+    from _search import docs_available, search_docs   # function-local: _search imports _data, so a
+    docs_available.clear(); search_docs.clear()        # module-level import here would be circular
+    # + any feature loaders when enabled: load_bank_stats, load_flashcard_progress, load_wrong_question_samples
 ```
+The list must stay in sync with the loaders actually defined — every `.clear()` here names a real `@st.cache_data` function (`$sis` pre-deploy scan item 24), the docs caches in `_search.py` included (`$cortex`, `$quiz/screens` Admin), and every loader added is added here (no ttl, so this is the only freshness mechanism).
 
 Cache keys carry real variability as plain hashable args; heavy/unhashable args (session, SQL text, params) are `_`-prefixed so the hasher ignores them.
 
@@ -84,17 +88,23 @@ No fixed `st.rerun()` budget. Per handler: a button doing slow work (DB write, A
 
 ## SQL safety
 
-Only `DATABASE`, `SCHEMA`, `CORTEX_MODEL`, and `RESPONSE_FORMATS` constants may be f-string-interpolated into SQL. Every user-derived value (`domain_id`, difficulty, dates, Admin input) uses bind params (`:1, :2, …`).
+Only `DATABASE`, `SCHEMA`, `CORTEX_MODEL`, and `RESPONSE_FORMATS` constants may be f-string-interpolated into SQL. Every user-derived value (`domain_id`, difficulty, dates, Admin input) uses bind params.
+
+**Bind-param style is `?` (qmark), never `:1`.** Snowpark's `session.sql(sql, params=[...])` uses positional `?` placeholders bound left-to-right from the `params` list — `session.sql("... WHERE domain_id = ? AND difficulty = ?", params=[d, diff])`. The `:1, :2` numeric style does NOT work through `session.sql(params=…)` and silently fails or errors at runtime. (`:1` positional binds apply to server-side `EXECUTE IMMEDIATE … USING`; `:name` is a connector-level style — this app uses neither.)
 
 ---
 
 # Pre-deploy scan
 
-**MANDATORY before every deploy** (`COPY FILES` to `STAGE_SIS_APP` + `CREATE STREAMLIT`) and after any code change. Read ALL app files in full — `main.py`, every `_*.py`, every `pages/*.py`, `.streamlit/config.toml` — then check each item across the whole project. Report PASS/FAIL per item; on FAIL show the file, line, and offending snippet. **Deploy only when every item passes.**
+**MANDATORY before every deploy** (`COPY FILES` to `STAGE_SIS_APP` + `CREATE STREAMLIT`) and after any code change. **Re-read ALL app files from disk in this turn** — `main.py`, every `_*.py`, every `pages/*.py`, `.streamlit/config.toml` — then check each item across the whole project. **Never scan from memory or from a summary of the files** (a remembered scan certifies code you didn't actually look at — this is exactly how a `NameError`/`ImportError` ships as "23/23 PASS"). Every PASS/FAIL row must cite a real `file:line` you read this turn; on FAIL show the file, line, and offending snippet. **Deploy only when every item passes.**
+
+**The scan never introduces symbols.** If it edits any code (e.g. fixing a flagged item), re-read the changed file and re-run the affected items — never add a function/import/`.clear()` reference to a name that isn't defined in the source. A scan that edits then certifies without re-reading is how a phantom loader (`load_questions_page`) gets added to `clear_caches()` + imported in a page and still reports PASS.
+
+**Resolve an unresolved name by REMOVING the dangling reference, never by authoring a definition to satisfy it.** When item 24 finds a reference to an undefined name, the fix is to delete the reference (the phantom `load_questions_page.clear()` line, the bad import), NOT to invent a `def load_questions_page()` so it resolves — that produces internally-consistent code that passes the scan and byte-compiles while reintroducing the exact symbol the design rejected. **If the scan's set of defined symbols grows, the scan has failed** — verify the symbol genuinely belongs to the architecture (`$quiz` module map) before keeping any new definition.
 
 ### SQL and data safety
 1. **SQL injection** — every `session.sql(f"...")`: only the four constants above in f-strings; all runtime values via bind params (see SQL safety).
-2. **Parameterized INSERT** — `INSERT INTO ... VALUES (:1, :2, …)` with a params list; no value interpolation inside `VALUES (`.
+2. **Parameterized INSERT, `?` style** — `INSERT INTO ... VALUES (?, ?, …)` with a params list; no value interpolation inside `VALUES (`. Flag any `:1`/`:2`/`:name` placeholder — Snowpark `session.sql(params=…)` is `?`-only (see SQL safety).
 3. **No `PARSE_JSON` inside `VALUES (`** — use bind params instead.
 4. **`SELECT DISTINCT` + `IS NOT NULL`** — every `SELECT DISTINCT` filters out NULLs.
 
@@ -122,7 +132,7 @@ Only `DATABASE`, `SCHEMA`, `CORTEX_MODEL`, and `RESPONSE_FORMATS` constants may 
 19. **No `st.slider` with a `datetime.date`** min/max — use `st.date_input`.
 
 ### Column names
-20. **Column normalization** — every `.as_dict()` result uppercased before access.
+20. **Column normalization + no raw-`Row` access** — every `.as_dict()` result uppercased before access (`{k.upper(): v for k, v in row.as_dict().items()}`); and **never `.get()` or attribute-access a Snowpark `Row`** (`row.get("X")` / `row.X` raise `AttributeError: Row object has no attribute …`). Read a `Row` only via `row["UPPER_COL"]` or the uppercased dict. Flag every `.get(`/attr on a value that came from `.collect()` / a dataframe-selection row (e.g. `st.dataframe(..., on_select=…)` selections → convert to an uppercased dict first).
 
 ### Untrusted input
 21. **Admin/flag inputs hardened** — all writes bind-param'd; form values length-capped (question 2000, options 500, comment 500); `correct_answer` ⊆ non-empty options; any stored/user-editable text embedded in a prompt is wrapped in data delimiters (`$cortex` — untrusted content).
@@ -130,6 +140,10 @@ Only `DATABASE`, `SCHEMA`, `CORTEX_MODEL`, and `RESPONSE_FORMATS` constants may 
 
 ### Rendering
 23. **No raw `$` in rendered dynamic text** — model/DB strings (question, options, explanation, deep-dive, mnemonics, summary + review + flashcard cards) pass through the `_ui.py` `md()` escaper before `st.markdown`/`st.write`/`st.info`; an unescaped `$…$` renders as LaTeX in Streamlit. Flag any dynamic text rendered without `md()`.
+
+### Static resolution (catches the `NameError`/`ImportError` a static read must find — no execution needed)
+24. **Name & import resolution** — every referenced name resolves to a definition. Build the set of defined names per module, then confirm **every** cross-module reference is in it — in all forms: each `from _x import (a, b, …)` name is defined in `_x.py`; each `<loader>.clear()` in `clear_caches()` names an `@st.cache_data` function defined in `_data.py`; each `module.attr` / `module.func()` access resolves to a definition in that module; no call to a helper that exists in no module. (This is the item that catches a phantom `load_questions_page` — there is **no** such loader; the Admin question manager queries the bank directly.)
+25. **Write-once side effects** — every DB-writing handler reachable from a button (`_write_back_results()`, Admin INSERT/UPDATE/DELETE) is guarded against duplicate execution: a single-write flag (or delete-before-insert keyed by the round/row) so a double-click or a post-write exception cannot insert the same rows twice; and `clear_caches()` is the **last** statement of the write path and cannot raise (else the writes commit but the handler crashes and the user re-clicks → duplicates). See `$quiz/screens` Write-Back Contract.
 
 **Output:** a table, one row per item (# · item · PASS/FAIL/N·A · `file:line` snippet). Verdict — all pass → "Clean. Proceed to deploy."; any FAIL → "Fix items [list] before deploying," each with file+line and a one-line fix.
 

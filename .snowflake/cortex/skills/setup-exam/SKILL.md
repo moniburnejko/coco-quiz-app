@@ -33,7 +33,7 @@ All OFF by default — enabled only if the user asks in Step 1d. **Without an ex
 | Option | Values | What it does |
 |--------|--------|--------------|
 | model_profile | `default` / `quality` | `default` = `claude-sonnet-4-6`. `quality` = `claude-opus-4-7` set as `CORTEX_MODEL` in `_config.py` — stronger reasoning for hard distractors, slower + markedly pricier. `claude-opus-4-8` is **Public Preview** — use only on explicit request. Do NOT change the AGENTS.md default. |
-| self_verify | `off` / `on` | Adds Step 8.5 (byte-compile the generated modules). Needs a CoCo session with code execution (Cloud Agents); skipped gracefully otherwise. |
+| self_verify | `off` / `on` | Byte-compile already runs in Step 8 when the session can execute code (Cloud Agents); `on` makes Step 8.5 strict — fix → re-read → re-scan → re-compile until clean, no deploy until then. Skipped gracefully where code can't run (the `$sis` static-resolution items are the substitute). |
 | automations | `off` / `on` | Recurring unattended maintenance via CoCo **Automations** (Preview) — report-only recipe in `docs/customization.md` §5c. |
 
 ---
@@ -333,11 +333,13 @@ Edit `AGENTS.md` within these boundaries.
    ```
    Add each `pages/<feature>.py` to `artifacts`. Do NOT set `pages_dir` (navigation is `st.navigation`-controlled) or `execute_as`/`run_mode` (caller's-rights Preview; this app is owner-rights).
 
-8. **Run the `$sis` pre-deploy scan across ALL app files as a final confirmation.** If you applied the item-2 rules it reports 0 failures — that's the target; >0 means a rule was skipped during generation (fix + re-scan). ⚠️ Do NOT deploy on any FAIL.
+8. **Run the `$sis` pre-deploy scan across ALL app files as a final confirmation** — first **re-open `$sis` itself** (don't scan from a remembered checklist; if its text isn't in context this turn — e.g. trimmed earlier — load it before scanning), then **re-read every app file from disk now, never scanning from memory** (a remembered scan certifies code you didn't look at — that is how a `NameError`/`ImportError` ships as "all PASS"). The scan's static-resolution items (every imported name + every `clear_caches()` loader resolves to a real definition; no raw-`Row` `.get()`; write-once side effects) are what catch the import/name/attribute errors a static read must find. If you applied the item-2 rules it reports 0 failures — that's the target; >0 means a rule was skipped during generation (fix, **re-read**, re-scan). ⚠️ Do NOT deploy on any FAIL.
 
-## Step 8.5 — Self-verify (OPTIONAL — advanced mode)
+   **Byte-compile when this session can execute code (Cloud Agents) — this is automatic, not advanced-gated.** `python -m py_compile app/main.py app/_*.py app/pages/*.py` is the definitive backstop for `NameError`/`ImportError`; run it whenever the session can, regardless of the `self_verify` option. **A compile error blocks deploy exactly like a scan FAIL** — fix, re-read, re-scan, re-compile until clean. If the session can't execute code, the scan's static-resolution items are the substitute and must be done by hand, file by file. (The advanced `self_verify` option only forces the deeper Step 8.5 rigor on top.)
 
-Only if **self-verify** was enabled (Step 1d) and the session can execute code (Cloud Agents). Byte-compile every module (`python -m py_compile app/main.py app/_*.py app/pages/*.py`) — Snowflake-bound modules can't run outside SiS, so compile/parse only; on failure fix → re-run the `$sis` scan → repeat. If the session can't execute code, say so and skip. Supplements the Step 8 scan, never replaces it.
+## Step 8.5 — Self-verify (advanced mode — forces extra rigor)
+
+Byte-compile already runs in Step 8 whenever the session can execute code. **self-verify** (Step 1d) makes that loop strict and explicit: byte-compile every module (`python -m py_compile app/main.py app/_*.py app/pages/*.py`), and on ANY failure **fix → re-read → re-run the full `$sis` scan → re-compile**, repeating until both are clean — no deploy until then. Snowflake-bound modules can't run outside SiS, so this is compile/parse only. If the session can't execute code, say so; the scan's static-resolution items (`$sis` items 24-25) are the mandatory substitute. Supplements the Step 8 scan, never replaces it.
 
 ## Step 9 — Deploy (warehouse, fully scriptable — no manual upload)
 

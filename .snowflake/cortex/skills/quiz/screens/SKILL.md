@@ -235,6 +235,8 @@ Five **`st.tabs`** — **App config · Question manager · Bank stats · Cortex 
 
 On round end (`_write_back_results()` in `pages/quiz.py`):
 
+**0. Write exactly once per round (idempotency guard — MANDATORY).** Re-entry is normal: the Finish button can be clicked twice during the rerun, and if anything *after* the INSERTs raises (e.g. `clear_caches()`), the page crashes and the user re-clicks Finish — each re-entry would otherwise re-INSERT every row (2 questions × 5 clicks = 10 review rows). Guard with a **plain boolean**, not a round id: at the very top of `_write_back_results()`, `if st.session_state.get("_results_written"): return`; otherwise set `st.session_state["_results_written"] = True` **before** the INSERTs. **Start Round is the SOLE reset site** — it sets `_results_written = False` (no other code path may reset it; any future "re-enter summary without a new round" path must NOT clear it, or it reopens this duplication). Pair with the `_transitioning`/`_pending_finish` button guards (Quiz Screen) so a slow Finish can't double-fire.
+
 1. For each wrong answer in `round_history`: INSERT to `QUIZ_REVIEW_LOG` with bind params
    - `correct_answer` must be **resolved** before INSERT — store `"{letter}) {full_text}"`, not the raw letter. Pattern:
      ```python
@@ -248,9 +250,9 @@ On round end (`_write_back_results()` in `pages/quiz.py`):
    - Fields: exam_code (from `_config.py`), round_size, correct_count, score_pct, domain_filter, difficulty
    - `round_size` = the **configured** round size from `st.session_state["round_size"]`, NOT `total_count` (which is how many questions were actually answered — may differ if user ends early)
 
-3. **Call `clear_caches()`** (from `_data.py`) immediately after the INSERTs — the Review page loaders have no ttl, so without this the dashboard would not see the new round until a full session restart.
+3. **Call `clear_caches()`** (from `_data.py`) as the **last** step, immediately after the INSERTs — the Review page loaders have no ttl, so without this the dashboard would not see the new round until a full session restart. `clear_caches()` must not be able to raise (every `.clear()` inside it names a loader actually defined in `_data.py` — `$sis` scan item 24); if it threw after the INSERTs, the writes would commit but the handler would crash and the user would re-click Finish → duplicate rows (the failure mode the step-0 guard also defends).
 
-Always bind params (`:1, :2, ...`), never f-string interpolation of values.
+Always bind params (`?` qmark — `session.sql(sql, params=[...])`; never `:1`, see `$sis`), never f-string interpolation of values.
 
 ---
 
@@ -283,6 +285,7 @@ All keys initialized in `init_session_state()` in `main.py` (state is shared acr
 | `_ai_recommendations` | dict\|None | `None` | Cached AI study recommendations |
 | `_rec_cache_key` | str\|None | `None` | Cache key = f"rec_{sessions}" |
 | `_pending_finish` | bool | `False` | Finish pending flag for deferred write-back |
+| `_results_written` | bool | `False` | Write-once guard for `_write_back_results()`; set `True` before the INSERTs, reset to `False` only on Start Round (prevents duplicate review/session rows on re-click or post-write crash) |
 | `_op_clear_keys` | list | `[]` | Widget keys to pop at top of next run (flag-at-top reset) |
 | `hint` | None/{}/ dict | `None` | Socratic hint (None=not tried, {}=failed, dict=success) |
 | `hint_level` | int | `0` | 0=none, 1=hint_1 shown, 2=hint_2 shown |

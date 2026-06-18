@@ -91,7 +91,7 @@ Reference: see `_build_topic_schedule()` and `parse_topics()` in `_questions.py`
 
 **DB path**: Collect shown question texts from `round_history` + current question via `_get_shown_texts()`. Pass as bind params to `NOT IN` clause in SQL:
 ```sql
-WHERE question_text NOT IN (:3, :4, :5, ...)
+WHERE question_text NOT IN (?, ?, ?, ...)
 ```
 
 **AI path**: Collect `question_text[:80]` from round_history. Include as "DO NOT repeat these already-asked questions:" block in the prompt.
@@ -239,7 +239,7 @@ The code then adds UPPERCASE keys (`QUESTION_TEXT`, `DOMAIN_ID`, `DOMAIN_NAME`, 
 
 Runtime AI generation **grows the bank**: when `generate_ai_question` returns a validated question, **INSERT it into `QUIZ_QUESTIONS`** (bind params per `$sis`; `source='AI_GENERATED'`; columns `domain_id`, `domain_name`, `difficulty`, `question_text`, `is_multi`, `option_a..e`, `correct_answer` — `question_id`/`created_at` are auto). The persist is **fire-and-forget**: the in-memory question keeps `QUESTION_ID = None` (`history_item.question_id` is `int/None`). **"Question Bank" mode serves persisted rows with no AI call.**
 
-- **Exact-text dedup**: insert only when no row with the same `question_text` already exists — `INSERT … SELECT … WHERE NOT EXISTS (SELECT 1 FROM {FQ}.QUIZ_QUESTIONS WHERE QUESTION_TEXT = :q)` — so re-asked concepts don't pile up duplicates.
+- **Exact-text dedup**: insert only when no row with the same `question_text` already exists — `INSERT … SELECT … WHERE NOT EXISTS (SELECT 1 FROM {FQ}.QUIZ_QUESTIONS WHERE QUESTION_TEXT = ?)` (qmark bind, per `$sis`) — so re-asked concepts don't pile up duplicates.
 - **Always on** (no toggle). Persist the question as generated; `_get_db_question` re-shuffles option order on load anyway.
 - A failed persist must **never break the round** — wrap the INSERT so an error just skips saving (the question still displays). Bank rows come from rounds + the Admin "Generate batch" button.
 
