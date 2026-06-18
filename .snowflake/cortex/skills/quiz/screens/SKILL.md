@@ -36,6 +36,36 @@ main.py  ->  st.navigation([
 
 **Config layer**: runtime behavior toggles live in `QUIZ_CONFIG` (defaults in `_config.py` `CONFIG_DEFAULTS`, DB overrides; `load_config()` cached + `save_config()` in `_data.py`, both with `clear_caches()` on write). Gates used below: `hints_enabled`, `debrief_enabled` (both in `CONFIG_DEFAULTS`), and the **per-call-group model** keys `model_generation` / `model_explanation` / `model_meta` - these **default inline to `CORTEX_MODEL`** via `.get(key, CORTEX_MODEL)` (NOT a `CONFIG_DEFAULTS` entry), so they always track the base model instead of pinning a second hardcoded default; see Admin App config. (There is no `explanations_default` config - the explanation + deep-dive are always on-demand. There is **no** `default_round_size` or `pass_threshold_override` config - round size is set on Home each round, and the pass threshold is the fixed `PASS_THRESHOLD` study proxy, not user-tunable.)
 
+**Config (de)serialization — COPY this; it is the #1 config crash.** `QUIZ_CONFIG.config_value` is `VARIANT`. The round-trip is **`PARSE_JSON(?)` on write + `json.loads` on read** — and it goes through the **one `save_config()` helper**. Do NOT inline a config MERGE in a page, and **NEVER `TO_VARIANT(json.dumps(value))`** — that double-encodes (stores `"\"ai\""`, reads back the literal `'"ai"'`) and then `options.index('"ai"')` raises `ValueError`. (`PARSE_JSON` here is in a MERGE `USING` sub-select, which is allowed — the `$sis` "no PARSE_JSON inside `VALUES(`" rule is only about `INSERT … VALUES`.) VARIANT is kept (matches the DDL + the Step-1g `grounding_mode` seed); a plain `VARCHAR` column would also work but needs no schema change, so don't.
+```python
+# _data.py
+def save_config(key, value):
+    get_active_session().sql(
+        f"MERGE INTO {SCHEMA}.QUIZ_CONFIG t USING (SELECT ? AS k, PARSE_JSON(?) AS v) s ON t.config_key = s.k "
+        f"WHEN MATCHED THEN UPDATE SET config_value = s.v, updated_at = CURRENT_TIMESTAMP() "
+        f"WHEN NOT MATCHED THEN INSERT (config_key, config_value) VALUES (s.k, s.v)",
+        params=[key, json.dumps(value)],         # json.dumps → PARSE_JSON round-trips; NOT TO_VARIANT(json.dumps(...))
+    ).collect()
+    clear_caches()
+
+@st.cache_data(show_spinner=False)
+def load_config():
+    cfg = dict(CONFIG_DEFAULTS)
+    for r in get_active_session().sql(f"SELECT config_key, config_value FROM {SCHEMA}.QUIZ_CONFIG").collect():
+        v = r["CONFIG_VALUE"]
+        if isinstance(v, str):
+            try: v = json.loads(v)            # VARIANT string comes back JSON-encoded; decode once
+            except Exception: pass
+        cfg[r["CONFIG_KEY"]] = v
+    return cfg
+```
+**Guard every config-seeded widget default** — a stored value that isn't in the options list must never crash the page (`ValueError`/`StreamlitAPIException`). Use a helper, never a bare `options.index(cfg[key])`:
+```python
+def cfg_index(options, value, default=0):       # _ui.py
+    return options.index(value) if value in options else default
+# st.selectbox("Model", MODEL_OPTIONS, index=cfg_index(MODEL_OPTIONS, cfg.get("model_generation", CORTEX_MODEL)))
+```
+
 **Entry point (`main.py`)**: `st.set_page_config` (first `st.` call) -> `init_session_state()` -> shared sidebar title -> `st.navigation(pages).run()`. Pages share `st.session_state` (it persists across page switches).
 
 **Inside `pages/quiz.py`** the three screens are an internal state machine driven by `st.session_state["screen"]` (`home` / `quiz` / `summary`) - they are NOT separate pages.
@@ -347,7 +377,7 @@ Admin's widget / pagination / pending-confirm keys - `_qm_filters`, `_qm_select_
 
 Each defaults to `CORTEX_MODEL` (`load_config().get(f"model_{group}", CORTEX_MODEL)`); the call sites read it via `model_for(group)` and pass it to `call_cortex`/`call_cortex_json` (`$cortex`). The Cortex-spend "by model" chart reflects these choices.
 
-**Do NOT show:** `grounding_mode` (fixed at setup, `$setup-exam` Step 1g - not a runtime toggle, so don't surface it at all), `pass_threshold_override` (the official threshold doesn't change - removed), or `default_round_size` (set on Home before each round - redundant). The only grounding UI here is the guard: in `cke`/`custom` mode, if `docs_available()` is False, a red caption - "The doc grounding service is unavailable - install/grant the Snowflake Documentation CKE; the app can't generate until it's reachable." Every change → `save_config(key, value)` (MERGE by key, bind params) → `clear_caches()` (clears `docs_available`/`search_docs` too) → `st.toast`.
+**Do NOT show:** `grounding_mode` (fixed at setup, `$setup-exam` Step 1g - not a runtime toggle, so don't surface it at all), `pass_threshold_override` (the official threshold doesn't change - removed), or `default_round_size` (set on Home before each round - redundant). The only grounding UI here is the guard: in `cke`/`custom` mode, if `docs_available()` is False, a red caption - "The doc grounding service is unavailable - install/grant the Snowflake Documentation CKE; the app can't generate until it's reachable." Every change → the **`save_config()` helper** (the `PARSE_JSON` round-trip from Config layer — NEVER inline a config MERGE here, NEVER `TO_VARIANT(json.dumps())`) → `clear_caches()` (clears `docs_available`/`search_docs` too) → `st.toast`. The three model `st.selectbox`es seed their `index` via `cfg_index(MODEL_OPTIONS, cfg.get(f"model_{group}", CORTEX_MODEL))` (never a bare `.index()` — see Config layer).
 
 ## 2. Questions manager
 

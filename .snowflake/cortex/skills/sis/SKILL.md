@@ -107,7 +107,7 @@ Only `DATABASE`, `SCHEMA`, `CORTEX_MODEL`, and `RESPONSE_FORMATS` constants may 
 ### SQL and data safety
 1. **SQL injection** - every `session.sql(f"...")`: only the four constants above in f-strings; all runtime values via bind params (see SQL safety).
 2. **Parameterized INSERT, `?` style** - `INSERT INTO ... VALUES (?, ?, …)` with a params list; no value interpolation inside `VALUES (`. Flag any `:1`/`:2`/`:name` placeholder - Snowpark `session.sql(params=…)` is `?`-only (see SQL safety).
-3. **No `PARSE_JSON` inside `VALUES (`** - use bind params instead.
+3. **No `PARSE_JSON` inside `VALUES (`** - use bind params instead. BUT `PARSE_JSON(?)` in a MERGE/SELECT **`USING`** sub-select is correct and **required** for config writes (`save_config()`, `$quiz/screens`): config writes use `PARSE_JSON(?)` with `params=[json.dumps(value)]`, **never `TO_VARIANT(json.dumps(...))`** (double-encodes → read returns `'"ai"'` → `options.index()` crashes). Also flag any config-seeded widget default doing a bare `options.index(cfg[key])` instead of the `cfg_index()` guard.
 4. **`SELECT DISTINCT` + `IS NOT NULL`** - every `SELECT DISTINCT` filters out NULLs.
 
 ### Cortex / AI_COMPLETE  (see `$cortex`)
