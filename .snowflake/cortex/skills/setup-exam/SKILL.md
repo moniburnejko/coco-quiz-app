@@ -1,6 +1,6 @@
 ---
 name: setup-exam
-description: "Automated 10-step exam setup pipeline for Snowflake CoCo in Snowsight. Creates the schema, extracts domains from a study-guide PDF, loads an optional question bank, builds the multipage `app/` Streamlit project, and deploys it on a virtual warehouse (the default runtime). First exam or adding another. Triggers: setup exam, new exam, new certification, new study guide PDF, add exam, switch exam, create exam"
+description: "Automated 10-step exam setup pipeline for Snowflake CoCo in Snowsight. Creates the schema, extracts domains from a study-guide PDF, loads an optional question bank, builds the multipage `app/` Streamlit project, and deploys it on a virtual warehouse. First exam or adding another. Triggers: setup exam, new exam, new certification, new study guide PDF, add exam, switch exam, create exam"
 ---
 
 # When to Use
@@ -18,9 +18,9 @@ Example: *"I have SnowProGenAIStudyGuide.pdf — create a quiz app for this exam
 
 # Environment
 
-Runs inside **CoCo in Snowsight**: no bash/git/`snow` CLI, no `PUT` (the agent can't read the local filesystem). The user only **drops files into the workspace** (the PDF/CSV, plus the generated `app/` project the agent writes); the agent then **copies them onto stages with `COPY FILES`** — the PDF onto `STAGE_QUIZ_DATA` (Step 4) and the `app/` onto `STAGE_SIS_APP`, deploying via `CREATE STREAMLIT` on the warehouse runtime (Step 9). No manual stage upload (the container path instead uses Workspaces Run + Deploy). Isolation is **schema-per-exam** (`QUIZ_<CODE>`) — no git branch.
+Runs inside **CoCo in Snowsight**: no bash/git/`snow` CLI, no `PUT` (the agent can't read the local filesystem). The user only **drops files into the workspace** (the PDF/CSV, plus the generated `app/` project the agent writes); the agent then **copies them onto stages with `COPY FILES`** — the PDF onto `STAGE_QUIZ_DATA` (Step 4) and the `app/` onto `STAGE_SIS_APP`, deploying via `CREATE STREAMLIT` on the warehouse runtime (Step 9). No manual stage upload. Isolation is **schema-per-exam** (`QUIZ_<CODE>`) — no git branch.
 
-Read `{database}`, `{warehouse}`, `{role}`, `{compute_pool}` from the `snowflake environment` table in `AGENTS.md`; every SQL placeholder below substitutes those. Never hardcode exam names/codes — extract the name from the PDF and ALWAYS confirm the code with the user.
+Read `{database}`, `{warehouse}`, `{role}` from the `snowflake environment` table in `AGENTS.md`; every SQL placeholder below substitutes those. Never hardcode exam names/codes — extract the name from the PDF and ALWAYS confirm the code with the user.
 
 **Tool — `ask_user_question`** (at STOP points): present fixed options, wait for the choice. If unavailable, present the same options as a numbered list and wait.
 
@@ -35,7 +35,6 @@ All OFF by default — enabled only if the user asks in Step 1d. **Without an ex
 | model_profile | `default` / `quality` | `default` = `claude-sonnet-4-6`. `quality` = `claude-opus-4-7` set as `CORTEX_MODEL` in `_config.py` — stronger reasoning for hard distractors, slower + markedly pricier. `claude-opus-4-8` is **Public Preview** — use only on explicit request. Do NOT change the AGENTS.md default. |
 | self_verify | `off` / `on` | Adds Step 8.5 (byte-compile the generated modules). Needs a CoCo session with code execution (Cloud Agents); skipped gracefully otherwise. |
 | automations | `off` / `on` | Recurring unattended maintenance via CoCo **Automations** (Preview) — report-only recipe in `docs/customization.md` §5c. |
-| runtime | `warehouse` (default) / `container` | **`warehouse`** runs on a virtual warehouse — no compute pool, no EAI, `environment.yml` from the Snowflake Anaconda channel; works on **trial accounts**. **`container`** (opt-in) unlocks custom PyPI packages/GPU but needs a compute pool *and* a PyPI EAI — **the EAI is not available on trial accounts**. Sets the deps file + deploy path (Steps 8–9). |
 
 ---
 
@@ -73,7 +72,7 @@ You do **not** need filenames here — the agent reads the real names off the wo
 
 ### 1d — Additional requirements + advanced mode
 
-Ask: *"Any additional requirements? (optional features, AI study recommendations, different scoring — or advanced mode: quality model / self-verify / Automations / container runtime)"*. Map advanced requests to the **Advanced options** section above (set at Step 8 / 8.5 / 10; never change AGENTS.md defaults). **The default runtime is `warehouse`** — switch to `container` ONLY if the user explicitly asks *and* the account can create a PyPI EAI (not on trial); it changes the deps file + deploy at Steps 8–9. If the user names features not in AGENTS.md, clarify requirements before Step 2. Wait for the response.
+Ask: *"Any additional requirements? (optional features, AI study recommendations, different scoring — or advanced mode: quality model / self-verify / Automations)"*. Map advanced requests to the **Advanced options** section above (set at Step 8 / 8.5 / 10; never change AGENTS.md defaults). If the user names features not in AGENTS.md, clarify requirements before Step 2. Wait for the response.
 
 ### 1e — Look & feel
 
@@ -81,20 +80,7 @@ Ask: *"Any additional requirements? (optional features, AI study recommendations
 
 ### 1f — Deploy prerequisites
 
-**Default (`warehouse` runtime): nothing to check** — no compute pool, no external access integration; `pandas`/`altair` come from the Snowflake Anaconda channel. Skip to 1g.
-
-**Only if the user opted into the `container` runtime** (Step 1d) — it needs a compute pool **and** a PyPI EAI:
-1. **Compute pool** — `SHOW COMPUTE POOLS;`. `SYSTEM_COMPUTE_POOL_CPU` exists on essentially every account with `USAGE` granted to `PUBLIC`, so the role can use it (the CPU system pool; **never** `SYSTEM_COMPUTE_POOL_GPU`).
-2. **PyPI EAI** — installs `pandas`/`altair` from PyPI (not in the base image). **Not available on trial accounts.** If the account supports it and the user has ACCOUNTADMIN:
-   ```sql
-   USE ROLE ACCOUNTADMIN;
-   CREATE OR REPLACE EXTERNAL ACCESS INTEGRATION pypi_access_integration
-     ALLOWED_NETWORK_RULES = (snowflake.external_access.pypi_rule)
-     ENABLED = TRUE;
-   GRANT USAGE ON INTEGRATION pypi_access_integration TO ROLE {role};
-   ```
-
-**⚠️ If container was requested but the EAI can't be created** (trial account, or no ACCOUNTADMIN) → **fall back to the default `warehouse` runtime** — it needs neither and runs the same app. Confirm the runtime before continuing — it sets the deps file (`environment.yml` vs `pyproject.toml`) and the deploy path.
+**Nothing to check** — `pandas`/`altair` come from the Snowflake Anaconda channel via `environment.yml`. Skip to 1g.
 
 ### 1g — Doc grounding mode (decided here, fixed for the exam)
 
@@ -310,7 +296,7 @@ Edit `AGENTS.md` within these boundaries.
    app/
      main.py            _config.py   _cortex.py   _data.py   _questions.py   _ui.py   _search.py
      pages/  quiz.py   review.py   admin.py        # + <feature>.py ONLY for requested features
-     .streamlit/config.toml   environment.yml   snowflake.yml   # pyproject.toml instead, for the container opt-in
+     .streamlit/config.toml   environment.yml   snowflake.yml
    ```
    **Generate `snowflake.yml` + `.streamlit/config.toml` FIRST** — `snowflake.yml` at the project root is what makes the Workspace recognize the folder as a Streamlit app (no "Convert to Streamlit app" click). If the user chose "No CSV", default `question_source = 'ai'`.
 
@@ -323,17 +309,17 @@ Edit `AGENTS.md` within these boundaries.
    st.navigation(pages).run()
    ```
 
-5. **`environment.yml`** (default — warehouse runtime, Snowflake Anaconda channel):
+5. **`environment.yml`** (warehouse runtime, Snowflake Anaconda channel):
    ```yaml
    name: snowpro_quiz
    channels: [snowflake]
    dependencies: [streamlit, pandas, altair, snowflake]
    ```
-   `snowflake` (the Snowflake Python API, unpinned) provides `snowflake.core`, which the CKE doc-grounding helper (`_search.py`, `$cortex`) imports — omit it and the app dies at load with `ModuleNotFoundError: No module named 'snowflake.core'`. *(Container opt-in instead emits `pyproject.toml`: `[project]` with `name = "snowpro_quiz"`, `requires-python = "==3.11.*"`, `dependencies = ["streamlit[snowflake]", "pandas", "altair", "snowflake"]`.)*
+   `snowflake` (the Snowflake Python API, unpinned) provides `snowflake.core`, which the CKE doc-grounding helper (`_search.py`, `$cortex`) imports — omit it and the app dies at load with `ModuleNotFoundError: No module named 'snowflake.core'`.
 
 6. **`.streamlit/config.toml`** — `[client] showErrorDetails = "none"` (the string, NOT `false`, which leaks tracebacks) + `toolbarMode = "minimal"`. The `[theme]`/`[theme.sidebar]` block comes from **`$quiz/design`** (the canonical default theme lives there; or the user's Step 1e custom palette) — never author theme values here from memory.
 
-7. **`snowflake.yml`** — `identifier` = `app_name` from AGENTS.md; **list EVERY generated file in `artifacts`** (an incomplete list = a partial / broken deploy). Default (warehouse runtime):
+7. **`snowflake.yml`** — `identifier` = `app_name` from AGENTS.md; **list EVERY generated file in `artifacts`** (an incomplete list = a partial / broken deploy):
    ```yaml
    definition_version: 2
    entities:
@@ -345,7 +331,7 @@ Edit `AGENTS.md` within these boundaries.
        main_file: main.py
        artifacts: [main.py, _config.py, _cortex.py, _data.py, _questions.py, _ui.py, _search.py, pages/, environment.yml, .streamlit/config.toml]
    ```
-   Add each `pages/<feature>.py` to `artifacts`. Do NOT set `pages_dir` (navigation is `st.navigation`-controlled) or `execute_as`/`run_mode` (caller's-rights Preview; this app is owner-rights). **Container opt-in:** add `compute_pool: {compute_pool}`, `runtime_name: SYSTEM$ST_CONTAINER_RUNTIME_PY3_11`, `external_access_integrations: [pypi_access_integration]`, and swap `environment.yml` → `pyproject.toml` in `artifacts`.
+   Add each `pages/<feature>.py` to `artifacts`. Do NOT set `pages_dir` (navigation is `st.navigation`-controlled) or `execute_as`/`run_mode` (caller's-rights Preview; this app is owner-rights).
 
 8. **Run the `$sis` pre-deploy scan across ALL app files as a final confirmation.** If you applied the item-2 rules it reports 0 failures — that's the target; >0 means a rule was skipped during generation (fix + re-scan). ⚠️ Do NOT deploy on any FAIL.
 
@@ -353,9 +339,9 @@ Edit `AGENTS.md` within these boundaries.
 
 Only if **self-verify** was enabled (Step 1d) and the session can execute code (Cloud Agents). Byte-compile every module (`python -m py_compile app/main.py app/_*.py app/pages/*.py`) — Snowflake-bound modules can't run outside SiS, so compile/parse only; on failure fix → re-run the `$sis` scan → repeat. If the session can't execute code, say so and skip. Supplements the Step 8 scan, never replaces it.
 
-## Step 9 — Deploy (default: warehouse, fully scriptable — no manual upload)
+## Step 9 — Deploy (warehouse, fully scriptable — no manual upload)
 
-The agent can't click the Workspaces UI or `PUT`, but the workspace files already live on an internal stage — so the agent copies them onto `STAGE_SIS_APP` with SQL and creates the app. Default path: **warehouse runtime — no compute pool, no EAI; works on trial accounts.**
+The agent can't click the Workspaces UI or `PUT`, but the workspace files already live on an internal stage — so the agent copies them onto `STAGE_SIS_APP` with SQL and creates the app on the **warehouse runtime** — works on trial accounts.
 
 **1. Copy `app/` from the workspace stage → `STAGE_SIS_APP`.** Workspace files sit at `snow://workspace/USER$.PUBLIC."<workspace_name>"/versions/live/app/` — **confirm the exact URI first** (the workspace name varies), then copy, preserving the `pages/` and `.streamlit/` subfolders:
 ```sql
@@ -377,7 +363,7 @@ COPY FILES INTO @{database}.QUIZ_<CODE>.STAGE_SIS_APP/.streamlit/
 LIST @{database}.QUIZ_<CODE>.STAGE_SIS_APP;
 ```
 
-**3. Create (or replace) the app on the warehouse runtime** — packages come from the Snowflake Anaconda channel via `environment.yml`; no compute pool, no EAI, no internet:
+**3. Create (or replace) the app on the warehouse runtime** — packages come from the Snowflake Anaconda channel via `environment.yml`; no internet:
 ```sql
 CREATE OR REPLACE STREAMLIT {database}.QUIZ_<CODE>.SNOWPRO_QUIZ
   FROM '@{database}.QUIZ_<CODE>.STAGE_SIS_APP' MAIN_FILE = 'main.py'
@@ -385,9 +371,7 @@ CREATE OR REPLACE STREAMLIT {database}.QUIZ_<CODE>.SNOWPRO_QUIZ
 ```
 **Redeploy after an edit:** save the file in the workspace, re-run the relevant `COPY FILES` (it overwrites same-named files) + `CREATE OR REPLACE STREAMLIT`; confirm with `LIST` that the changed file's size updated before assuming it took.
 
-**Container opt-in (non-trial only).** The Workspaces **Run + Deploy** UI runs the **container** runtime, which resolves dependencies from PyPI — so it needs a **PyPI EAI** *and* a **compute pool**, **neither available on trial accounts**. If both exist: open `app/main.py` → **Run** (dev preview) → **Deploy** (app title `SNOWPRO_QUIZ`, db `{database}`, schema `QUIZ_<CODE>`, warehouse `{warehouse}`, compute pool `{compute_pool}`, the PyPI EAI under **Network**). SQL equivalent: the same staged `CREATE STREAMLIT` plus `RUNTIME_NAME = 'SYSTEM$ST_CONTAINER_RUNTIME_PY3_11' COMPUTE_POOL = {compute_pool} EXTERNAL_ACCESS_INTEGRATIONS = (pypi_access_integration)`, shipping `pyproject.toml` instead of `environment.yml`.
-
-Verify either path:
+Verify:
 ```sql
 SHOW STREAMLITS LIKE 'SNOWPRO_QUIZ' IN SCHEMA {database}.QUIZ_<CODE>;
 ```
@@ -412,13 +396,13 @@ Report: exam name + code, schema, domains extracted (N), questions loaded (N or 
 - **1a** — halt on unfilled `<...>` placeholders; resume when filled.
 - **1c** — confirm a PDF exists; Yes/No on an optional CSV (no filenames — resolved at Step 4's `LIST`).
 - **1e** — default vs custom look; if custom, run the dialog + confirm palette before Step 2.
-- **1f** — default warehouse needs nothing; only the container opt-in checks compute pool + PyPI EAI (EAI not on trial) → fall back to warehouse if it can't be made.
+- **1f** — warehouse runtime needs nothing checked; skip to 1g.
 - **4** — `LIST` the workspace stage, `COPY FILES` the PDF (+ optional CSV) onto `STAGE_QUIZ_DATA`, verify with `LIST`, resolve the real filenames for Steps 5–6. STOP only if the PDF isn't in the workspace.
 - **5 (conditional)** — pick among conflicting domain structures.
 - **5 verify** — Approve / Re-extract / Abort.
 - **8 scan** — every `$sis` item must PASS; do NOT deploy on any FAIL.
 - **8.5** (if self-verify) — modules compile-clean, else fix → re-scan.
-- **9** — copy `app/` → `STAGE_SIS_APP` (`COPY FILES`) + `CREATE STREAMLIT` (warehouse default, no pool/EAI); container opt-in = Workspaces Run + Deploy (pool + EAI, not on trial). Verify with `SHOW STREAMLITS`.
+- **9** — copy `app/` → `STAGE_SIS_APP` (`COPY FILES`) + `CREATE STREAMLIT` (warehouse runtime). Verify with `SHOW STREAMLITS`.
 - **10** — report; Done / Review.
 
 **Resume rule:** on approval, proceed without re-asking.

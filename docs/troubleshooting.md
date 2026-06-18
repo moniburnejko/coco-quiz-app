@@ -6,30 +6,6 @@ If none of these match: paste the **fix prompt** from [prompts.md](prompts.md) w
 
 ---
 
-## App deploy fails: "Failed to retrieve package… Have you enabled External Access Integration (EAI)?"
-
-**Cause:** You're on the **container runtime** (the advanced opt-in) — it installs `pandas`/`altair` from PyPI, which needs an External Access Integration. The **default `warehouse` runtime never hits this** (it installs from the Snowflake Anaconda channel). The container base image ships only Python, Streamlit, and Snowpark — so without an EAI the package fetch fails (DNS/connect error to `pypi.org`).
-
-**Fix (as `ACCOUNTADMIN`, once per account):**
-
-```sql
-CREATE OR REPLACE EXTERNAL ACCESS INTEGRATION pypi_access_integration
-  ALLOWED_NETWORK_RULES = (snowflake.external_access.pypi_rule)   -- Snowflake's managed rule; no custom rule needed
-  ENABLED = TRUE;
-GRANT USAGE ON INTEGRATION pypi_access_integration TO ROLE <your_role>;
-```
-
-Then attach it and redeploy — Deploy dialog → **Network → External Access Integrations** → `pypi_access_integration`, or for an existing app:
-
-```sql
-ALTER STREAMLIT <your_database>.QUIZ_<CODE>.SNOWPRO_QUIZ
-  SET EXTERNAL_ACCESS_INTEGRATIONS = (pypi_access_integration);
-```
-
-**No EAI / no ACCOUNTADMIN (e.g. a trial account)?** Use the **default `warehouse` runtime** — `environment.yml` from the Snowflake Anaconda channel, no EAI, no compute pool (Streamlit ~1.52.2). It's the default; just tell the agent to deploy on warehouse.
-
----
-
 ## `AI_COMPLETE` fails with "not allowed to access this endpoint"
 
 **Cause:** Cross-region inference is disabled. `claude-sonnet-4-6` is hosted in US regions; accounts that cannot reach it in-region need explicit permission. (Accounts created after 2026-03-09 default to `ANY_REGION` and are not affected.)
@@ -48,20 +24,6 @@ SHOW PARAMETERS LIKE 'CORTEX_ENABLED_CROSS_REGION' IN ACCOUNT;
 ```
 
 If you cannot get `ACCOUNTADMIN`, change the model in `AGENTS.md` > `cortex llm` to one available in your region.
-
----
-
-## Deploy dialog shows no compute pool / "compute pool not found"
-
-**Cause:** Only relevant if you opted into the **container runtime** — the default `warehouse` runtime needs no compute pool. **Trial accounts can't use compute pools at all**, so the container runtime isn't available there — use the warehouse runtime. On non-trial accounts, a compute pool must exist and your role needs `USAGE` on it.
-
-**Fix:** Check what exists:
-
-```sql
-SHOW COMPUTE POOLS;   -- expect SYSTEM_COMPUTE_POOL_CPU (use the CPU one, not GPU)
-```
-
-If `SYSTEM_COMPUTE_POOL_CPU` is present, point the app at it. If it's absent or `USAGE` was revoked — or you simply don't want the container runtime — use the **default `warehouse` runtime** (no pool, no EAI; `environment.yml` from the Snowflake Anaconda channel, Streamlit ~1.52.2).
 
 ---
 
@@ -191,17 +153,15 @@ In `cke`/`custom` mode, unavailable grounding **does** block generation — the 
 
 ## Everything looks fine but the Streamlit app is using an old version
 
-**Cause:** SiS caches app bundles by stage URL — after the files on `STAGE_SIS_APP` change, the running app doesn't auto-refresh. (On the container opt-in, the published Workspaces app also updates only on **Deploy**, not **Run**.)
+**Cause:** SiS caches app bundles by stage URL — after the files on `STAGE_SIS_APP` change, the running app doesn't auto-refresh.
 
-**Fix (warehouse default):** the agent re-copies the changed files and re-runs `CREATE OR REPLACE STREAMLIT` (`OR REPLACE` invalidates the cached bundle):
+**Fix:** the agent re-copies the changed files and re-runs `CREATE OR REPLACE STREAMLIT` (`OR REPLACE` invalidates the cached bundle):
 
 ```sql
 CREATE OR REPLACE STREAMLIT ... FROM '@...STAGE_SIS_APP' MAIN_FILE = 'main.py' ...;
 ```
 
 …or in the Streamlit UI: three-dot menu > **Restart app**.
-
-**Fix (container opt-in):** click **Deploy** again in the workspace toolbar — **Run** refreshes only your private dev app.
 
 ---
 

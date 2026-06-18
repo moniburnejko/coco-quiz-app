@@ -31,7 +31,7 @@ Load a study guide PDF, and the agent creates the schema, extracts exam domains,
 |---|---|---|
 | environment | terminal + `snow` CLI + bash | browser workspace, zero local tooling |
 | input file uploads | `snow stage copy` | user drops PDF/CSV into the workspace; agent stages them with `COPY FILES` onto `STAGE_QUIZ_DATA` (no manual upload) |
-| app deploy | `snow streamlit deploy` | agent copies `app/` to a stage with `COPY FILES` + runs `CREATE STREAMLIT` (warehouse); Workspaces **Run + Deploy** for the container opt-in |
+| app deploy | `snow streamlit deploy` | agent copies `app/` to a stage with `COPY FILES` + runs `CREATE STREAMLIT` |
 | isolation | Git branch per exam + schema (agent-automated) | schema per exam always; optional branch per exam if workspace is Git-backed (user creates the branch manually) |
 | custom skills path | `.cortex/skills/` | `.snowflake/cortex/skills/` |
 | global skills | `~/.snowflake/cortex/skills/` | built into CoCo |
@@ -43,7 +43,7 @@ Load a study guide PDF, and the agent creates the schema, extracts exam domains,
 ## Prerequisites
 
 - Snowflake account with a role that has `USAGE`+`CREATE SCHEMA` on a database, `USAGE` on a warehouse, and access to Cortex AI functions.
-- The **default `warehouse` runtime needs nothing extra** — no compute pool, no external access integration; `pandas`/`altair` install from the Snowflake Anaconda channel, so it **works on trial accounts**. *(Advanced opt-in: the **container runtime** — custom PyPI packages / GPU — needs a compute pool + a PyPI external access integration, and the **EAI is not available on trial accounts**.)*
+- The **`warehouse` runtime needs nothing extra** — `pandas`/`altair` install from the Snowflake Anaconda channel, so it **works on trial accounts**.
 - One-time as `ACCOUNTADMIN`, only if the model is not reachable in-region: `ALTER ACCOUNT SET CORTEX_ENABLED_CROSS_REGION = 'ANY_REGION';` (accounts created after 2026-03-09 default to it).
 - Snowsight > AI & ML > Agents > Settings > Tools and connectors > Web search > enable.
 - A study guide PDF for your target exam - [Snowflake certifications catalog](https://learn.snowflake.com/en/certifications/).

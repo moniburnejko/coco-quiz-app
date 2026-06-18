@@ -30,7 +30,7 @@ flowchart TB
     Browser -->|"SQL · AI_COMPLETE · AI_PARSE_DOCUMENT · CREATE STREAMLIT"| Snowflake
 ```
 
-Nothing runs locally. The PDF lives in a Snowflake stage. CoCo lives in the Snowsight browser tab. The Streamlit app runs server-side in Snowflake (default warehouse runtime — `environment.yml`, Snowflake Anaconda channel, no compute pool/EAI, trial-safe; container is an opt-in). The workspace is the bridge - it holds `AGENTS.md` (project context), the skills (orchestration logic), and the generated `app/` project (app code). The agent never touches the user's local filesystem because there isn't one involved.
+Nothing runs locally. The PDF lives in a Snowflake stage. CoCo lives in the Snowsight browser tab. The Streamlit app runs server-side in Snowflake (warehouse runtime — `environment.yml`, Snowflake Anaconda channel, trial-safe). The workspace is the bridge - it holds `AGENTS.md` (project context), the skills (orchestration logic), and the generated `app/` project (app code). The agent never touches the user's local filesystem because there isn't one involved.
 
 ---
 
@@ -46,7 +46,7 @@ The next branch depends on whether the user has a question bank. If yes, the age
 
 Once `QUIZ_QUESTIONS` is populated, the agent updates two lines in `AGENTS.md` (schema name and exam code), then reads the `$quiz/*` **and `$sis` skills** and writes the decomposed `app/` project — `snowflake.yml` + `.streamlit/config.toml` first (project identity + Workspace recognition), then the entry point, `_*.py` modules, and `pages/`. Generating `snowflake.yml` at the project root is what makes the Workspace treat the folder as a Streamlit app (no "Convert to Streamlit app" needed). Before those files are final, the agent runs `$sis` - a scan across all app files that catches SQL-injection risks, `ttl`-on-cache, `unsafe_allow_html`, and other pitfalls. Because the generation rules come from the same skills, the scan is a final confirmation, not a cleanup pass.
 
-On the **default `warehouse` runtime** the agent deploys without any manual upload: it copies `app/` from the workspace's internal stage onto `STAGE_SIS_APP` with `COPY FILES`, then runs `CREATE OR REPLACE STREAMLIT … QUERY_WAREHOUSE = …` (no compute pool, no EAI; `pandas`/`altair` come from the Snowflake Anaconda channel, so it works on trial accounts). *(The **container runtime** is an advanced opt-in — deployed via the Workspaces **Run + Deploy** toolbar; it adds `RUNTIME_NAME`/`COMPUTE_POOL`/`EXTERNAL_ACCESS_INTEGRATIONS` and needs a compute pool + a PyPI EAI, neither available on trial accounts.)* The app is then live and shareable via its Snowsight URL.
+On the `warehouse` runtime the agent deploys without any manual upload: it copies `app/` from the workspace's internal stage onto `STAGE_SIS_APP` with `COPY FILES`, then runs `CREATE OR REPLACE STREAMLIT … QUERY_WAREHOUSE = …` (`pandas`/`altair` come from the Snowflake Anaconda channel, so it works on trial accounts). The app is then live and shareable via its Snowsight URL.
 
 ### Quick reference
 
@@ -60,7 +60,7 @@ On the **default `warehouse` runtime** the agent deploys without any manual uplo
 | Update context | `AGENTS.md` | schema + exam_code filled | file edit |
 | Generate app | `$quiz/*` skills | `app/` project | file write in workspace |
 | Scan | generated files | PASS gate | `$sis` (all items) |
-| Deploy | `app/` in workspace | live `SNOWPRO_QUIZ` | agent `COPY FILES` → `STAGE_SIS_APP` + `CREATE STREAMLIT` (warehouse); Workspaces **Run + Deploy** for container |
+| Deploy | `app/` in workspace | live `SNOWPRO_QUIZ` | agent `COPY FILES` → `STAGE_SIS_APP` + `CREATE STREAMLIT` |
 
 ---
 

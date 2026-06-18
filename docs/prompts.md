@@ -30,9 +30,8 @@ Add anything optional on that line — features ("add exam simulation and flashc
 3. CSV/JSON question-bank filename — optional; without one the bank starts empty (runtime AI questions; seed it later from Admin / worksheet / Automation).
 4. Optional features + advanced mode (quality model / self-verify / Automations).
 5. Default look, or a short custom-theming dialog.
-6. Deploy prerequisites — the default `warehouse` runtime needs none; only the container opt-in needs a compute pool + PyPI EAI (not available on trial).
-7. Doc grounding mode — set once and stored in `QUIZ_CONFIG` (no runtime toggle): `cke` (default, Snowflake-docs CKE; a hard gate that stops the run if the CKE listing isn't installed), `custom` (your own Cortex Search service), or `none` (ungrounded — non-Snowflake exams only).
-8. Confirm the PDF is in the workspace (CoCo stages it via `COPY FILES`) → Approve/Re-extract/Abort after domain extraction → deploy → final report.
+6. Doc grounding mode — set once and stored in `QUIZ_CONFIG` (no runtime toggle): `cke` (default, Snowflake-docs CKE; a hard gate that stops the run if the CKE listing isn't installed), `custom` (your own Cortex Search service), or `none` (ungrounded — non-Snowflake exams only).
+7. Confirm the PDF is in the workspace (CoCo stages it via `COPY FILES`) → Approve/Re-extract/Abort after domain extraction → deploy → final report.
 
 ---
 
@@ -49,7 +48,7 @@ The parent skills route by intent: Cortex/AI errors → `/cortex`; app crash, de
 
 ### When to paste
 - `AI_COMPLETE` / `AI_PARSE_DOCUMENT` errors (NULL, "model not found", "file not accessible", cross-region).
-- Deploy fails (e.g. the PyPI/EAI package error on the container opt-in) or the app shows a Python traceback.
+- Deploy fails or the app shows a Python traceback.
 - Explanations/questions look wrong, or the dashboard shows wrong numbers.
 
 ---

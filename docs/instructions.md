@@ -12,19 +12,7 @@ As `ACCOUNTADMIN`, once per account — only if your account cannot reach the mo
 ALTER ACCOUNT SET CORTEX_ENABLED_CROSS_REGION = 'ANY_REGION';
 ```
 
-The **default `warehouse` runtime needs nothing extra** (no compute pool, no external access integration) — `pandas`/`altair` come from the Snowflake Anaconda channel, so it works on **trial accounts**.
-
-*Advanced opt-in — the **container runtime*** (custom PyPI packages / GPU) needs two things the default doesn't:
-1. A **compute pool** to run the app container (`SHOW COMPUTE POOLS;`) — **not available on trial accounts**.
-2. A **PyPI external access integration** (as `ACCOUNTADMIN`; **not available on trial accounts**):
-   ```sql
-   CREATE OR REPLACE EXTERNAL ACCESS INTEGRATION pypi_access_integration
-     ALLOWED_NETWORK_RULES = (snowflake.external_access.pypi_rule)   -- Snowflake's managed rule; no custom rule needed
-     ENABLED = TRUE;
-   GRANT USAGE ON INTEGRATION pypi_access_integration TO ROLE <your_role>;
-   ```
-
-Can't create the EAI (e.g. trial account)? Just use the default warehouse runtime — it runs the same app.
+The **`warehouse` runtime needs nothing extra** — `pandas`/`altair` come from the Snowflake Anaconda channel, so it works on **trial accounts**.
 
 In Snowsight: **AI & ML > Agents > Settings > Tools and connectors > Web search → enable**.
 
@@ -89,7 +77,7 @@ Clone the repo locally. In Snowsight: **Projects > Workspaces > + Workspace** (e
 
 ## Step 2 - edit the environment table in AGENTS.md
 
-Open `AGENTS.md` in the workspace, find the `snowflake environment` table. Replace the `<your_...>` placeholders (`<your_database>`, `<your_warehouse>`, `<your_role>`) with the actual object names. Leave `schema`, `exam_code`, and `compute_pool` as is — `$setup-exam` fills `schema`/`exam_code` once the exam code is known, and `compute_pool` defaults to `SYSTEM_COMPUTE_POOL_CPU` (usable by any role; change it only if your account uses a different pool). `$setup-exam` halts if it finds unfilled required placeholders, so replace them before running the setup prompt.
+Open `AGENTS.md` in the workspace, find the `snowflake environment` table. Replace the `<your_...>` placeholders (`<your_database>`, `<your_warehouse>`, `<your_role>`) with the actual object names. Leave `schema` and `exam_code` as is — `$setup-exam` fills `schema`/`exam_code` once the exam code is known. `$setup-exam` halts if it finds unfilled required placeholders, so replace them before running the setup prompt.
 
 ---
 
@@ -119,9 +107,7 @@ The agent then copies the file onto `STAGE_QUIZ_DATA` with `COPY FILES` and veri
 
 After the agent finishes generation + passes the pre-deploy scan, the `app/` project sits in your workspace file tree.
 
-**Default (warehouse runtime) — the agent deploys it for you, no manual upload:** your workspace files already live on an internal stage, so the agent copies them onto `STAGE_SIS_APP` with `COPY FILES` (preserving `pages/` and `.streamlit/`), then runs `CREATE OR REPLACE STREAMLIT … MAIN_FILE = 'main.py' QUERY_WAREHOUSE = …` and verifies with `SHOW STREAMLITS`. After later edits it re-copies the changed files and re-creates the app. No compute pool, no EAI — packages come from the Snowflake Anaconda channel — so this works on **trial accounts**.
-
-**Warehouse vs container deploy:** the **warehouse runtime** runs the app on your query warehouse and pulls packages from the Snowflake Anaconda channel — no compute pool, no internet. The **container runtime** runs the app on a **compute pool** and pulls packages from **PyPI**, which requires a **PyPI external access integration (EAI)**. You *can* deploy on the container runtime via the Workspaces **Run + Deploy** toolbar (open `app/main.py` → **Run** → **Deploy**, setting a compute pool + the EAI under **Network**) — but a compute pool and an EAI are **not available on trial accounts**, so the warehouse path above is the default.
+**The agent deploys it for you, no manual upload:** your workspace files already live on an internal stage, so the agent copies them onto `STAGE_SIS_APP` with `COPY FILES` (preserving `pages/` and `.streamlit/`), then runs `CREATE OR REPLACE STREAMLIT … MAIN_FILE = 'main.py' QUERY_WAREHOUSE = …` and verifies with `SHOW STREAMLITS`. After later edits it re-copies the changed files and re-creates the app. Packages come from the Snowflake Anaconda channel, so this works on **trial accounts**.
 
 ---
 

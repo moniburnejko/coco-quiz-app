@@ -9,10 +9,10 @@ Custom Snowflake CoCo skills live under `.snowflake/cortex/skills/` and are uplo
 | `/setup-exam` | standalone | the end-to-end pipeline (PDF → schema → domains → bank → app → deploy) |
 | `/adapt-questions` | standalone | map a CSV/JSON question bank to the `QUIZ_QUESTIONS` schema |
 | `/cortex` | standalone | AI deltas: structured outputs, injection delimiting, CKE grounding, diagnostics, prompt audit |
-| `/sis` | standalone | Streamlit-in-Snowflake runtime gotchas (warehouse default + container opt-in) + the mandatory pre-deploy scan |
+| `/sis` | standalone | Streamlit-in-Snowflake runtime gotchas (warehouse runtime) + the mandatory pre-deploy scan |
 | `/quiz` | router → `screens` · `questions` · `design` · `features` | building/modifying the app |
 
-**Thin layer over CoCo's bundled skills** (built-in, no upload): `$cortex` defers to **`cortex-ai-function-studio`** + **`document-intelligence`** (full Cortex AI / doc-parsing reference); `$sis` defers to **`developing-with-streamlit-in-snowflake`** (general Streamlit) and **`deploy-to-spcs`** / **`snowflake-apps`** (deploy mechanics). The bundled **`skill-development`** skill can lint this pack. Our skills carry only the project deltas — decisions, conventions, gotchas, and the app's contracts.
+**Thin layer over CoCo's bundled skills** (built-in, no upload): `$cortex` defers to **`cortex-ai-function-studio`** + **`document-intelligence`** (full Cortex AI / doc-parsing reference); `$sis` defers to **`developing-with-streamlit-in-snowflake`** (general Streamlit) and **`snowflake-apps`** (deploy mechanics). The bundled **`skill-development`** skill can lint this pack. Our skills carry only the project deltas — decisions, conventions, gotchas, and the app's contracts.
 
 ---
 
@@ -22,7 +22,7 @@ Custom Snowflake CoCo skills live under `.snowflake/cortex/skills/` and are uplo
 
 **When:** first run of a workspace, or adding another certification (a fresh `QUIZ_<NEW_CODE>` schema; the previous exam untouched).
 
-Collects exam metadata + file names + optional features + look; validates AGENTS.md placeholders and (only for the container opt-in) runs a deploy preflight for a compute pool + PyPI EAI; creates the schema, stages (`STAGE_QUIZ_DATA` with `SNOWFLAKE_SSE`+`DIRECTORY`, verified via `DESCRIBE`), all 5 tables, and the file format; stops for you to drop the study-guide PDF into the workspace (CoCo stages it via `COPY FILES` — no manual upload); extracts `EXAM_DOMAINS` (domains/weights/topics/`key_facts`); loads the CSV bank if provided (else leaves it empty — no build-time generation); updates AGENTS.md; reads `$quiz/*` + `$sis` + `$cortex` and generates the decomposed `app/`; runs the `$sis` pre-deploy scan; deploys on the **default warehouse runtime** — copies `app/` to `STAGE_SIS_APP` with `COPY FILES` + `CREATE STREAMLIT` (container is an opt-in, deployed via Workspaces Run+Deploy). Also owns the **data-model DDL** and the **Advanced options** (opt-in: quality model / self-verify / Automations / container runtime).
+Collects exam metadata + file names + optional features + look; validates AGENTS.md placeholders; creates the schema, stages (`STAGE_QUIZ_DATA` with `SNOWFLAKE_SSE`+`DIRECTORY`, verified via `DESCRIBE`), all 5 tables, and the file format; stops for you to drop the study-guide PDF into the workspace (CoCo stages it via `COPY FILES` — no manual upload); extracts `EXAM_DOMAINS` (domains/weights/topics/`key_facts`); loads the CSV bank if provided (else leaves it empty — no build-time generation); updates AGENTS.md; reads `$quiz/*` + `$sis` + `$cortex` and generates the decomposed `app/`; runs the `$sis` pre-deploy scan; deploys on the **warehouse runtime** — copies `app/` to `STAGE_SIS_APP` with `COPY FILES` + `CREATE STREAMLIT` (dependencies from `environment.yml`). Also owns the **data-model DDL** and the **Advanced options** (opt-in: quality model / self-verify / Automations).
 
 **Built-in stops:** input collection, PDF upload, domain approval, pre-deploy gate, final report.
 
@@ -36,7 +36,7 @@ Collects exam metadata + file names + optional features + look; validates AGENTS
 
 ## /sis — standalone
 
-**Scope:** Streamlit-in-Snowflake runtime deltas (warehouse runtime is the default; container is an opt-in — the gotchas hold on both) + the **mandatory pre-deploy scan** (run before every deploy). Gotchas: `get_active_session()` inside cached functions; no-`ttl` caching + `clear_caches()`; widget lifecycle (flag-at-top reset, `None`-guards); rerun discipline; multipage state; CSP / `unsafe_allow_html`; `.applymap`→`.map`; `showErrorDetails="none"`; uppercase columns; SQL bind-params. The scan checks every item across all app files; deploy only on a clean pass.
+**Scope:** Streamlit-in-Snowflake runtime deltas (warehouse runtime) + the **mandatory pre-deploy scan** (run before every deploy). Gotchas: `get_active_session()` inside cached functions; no-`ttl` caching + `clear_caches()`; widget lifecycle (flag-at-top reset, `None`-guards); rerun discipline; multipage state; CSP / `unsafe_allow_html`; `.applymap`→`.map`; `showErrorDetails="none"`; uppercase columns; SQL bind-params. The scan checks every item across all app files; deploy only on a clean pass.
 
 ## /quiz — router
 
@@ -66,6 +66,6 @@ Optional features (only when explicitly requested) — exactly five: exam simula
 
 Bundled CoCo skills this pack defers to (built-in, no upload):
   /cortex → cortex-ai-function-studio + document-intelligence
-  /sis    → developing-with-streamlit-in-snowflake, deploy-to-spcs / snowflake-apps
+  /sis    → developing-with-streamlit-in-snowflake, snowflake-apps
   lint    → skill-development
 ```

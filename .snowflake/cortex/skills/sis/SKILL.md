@@ -1,9 +1,9 @@
 ---
 name: sis
-description: "Streamlit-in-Snowflake runtime deltas for this app (warehouse runtime is the default; container is an opt-in) + the MANDATORY pre-deploy scan. Use when writing app code that touches caching/widgets/session, or before any deploy. Triggers: SiS, streamlit in snowflake, get_active_session, cache_data, clear_caches, ttl, widget reset, showErrorDetails, config.toml, pre-deploy, scan, before deploying, deploy checklist. Do NOT use for general Streamlit authoring (bundled developing-with-streamlit-in-snowflake), app screen/state contracts (quiz-screens), or visual styling (quiz-design)."
+description: "Streamlit-in-Snowflake runtime deltas for this app (warehouse runtime) + the MANDATORY pre-deploy scan. Use when writing app code that touches caching/widgets/session, or before any deploy. Triggers: SiS, streamlit in snowflake, get_active_session, cache_data, clear_caches, ttl, widget reset, showErrorDetails, config.toml, pre-deploy, scan, before deploying, deploy checklist. Do NOT use for general Streamlit authoring (bundled developing-with-streamlit-in-snowflake), app screen/state contracts (quiz-screens), or visual styling (quiz-design)."
 ---
 
-> **Thin wrapper.** For general Streamlit authoring (widgets, layout, caching, theming) use the bundled CoCo skill **`developing-with-streamlit-in-snowflake`**; for deploy mechanics, **`deploy-to-spcs`** / **`snowflake-apps`**. This skill keeps only the project deltas for **Streamlit-in-Snowflake** plus the mandatory pre-deploy scan. The **default `warehouse` runtime** pins a supported Streamlit (currently ~1.52.2) and installs deps from the Snowflake Anaconda channel — no compute pool, no EAI; works on trial accounts. The **container** runtime (`SYSTEM$ST_CONTAINER_RUNTIME_PY3_11`) is an opt-in for custom PyPI packages / GPU (needs a pool + EAI). The gotchas below apply to both.
+> **Thin wrapper.** For general Streamlit authoring (widgets, layout, caching, theming) use the bundled CoCo skill **`developing-with-streamlit-in-snowflake`**; for deploy mechanics, **`snowflake-apps`**. This skill keeps only the project deltas for **Streamlit-in-Snowflake** plus the mandatory pre-deploy scan. The **`warehouse` runtime** pins a supported Streamlit (currently ~1.52.2) and installs deps from the Snowflake Anaconda channel (`environment.yml`); works on trial accounts.
 
 # When to Use
 
@@ -21,7 +21,7 @@ description: "Streamlit-in-Snowflake runtime deltas for this app (warehouse runt
 
 # SiS runtime gotchas
 
-The SiS-specific traps that bite — what CoCo's general Streamlit knowledge doesn't cover (they hold on both the default warehouse runtime and the container opt-in). Everything else, defer to the bundled skill.
+The SiS-specific traps that bite — what CoCo's general Streamlit knowledge doesn't cover. Everything else, defer to the bundled skill.
 
 ## Sessions and caching
 
@@ -90,7 +90,7 @@ Only `DATABASE`, `SCHEMA`, `CORTEX_MODEL`, and `RESPONSE_FORMATS` constants may 
 
 # Pre-deploy scan
 
-**MANDATORY before every deploy** (Workspaces Deploy or stage upload) and after any code change. Read ALL app files in full — `main.py`, every `_*.py`, every `pages/*.py`, `.streamlit/config.toml` — then check each item across the whole project. Report PASS/FAIL per item; on FAIL show the file, line, and offending snippet. **Deploy only when every item passes.**
+**MANDATORY before every deploy** (`COPY FILES` to `STAGE_SIS_APP` + `CREATE STREAMLIT`) and after any code change. Read ALL app files in full — `main.py`, every `_*.py`, every `pages/*.py`, `.streamlit/config.toml` — then check each item across the whole project. Report PASS/FAIL per item; on FAIL show the file, line, and offending snippet. **Deploy only when every item passes.**
 
 ### SQL and data safety
 1. **SQL injection** — every `session.sql(f"...")`: only the four constants above in f-strings; all runtime values via bind params (see SQL safety).

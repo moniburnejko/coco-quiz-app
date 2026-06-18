@@ -12,16 +12,16 @@ You give CoCo a Snowflake certification **study guide PDF**. The agent:
 2. Creates 2 stages (one for input data, one for the Streamlit app), a file format, and 5 tables (`EXAM_DOMAINS`, `QUIZ_QUESTIONS`, `QUIZ_REVIEW_LOG`, `QUIZ_SESSION_LOG`, `QUIZ_CONFIG`) — plus a transient `_DOC_CONTENT` that holds the parsed PDF during setup and is dropped afterward.
 3. Extracts domain list, weights, topics, and testable facts from the PDF using `AI_PARSE_DOCUMENT` + `AI_COMPLETE`.
 4. Loads a question bank if you provide one (CSV/JSON); otherwise the bank stays empty and questions are AI-generated at runtime (you can seed the bank later from the Admin page, a worksheet recipe, or a scheduled task).
-5. Generates the multipage `app/` Streamlit project in the workspace (`main.py`, `_*.py` modules, `pages/`, configs — warehouse runtime by default, with `environment.yml` from the Snowflake Anaconda channel; the container runtime is an opt-in).
+5. Generates the multipage `app/` Streamlit project in the workspace (`main.py`, `_*.py` modules, `pages/`, configs — with `environment.yml` from the Snowflake Anaconda channel).
 6. Runs a mandatory pre-deploy scan to catch Streamlit-in-Snowflake footguns.
-7. Deploys the app — by default the agent copies `app/` from the workspace stage onto `STAGE_SIS_APP` and runs `CREATE STREAMLIT` on the warehouse runtime (no manual upload); the container runtime instead deploys via the Workspaces **Run + Deploy** flow.
+7. Deploys the app — the agent copies `app/` from the workspace stage onto `STAGE_SIS_APP` and runs `CREATE STREAMLIT` on the warehouse runtime (no manual upload).
 
 You never leave the browser. You never run `bash`, `git`, `snow`, or `PUT`. You only:
 - Load this asset into a workspace — fork the repo and open a **Git-backed workspace**, or upload the `.snowflake/cortex/skills/` folder + `AGENTS.md` (Step 1);
 - Drop the study-guide PDF (and any optional CSV) into the workspace file tree when asked — the agent stages it via `COPY FILES` (no manual stage upload);
 - Read what the agent proposes and say "go" or "no, do X differently".
 
-The deploy itself is **scripted on the default warehouse runtime** (the agent runs `COPY FILES` + `CREATE STREAMLIT` — no clicks); only the **container opt-in** uses the Workspaces **Run → Deploy** toolbar.
+The deploy itself is **scripted on the warehouse runtime** (the agent runs `COPY FILES` + `CREATE STREAMLIT` — no clicks).
 
 ---
 
@@ -37,21 +37,7 @@ ALTER ACCOUNT SET CORTEX_ENABLED_CROSS_REGION = 'ANY_REGION';
 
 Without this, every `AI_COMPLETE` call will fail with "not allowed to access this endpoint". Accounts created after 2026-03-09 already default to `ANY_REGION`; `'AWS_GLOBAL'` is a narrower alternative, the legacy `'AWS_US'` still works but is narrowest.
 
-The **default `warehouse` runtime needs nothing extra** — no compute pool, no external access integration; `pandas`/`altair` come from the Snowflake Anaconda channel, so it works on **trial accounts**.
-
-*Advanced opt-in — the **container runtime*** (custom PyPI packages / GPU) needs two things the default doesn't:
-
-1. A **compute pool** to run the app container (`SHOW COMPUTE POOLS;`) — **not available on trial accounts**.
-2. A **PyPI external access integration** (the container installs pandas/altair from PyPI; **not available on trial accounts**), as `ACCOUNTADMIN`:
-   ```sql
-   CREATE OR REPLACE EXTERNAL ACCESS INTEGRATION pypi_access_integration
-     ALLOWED_NETWORK_RULES = (snowflake.external_access.pypi_rule)   -- managed rule, no custom network rule needed
-     ENABLED = TRUE;
-   GRANT USAGE ON INTEGRATION pypi_access_integration TO ROLE <your_role>;
-   ```
-   Attach it at deploy (Deploy dialog → **Network**, or `EXTERNAL_ACCESS_INTEGRATIONS=(pypi_access_integration)`). Skipping it causes the "Failed to retrieve package… EAI?" error.
-
-`$setup-exam` Step 1f checks these **only if you opted into the container runtime**. Can't create the EAI (trial)? The default warehouse runtime needs neither.
+The **`warehouse` runtime needs nothing extra**; `pandas`/`altair` come from the Snowflake Anaconda channel, so it works on **trial accounts**.
 
 ### Doc grounding (required for Snowflake exams)
 
@@ -62,7 +48,6 @@ Get the free **Snowflake Documentation** listing (Snowsight » Data Products » 
 The role you will use needs, on the target database:
 - `USAGE`, `CREATE SCHEMA`;
 - On a warehouse - `USAGE`, `OPERATE`;
-- On a compute pool — only for the container opt-in (the default warehouse runtime needs none) - `USAGE`;
 - Cortex AI functions are usable by any role with `USAGE` on the `SNOWFLAKE.CORTEX_USER` database role.
 
 ### Snowsight feature flags
@@ -233,7 +218,7 @@ Replace the `<your_...>` placeholders with actual object names:
 - `<your_warehouse>` - the warehouse that will power the Streamlit app and Cortex AI calls;
 - `<your_role>` - the role you will be using (must be active in your Snowsight session, and must have `CREATE SCHEMA` on the database above).
 
-Leave `schema` and `exam_code` as is - `$setup-exam` will fill those in once you tell it which exam you want. `compute_pool` (defaults to `SYSTEM_COMPUTE_POOL_CPU`, usable by any role), `stage`, `app stage`, `app_name`, `main_file`, `runtime`, `deps_file` have working defaults - change them only if you need different names.
+Leave `schema` and `exam_code` as is - `$setup-exam` will fill those in once you tell it which exam you want. `stage`, `app stage`, `app_name`, `main_file`, `runtime`, `deps_file` have working defaults - change them only if you need different names.
 
 Save. CoCo re-reads `AGENTS.md` on the next message. If you forget to fill any required placeholder, `$setup-exam` halts in Step 1a and prompts you to finish the edit.
 
@@ -338,7 +323,7 @@ The agent reads the updated `AGENTS.md` plus all `$quiz/*` skills (screens, ques
 - `app/main.py` - entry point: `st.set_page_config`, session-state init, `st.navigation`;
 - `app/_config.py`, `app/_cortex.py`, `app/_data.py`, `app/_questions.py`, `app/_ui.py`, `app/_search.py` - constants, Cortex calls, cached loaders, question engine, shared UI helpers, docs-CKE retrieval;
 - `app/pages/quiz.py` + `app/pages/review.py` + `app/pages/admin.py` - the core pages (plus one page per requested optional feature, e.g. `exam_simulation.py` / `recommendations.py`);
-- `app/.streamlit/config.toml` + `app/environment.yml` + `app/snowflake.yml` - app config, warehouse-runtime dependencies (Snowflake Anaconda channel), deploy descriptor. *(Container opt-in uses `pyproject.toml` instead.)*
+- `app/.streamlit/config.toml` + `app/environment.yml` + `app/snowflake.yml` - app config, dependencies (Snowflake Anaconda channel), deploy descriptor.
 
 Everything appears in the workspace file tree under `app/`.
 
@@ -355,9 +340,7 @@ If anything fails, the agent fixes it and re-scans until clean. Do not proceed t
 
 ## Step 9 - deploy
 
-When the scan is clean, the agent deploys. **The default warehouse runtime is fully scripted — no manual upload.**
-
-### Default - warehouse runtime (agent-scripted)
+When the scan is clean, the agent deploys. **The deploy is fully scripted — no manual upload.**
 
 Your workspace files already live on an internal stage, so the agent:
 
@@ -375,17 +358,7 @@ SHOW STREAMLITS LIKE 'SNOWPRO_QUIZ' IN SCHEMA <your_database>.QUIZ_<CODE>;
 
 3. After later edits, it re-copies the changed files (`COPY FILES` overwrites same-named files) and re-runs `CREATE OR REPLACE STREAMLIT`.
 
-Warehouse runtime = no compute pool, no EAI, no internet; packages come from the Snowflake Anaconda channel. Works on **trial accounts**.
-
-### Container runtime (advanced opt-in, non-trial)
-
-The container runtime runs the app on a compute pool and installs packages from PyPI, so it needs a **compute pool** *and* a **PyPI EAI** — **neither is available on trial accounts**. It deploys via the Workspaces **Run + Deploy** toolbar (which uses the container runtime):
-
-1. Open `app/main.py` → **Run** (private dev preview) → iterate with the agent.
-2. **Deploy** in the toolbar: app title `SNOWPRO_QUIZ`, database `<your_db>`, schema `QUIZ_<CODE>`, query warehouse, the compute pool, and the PyPI EAI under **Network**.
-3. Reply "deployed" - the agent verifies with `SHOW STREAMLITS`. (After later edits, the published app updates only when you **Deploy** again — **Run** refreshes only your private dev app.)
-
-The SQL equivalent adds `RUNTIME_NAME = 'SYSTEM$ST_CONTAINER_RUNTIME_PY3_11'`, `COMPUTE_POOL`, and `EXTERNAL_ACCESS_INTEGRATIONS` to `CREATE STREAMLIT`, shipping `pyproject.toml` instead of `environment.yml`.
+No internet needed; packages come from the Snowflake Anaconda channel. Works on **trial accounts**.
 
 ---
 
@@ -443,7 +416,7 @@ Paste the **fix prompt** from [prompts.md](prompts.md), describe the symptom. Th
 - Wrong content / shallow explanations > runs `$cortex`;
 - Screen flow glitches > reads `$quiz/screens`.
 
-After a fix it re-copies the changed files onto `STAGE_SIS_APP` and re-runs `CREATE OR REPLACE STREAMLIT` to redeploy (on the container opt-in, you **Deploy** again from the workspace instead).
+After a fix it re-copies the changed files onto `STAGE_SIS_APP` and re-runs `CREATE OR REPLACE STREAMLIT` to redeploy.
 
 See [troubleshooting.md](troubleshooting.md) for a curated list of the most common Snowsight-specific issues.
 
