@@ -369,7 +369,7 @@ Snowsight > **Projects > Streamlit > SNOWPRO_QUIZ**.
 - On **Home**: pick 5 questions, medium difficulty, any domain, "AI Generated" source (there is no explanations toggle - the explanation is on-demand). Click **Start Round**.
 - On **Quiz**: wait a couple seconds for the first AI-generated question to load. Try the **💡 Hint** button *before* answering (two levels, never spoils). Answer, submit, then click **💡 AI explanation** to load it on demand (works for correct answers too); the **Next** button sits at the very bottom, under the explanation. Inside the expander, try **🔬 Deep dive** for an in-depth breakdown of the question's topic.
 - Click through all 5, then **Finish Round**.
-- **Summary**: score, pass/fail vs threshold, a collapsed **WRONG ANSWERS** expander, and an on-demand **Round Brief**.
+- **Summary**: score, pass/fail vs threshold, a **TO REMEMBER** expander (the missed questions, correct answer in full text), and an on-demand **Round Summary**.
 - **Review** page (tabs: Wrong Answers · Learning Dashboard): filter Wrong Answers by domain and date; open **Learning Dashboard** - you should see your first session plotted.
 - **Admin** page (4 tabs: App config · Questions manager · Cortex spend · Logs): flip an App-config toggle (e.g. hints off/on) or set a per-call-group model, check the bank KPIs in Questions manager, use its filter/edit/delete table, and optionally **Generate batch (AI)** to start seeding the bank; Logs shows the review + session tables with a guarded "reset all logs".
 

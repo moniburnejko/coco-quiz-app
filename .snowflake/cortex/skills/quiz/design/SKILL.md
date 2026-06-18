@@ -154,7 +154,7 @@ Applies in: inside the on-demand AI-explanation expander (after the **💡 AI ex
 `st.container(border=True)` for grouped content:
 - Wrong answer cards (summary + review)
 - Explanation containers (why correct, why wrong)
-- Round Brief containers (summary): the PATTERNS + PRIORITY ACTIONS block, and the 🎯 FOCUS one-thing line (its own bordered container - NOT `st.info`; `st.info` is mnemonic-only)
+- Round Summary containers (summary): the PATTERNS + PRIORITY ACTIONS block, and the 🎯 FOCUS one-thing line (its own bordered container - NOT `st.info`; `st.info` is mnemonic-only)
 
 ---
 

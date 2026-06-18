@@ -50,7 +50,7 @@ Cross-page redirects: set the target state, then `st.switch_page("pages/<target>
 
 4 control groups in order, each with a bold UPPERCASE label (`st.markdown("**LABEL**")`) and `label_visibility="collapsed"` on the widget:
 
-1. **QUESTIONS** - number_input (1-100), initial value from `round_size` if set
+1. **QUESTIONS** - `st.slider("Questions", 1, 100, value=…)` so **any** count 1-100 is pickable. **NOT `st.pills`** (a fixed list like 5/10/15/20 is wrong) and not `number_input`. Initial `value` from `round_size` if set, else the `_config.py` default. The round size is set here per round - it is NOT an Admin config value.
 2. **DOMAINS** - pills multi-select from EXAM_DOMAINS, initial selection from `domain_filter` if set
 3. **DIFFICULTY** - pills (mixed/easy/medium/hard), guard against None, initial value from `difficulty` if set
 4. **SOURCE** - pills multi-select (`["QUESTION BANK", "AI GENERATED"]`), mapped internally to `"mix"/"db"/"ai"`
@@ -98,7 +98,7 @@ if st.button("Next", disabled=st.session_state.get("_transitioning", False)):
 ```
 Pair this with the spinner + single-`st.rerun()` rule in `$sis`.
 
-**On-demand generation UX (hint, explanation, deep dive, Round Brief - MANDATORY).** When a button triggers a slow Cortex call: (1) render any already-generated content **first**; (2) **hide the button(s) that trigger that generation** while it runs - never leave a sibling sitting there dimmed; (3) show exactly **one** labelled `st.spinner("Generating <thing>…")`; (4) generate; (5) a single `st.rerun()`. Same pattern for all four.
+**On-demand generation UX (hint, explanation, deep dive, Round Summary - MANDATORY).** When a button triggers a slow Cortex call: (1) render any already-generated content **first**; (2) **hide the button(s) that trigger that generation** while it runs - never leave a sibling sitting there dimmed; (3) show exactly **one** labelled `st.spinner("Generating <thing>…")`; (4) generate; (5) a single `st.rerun()`. Same pattern for all four.
 
 ---
 
@@ -108,7 +108,7 @@ Pair this with the spinner + single-`st.rerun()` rule in `$sis`.
 
 `_generate_explanation()` calls `call_cortex_json(prompt, "explanation", model=model_for("explanation"))` - the `RESPONSE_FORMATS["explanation"]` schema (`$cortex`) guarantees `why_correct` (array), `why_wrong` (object), `mnemonic`, `doc_search`. No fence parsing; retry only on `None`.
 
-**Model routing (MANDATORY) for the learning loop** (`$cortex` `model_for`): explanation, **hint**, and **deep dive** pass `model=model_for("explanation")`; the **Round Brief debrief** passes `model=model_for("meta")`. Every `call_cortex_json`/`call_cortex` in these handlers takes the `model=` arg - omitting it silently pins the call to `CORTEX_MODEL` and the Admin model selector does nothing.
+**Model routing (MANDATORY) for the learning loop** (`$cortex` `model_for`): explanation, **hint**, and **deep dive** pass `model=model_for("explanation")`; the **Round Summary debrief** passes `model=model_for("meta")`. Every `call_cortex_json`/`call_cortex` in these handlers takes the `model=` arg - omitting it silently pins the call to `CORTEX_MODEL` and the Admin model selector does nothing.
 
 **Same flow for correct AND incorrect answers** - clicking the button opens `st.expander("💡 AI EXPLANATION", expanded=True)` containing, in order:
 - `st.container(border=True)` **✅ WHY CORRECT** - `why_correct` bullet list
@@ -132,6 +132,126 @@ The 📖 doc link appears **only inside this expander, only after the button is 
 ## Deep dive (inside the expander, below the explanation)
 
 A single **"🔬 Deep dive"** button - **NO option picker** → `call_cortex_json(prompt, "deep_dive", model=model_for("explanation"))` - an in-depth breakdown of the **question's topic** (how it works / when to use / exam traps), not a single answer option. `$cortex` `deep_dive` schema: `summary`, `how_it_works[]`, `when_to_use`, `exam_traps[]`. Render in `st.container(border=True)` with bold sub-labels + bullets. **Grounded** like the explanation: reuse the retrieved `<doc_context>`, broaden once then **fail visibly** on empty - never built-in; embed the **question + its topic/domain** per the delimiting rule (not a selected option), render through the `_ui.py` `md()` escaper, carry **more detail** than the base explanation. State: `deep_dive` (None/{}/dict), reset on Next.
+
+---
+
+# Reference code (COPY + ADAPT — the high-fidelity-risk handlers)
+
+The prose above is the contract; this is the **reference implementation of the parts that are repeatedly gotten wrong** (home slider, hint state machine, on-demand spinner, stacked after-submit layout, deep-dive-in-expander, sidebar End Round). **Copy these handlers and adapt** (swap `EXAM_NAME`, wire your `_cortex`/`_search`/`_data` helpers) — do not re-derive them from the prose. The Step-8 UX-conformance gate checks that the generated `quiz.py` matches these shapes.
+
+```python
+# pages/quiz.py — reference for render_home / render_quiz (hard parts). LETTERS = ["A","B","C","D","E"]
+
+def render_home():
+    cfg = load_config(); domains = load_domains()
+    if grounding_required() and not docs_available():
+        st.markdown(":red-badge[DOC GROUNDING UNAVAILABLE] Install/grant the Snowflake Documentation CKE."); st.stop()
+    st.markdown(f"## {EXAM_NAME} Quiz")
+    st.markdown("**QUESTIONS**")
+    round_size = st.slider("Questions", 1, 100, value=st.session_state.get("round_size", 10),
+                           key="sl_round_size", label_visibility="collapsed")          # SLIDER, not pills
+    st.markdown("**DOMAINS**")
+    dom = st.pills("Domains", [d["DOMAIN_NAME"] for d in domains], selection_mode="multi",
+                   default=st.session_state.get("domain_filter") or [], key="pills_domains", label_visibility="collapsed")
+    st.markdown("**DIFFICULTY**")
+    diff = st.pills("Difficulty", ["mixed","easy","medium","hard"],
+                    default=st.session_state.get("difficulty","mixed") or "mixed",
+                    key="pills_diff", label_visibility="collapsed") or "mixed"
+    st.markdown("**SOURCE**")
+    src_sel = st.pills("Source", ["QUESTION BANK","AI GENERATED"], selection_mode="multi",
+                       default=["QUESTION BANK","AI GENERATED"], key="pills_src", label_visibility="collapsed") or ["AI GENERATED"]
+    source = "mix" if len(src_sel) == 2 else ("db" if "QUESTION BANK" in src_sel else "ai")
+    if st.button("Start Round", type="primary", use_container_width=True,
+                 disabled=st.session_state.get("_transitioning", False)):
+        st.session_state["_transitioning"] = True
+        for k, v in [("round_size", round_size), ("domain_filter", dom or []), ("difficulty", diff),
+                     ("question_source", source), ("round_history", []), ("correct_count", 0),
+                     ("total_count", 0), ("q_index", 0), ("question", None), ("answered", False),
+                     ("selected", []), ("explanation", None), ("hint", None), ("hint_level", 0),
+                     ("deep_dive", None), ("debrief", None), ("_results_written", False)]:
+            st.session_state[k] = v
+        st.session_state["_topic_schedule"] = _build_topic_schedule(domains, dom or [], round_size)
+        with st.spinner("Loading first question…"):
+            st.session_state["question"] = get_question()
+        st.session_state["screen"] = "quiz"; st.session_state["_transitioning"] = False; st.rerun()
+
+
+def render_quiz():
+    for k in st.session_state.pop("_op_clear_keys", []):           # flag-at-top widget reset
+        st.session_state.pop(k, None)
+    cfg = load_config()
+    q = st.session_state.get("question")
+    if q is None:
+        with st.spinner("Loading question…"):
+            st.session_state["question"] = get_question()
+        st.rerun()
+
+    with st.sidebar:                                              # END ROUND — always present in quiz
+        if st.button("End Round", use_container_width=True, key="btn_end_round"):
+            st.session_state["_pending_finish"] = True
+    if st.session_state.get("_pending_finish") and st.session_state.get("answered"):
+        _write_back_results(); st.session_state["screen"] = "summary"
+        st.session_state["_pending_finish"] = False; st.rerun()
+
+    idx, total = st.session_state.get("q_index", 0), st.session_state.get("round_size", 10)
+    answered = st.session_state.get("answered", False)
+    st.progress(idx / total, text=f"Question {idx+1} of {total}")
+    st.markdown(f"{render_domain_badge(q.get('DOMAIN_NAME',''))}  {render_difficulty_badge(q.get('DIFFICULTY','medium'))}")
+    st.markdown(f"#### {md(q.get('QUESTION_TEXT',''))}")
+    options = {lt: q.get(f"OPTION_{lt}") for lt in LETTERS if q.get(f"OPTION_{lt}")}
+
+    # answer input (radio single / checkbox multi), disabled once answered — NO per-option ✅/❌ markup
+    if not q.get("IS_MULTI"):
+        chosen = st.radio("Answer", [f"{lt}) {md(t)}" for lt, t in options.items()], index=None,
+                          disabled=answered, key=f"radio_{idx}", label_visibility="collapsed")
+        selected = [chosen.split(")")[0]] if chosen else []
+    else:
+        st.markdown(":gray-badge[SELECT ALL THAT APPLY]")
+        selected = [lt for lt in options if st.checkbox(f"{lt}) {md(options[lt])}", key=f"cb_{lt}", disabled=answered)]
+
+    if not answered:
+        # HINT — state machine: render revealed hints FIRST, then the button (relabels, hides at level 2)
+        if cfg.get("hints_enabled", True):
+            hint, lvl = st.session_state.get("hint"), st.session_state.get("hint_level", 0)
+            if isinstance(hint, dict):
+                if lvl >= 1 and hint.get("hint_1"): st.markdown(f"💡 {md(hint['hint_1'])}")
+                if lvl >= 2 and hint.get("hint_2"): st.markdown(f"💡 {md(hint['hint_2'])}")
+            if lvl < 2:
+                if st.button("💡 Hint" if lvl == 0 else "Need more help?", key="btn_hint"):
+                    with st.spinner("Thinking of a hint…"):          # on-demand: button replaced by spinner
+                        _generate_hint(q)
+                    st.session_state["hint_level"] = lvl + 1; st.rerun()
+        if st.button("Submit", type="primary", use_container_width=True,
+                     disabled=st.session_state.get("_transitioning", False)):
+            if not selected:
+                st.markdown(":orange-badge[Please select an answer]")
+            else:
+                _record_submit(q, selected, options); st.rerun()    # builds full-text history item, sets answered
+    else:
+        correct = [c.strip() for c in q.get("CORRECT_ANSWER","").split(",")]
+        if set(st.session_state.get("selected", [])) == set(correct):
+            st.markdown(":green-badge[✅ CORRECT]")
+        else:
+            st.markdown(":red-badge[❌ INCORRECT]")
+            st.markdown("Correct answer: " + ", ".join(f"**{lt}**" for lt in correct))
+
+        # STACKED, top→bottom: AI explanation button → expander (incl. deep dive) → Next pinned at the very bottom
+        expl = st.session_state.get("explanation")
+        if expl is None:
+            if st.button("💡 AI explanation", use_container_width=True):
+                with st.spinner("Generating explanation…"):
+                    _generate_explanation(q, options)
+                st.rerun()
+        if isinstance(expl, dict) and expl:
+            _render_explanation_expander(q, options)    # WHY CORRECT/WRONG + mnemonic + 📖 link + 🔬 Deep dive (topic, no picker)
+
+        is_last = (idx + 1) >= total
+        if st.button("Finish Round" if is_last else "Next", type="primary", use_container_width=True,
+                     disabled=st.session_state.get("_transitioning", False)):
+            _advance(is_last)    # write-back if last/pending, else load next + reset hint/explanation/deep_dive
+```
+
+Notes the gate enforces: round size is a **slider**; the hint **state machine** (no double-dump, button hides at level 2, prior hints persist); **End Round** in the sidebar; the explanation is **stacked** with **Next pinned last**; **Deep dive lives inside `_render_explanation_expander`** (the quiz screen, on the question's topic) — **never** in the summary; no per-option ✅/❌ markup; the missed-question summary shows **full-text** correct answers only.
 
 ---
 
@@ -167,15 +287,15 @@ Each submitted answer is appended to `round_history`:
 - 2-metric row: SCORE (`correct/total`), ACCURACY (`pct%`)
 - Pass: `:green-badge[PASSED] above {PASS_THRESHOLD}% threshold`
 - Fail: `:orange-badge[NOT YET] {gap}% to go - keep practicing!` (include encouragement)
-- **Wrong answers** go inside a **collapsed `st.expander("WRONG ANSWERS", expanded=False)`** - each as an `st.container(border=True)` card with domain/difficulty badges, the **question text**, the **correct answer in full** (`"B) …text… & D) …text…"`, built from the card's `option_texts` + correct letters - NEVER bare letters), and the **mnemonic** (`st.info` 🧠) only when one was generated for it this round (`round_history[i]["mnemonic"]`; omit if empty). All dynamic text via the `md()` `$`-escaper (`$quiz/design`).
+- **The missed questions** go inside an **`st.expander("TO REMEMBER", expanded=True)`** (NOT "WRONG ANSWERS", NOT collapsed) - each as an `st.container(border=True)` card with domain/difficulty badges, the **question text**, and **only the correct answer, in full text** (`"B) …full option text… & D) …"`, built from the card's `option_texts` + correct letters). **Do NOT show the user's pick, and NEVER show bare letters** (a card reading "Your answer: D / Correct: B" is the exact anti-pattern to avoid - it tells the user nothing). Add the **mnemonic** (`st.info` 🧠) only when one was generated for it this round (omit if empty/None). All dynamic text via the `md()` `$`-escaper (`$quiz/design`).
 - Perfect score: `:green-badge[PERFECT SCORE] No wrong answers this round.` (no expander)
 
-**Round Brief (on-demand; gate `debrief_enabled`; only when ≥1 wrong answer)**: a **"Round Brief"** button - NOT auto-generated. On click, **hide all summary buttons and show one spinner "Generating round brief…"** (On-demand generation UX, Quiz Screen - don't leave "Configure New Round" dimmed beside it) → `call_cortex_json(prompt, "debrief", model=model_for("meta"))` with per-question domain/topic/correctness/`hint_used` from `round_history` → open an **expander** with clean formatting: `st.container(border=True)` holding **PATTERNS** (bullets) and **PRIORITY ACTIONS** (max 3 bullets), then `one_thing` as a highlighted **🎯 FOCUS** line in its own bordered container (NOT `st.info` - that's reserved for the mnemonic per `$quiz/design`). **Grounding scope:** meta-analysis over the user's OWN round performance - names weak domains/topics + study actions but MUST NOT assert new Snowflake facts or emit doc links; the one runtime generation path exempt from doc-grounding (`$cortex`). State `debrief` (None=not requested / {}=failed / dict=success), reset on round start. A perfect round shows no Round Brief button. Render every dynamic field (PATTERNS, PRIORITY ACTIONS, `one_thing`) through the `md()` `$`-escaper before `st.markdown` (`$quiz/design`).
+**Round Summary (on-demand; gate `debrief_enabled`; only when ≥1 wrong answer)**: a **"Round Summary"** button - NOT auto-generated. On click, **hide all summary buttons and show one spinner "Generating round summary…"** (On-demand generation UX, Quiz Screen - don't leave "Configure New Round" dimmed beside it) → `call_cortex_json(prompt, "debrief", model=model_for("meta"))` with per-question domain/topic/correctness/`hint_used` from `round_history` → open an **expander** with clean formatting: `st.container(border=True)` holding **PATTERNS** (bullets) and **PRIORITY ACTIONS** (max 3 bullets), then `one_thing` as a highlighted **🎯 FOCUS** line in its own bordered container (NOT `st.info` - that's reserved for the mnemonic per `$quiz/design`). **Grounding scope:** meta-analysis over the user's OWN round performance - names weak domains/topics + study actions but MUST NOT assert new Snowflake facts or emit doc links; the one runtime generation path exempt from doc-grounding (`$cortex`). State `debrief` (None=not requested / {}=failed / dict=success), reset on round start. A perfect round shows no Round Summary button. Render every dynamic field (PATTERNS, PRIORITY ACTIONS, `one_thing`) through the `md()` `$`-escaper before `st.markdown` (`$quiz/design`).
 
-**Action buttons (by outcome)** - `Round Brief` applies only when there is ≥1 wrong answer.
+**Action buttons (by outcome)** - `Round Summary` applies only when there is ≥1 wrong answer.
 - **Perfect** (all correct): **"Configure New Round"** only.
-- **Passed, some wrong**: **"Round Brief"** + **"Configure New Round"**.
-- **Failed**: **"Round Brief"** + **"Configure New Round"**.
+- **Passed, some wrong**: **"Round Summary"** + **"Configure New Round"**.
+- **Failed**: **"Round Summary"** + **"Configure New Round"**.
 - Threshold = `PASS_THRESHOLD` (the fixed study proxy - not user-overridable; there is no `pass_threshold_override`). All buttons set state and call `st.rerun()`.
 
 ---
@@ -217,13 +337,13 @@ Admin's widget / pagination / pending-confirm keys - `_qm_filters`, `_qm_select_
 
 ## 1. App config
 
-**Two toggles** - `hints_enabled`, `debrief_enabled` ("Round Brief"). Plus **AI model per call-group** (3 `st.selectbox`, options from `_config.py` `MODEL_OPTIONS = ["claude-haiku-4-5", "claude-sonnet-4-6", "claude-opus-4-8"]`):
+**Two toggles** - `hints_enabled`, `debrief_enabled` ("Round Summary"). Plus **AI model per call-group** (3 `st.selectbox`, options from `_config.py` `MODEL_OPTIONS = ["claude-haiku-4-5", "claude-sonnet-4-6", "claude-opus-4-8"]`):
 
 | Selector (label) | Config key | Covers |
 |---|---|---|
 | Question generation | `model_generation` | `get_question`/`generate_ai_question`, Admin Generate batch |
 | Explanations & study aids | `model_explanation` | explanation, hint, deep dive |
-| Meta-analysis | `model_meta` | Round Brief debrief |
+| Meta-analysis | `model_meta` | Round Summary debrief |
 
 Each defaults to `CORTEX_MODEL` (`load_config().get(f"model_{group}", CORTEX_MODEL)`); the call sites read it via `model_for(group)` and pass it to `call_cortex`/`call_cortex_json` (`$cortex`). The Cortex-spend "by model" chart reflects these choices.
 
@@ -324,7 +444,7 @@ All keys initialized in `init_session_state()` in `main.py` (state is shared acr
 | `hint` | None/{}/ dict | `None` | Socratic hint (None=not tried, {}=failed, dict=success) |
 | `hint_level` | int | `0` | 0=none, 1=hint_1 shown, 2=hint_2 shown |
 | `deep_dive` | None/{}/ dict | `None` | Deep-dive result for the question's **topic** (no option picker); reset on Next |
-| `debrief` | None/{}/ dict | `None` | On-demand Round Brief (None=not requested, {}=failed, dict=success); generated from the Round Brief button, reset on round start |
+| `debrief` | None/{}/ dict | `None` | On-demand Round Summary (None=not requested, {}=failed, dict=success); generated from the Round Summary button, reset on round start |
 
 Navigation is owned by `st.navigation` (no `nav_pills` / `_current_page` / `_redirect_to_quiz` keys); cross-page redirects set the target state, then call `st.switch_page("pages/quiz.py")`.
 

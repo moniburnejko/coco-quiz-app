@@ -117,9 +117,9 @@ Snowsight > **Projects > Streamlit > SNOWPRO_QUIZ** (or whatever `app_name` is s
 
 Walk through the pages (navigation is native multipage):
 
-- **Quiz page** - home (round size, difficulty, domain, source - no explanations toggle; the explanation is on-demand) → quiz (try the 💡 Hint *before* answering; after submitting: instant feedback, then an on-demand **💡 AI explanation** button - for correct answers too - opening an expander with the explanation and a 🔬 Deep dive into the question's topic, with **Next** pinned at the very bottom under the expander) → summary (score, pass/fail vs threshold, a collapsed WRONG ANSWERS expander, an on-demand Round Brief).
+- **Quiz page** - home (round size, difficulty, domain, source - no explanations toggle; the explanation is on-demand) → quiz (try the 💡 Hint *before* answering; after submitting: instant feedback, then an on-demand **💡 AI explanation** button - for correct answers too - opening an expander with the explanation and a 🔬 Deep dive into the question's topic, with **Next** pinned at the very bottom under the expander) → summary (score, pass/fail vs threshold, a TO REMEMBER expander with the correct answers in full, an on-demand Round Summary).
 - **Review page** - sub-tabs (`st.pills`): **Wrong answers** (history with domain + date-range filters) and **Learning Dashboard** (charts).
-- **Admin page** (4 tabs: App config, Questions manager, Cortex spend, Logs) - flip a feature toggle (hints / Round Brief) or pick a model per call-group in App config, check the bank KPIs, and in Questions manager use the filter/edit/delete table or **Generate batch (AI)** to seed the question bank; Logs shows the review + session tables with a guarded reset.
+- **Admin page** (4 tabs: App config, Questions manager, Cortex spend, Logs) - flip a feature toggle (hints / Round Summary) or pick a model per call-group in App config, check the bank KPIs, and in Questions manager use the filter/edit/delete table or **Generate batch (AI)** to seed the question bank; Logs shows the review + session tables with a guarded reset.
 
 Complete at least one round so `QUIZ_SESSION_LOG` and `QUIZ_REVIEW_LOG` get data for dashboard charts.
 
