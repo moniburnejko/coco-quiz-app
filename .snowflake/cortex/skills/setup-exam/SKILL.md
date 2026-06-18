@@ -228,7 +228,7 @@ DROP SCHEMA IF EXISTS {database}.QUIZ_<OLD_CODE>;
 ```sql
 INSERT INTO {database}.QUIZ_<CODE>.EXAM_DOMAINS (domain_id, domain_name, weight_pct, topics)
 SELECT d.value:domain_id::VARCHAR, d.value:domain_name::VARCHAR, d.value:weight_pct::FLOAT, d.value:topics
-FROM TABLE(FLATTEN(PARSE_JSON(AI_COMPLETE(
+FROM TABLE(FLATTEN(AI_COMPLETE(    -- AI_COMPLETE + response_format returns an OBJECT; access :domains directly (no PARSE_JSON)
     model => 'claude-sonnet-4-6',
     prompt => CONCAT($$List EVERY exam domain for <EXAM_CODE> with its exact name, weight % (numbers summing to 100), and topics, as JSON. If the guide shows old + new blueprints, use the one effective today.$$, CHR(10),
                      (SELECT doc_content FROM {database}.QUIZ_<CODE>._DOC_CONTENT)),
@@ -236,7 +236,7 @@ FROM TABLE(FLATTEN(PARSE_JSON(AI_COMPLETE(
     response_format => {'type':'json','schema':{'type':'object','properties':{'domains':{'type':'array','items':{'type':'object','properties':{
         'domain_id':{'type':'string'},'domain_name':{'type':'string'},'weight_pct':{'type':'number'},
         'topics':{'type':'array','items':{'type':'string'}}},'required':['domain_id','domain_name','weight_pct','topics']}}},'required':['domains']}}
-)):domains)) d;
+):domains)) d;
 ```
 *(Messy PDF? `AI_EXTRACT` is a one-call keyed-JSON alternative - bundled `cortex-ai-function-studio`. AI_COMPLETE stays the default.)*
 
@@ -270,7 +270,7 @@ then `COPY INTO QUIZ_QUESTIONS FROM @…STAGE_QUIZ_DATA/<csv> FILE_FORMAT = …F
 
 Verify (0 rows without a CSV is legitimate - state it, don't treat as error):
 ```sql
-SELECT COUNT(*), COUNT(DISTINCT domain_id), COUNT(*) FILTER (WHERE domain_name IS NULL) FROM {database}.QUIZ_<CODE>.QUIZ_QUESTIONS;
+SELECT COUNT(*) AS questions, COUNT(DISTINCT domain_id) AS domains, COUNT_IF(domain_name IS NULL) AS missing_domain FROM {database}.QUIZ_<CODE>.QUIZ_QUESTIONS;
 ```
 
 ## Step 7 - Update AGENTS.md

@@ -457,7 +457,7 @@ Two nested `st.tabs` - **Bank** and **Generate**.
 
 ## 3. Cortex spend (graceful - distinguish "no grant" from "no data")
 
-`_cortex.py` sets a session `QUERY_TAG` (JSON: app, feature, model) per call. Read `SNOWFLAKE.ACCOUNT_USAGE.CORTEX_FUNCTIONS_USAGE_HISTORY` inside try/except and branch **structurally**, not "any-exception → GRANT" (an ACCOUNTADMIN holds `IMPORTED PRIVILEGES` by default, so blaming every empty/error result on permissions shows a false GRANT banner):
+`_cortex.py` sets a session `QUERY_TAG` (JSON: app, feature, model) per call. Read `SNOWFLAKE.ACCOUNT_USAGE.CORTEX_AISQL_USAGE_HISTORY` (the **current** view — `CORTEX_FUNCTIONS_USAGE_HISTORY` is deprecated/"no longer updated" per Snowflake docs; columns `FUNCTION_NAME` / `MODEL_NAME` / `TOKENS` / `TOKEN_CREDITS`) inside try/except and branch **structurally**, not "any-exception → GRANT" (an ACCOUNTADMIN holds `IMPORTED PRIVILEGES` by default, so blaming every empty/error result on permissions shows a false GRANT banner):
 - **Success path** - the query returned. If the result is **empty** → a plain caption: "No Cortex spend recorded yet - ACCOUNT_USAGE lags up to ~2 h, or no AI calls have run." (This is the ACCOUNTADMIN-on-a-fresh-account case; ACCOUNTADMIN holds `IMPORTED PRIVILEGES` by default, so **never** show the GRANT banner here.) Otherwise render the charts.
 - **Exception path** - inspect the error. Only when its message signals a **privilege/visibility problem on the SNOWFLAKE share** (e.g. it contains `Insufficient privileges`, `not authorized`, or `does not exist or not authorized` - the symptom of a role lacking `IMPORTED PRIVILEGES`) → the info banner with the exact `GRANT IMPORTED PRIVILEGES ON DATABASE SNOWFLAKE TO ROLE <role>;` (substitute the live `CURRENT_ROLE()`). For any **other** exception → a generic "couldn't read Cortex spend: {error}" caption, NOT the GRANT banner.
 
@@ -653,7 +653,7 @@ def render_generate():
 # 3. CORTEX SPEND — branch STRUCTURALLY: success-but-empty ≠ permission error. (app-v4 blamed every miss on a grant.)
 def render_spend():
     try:
-        rows = load_cortex_spend()      # cached SELECT over SNOWFLAKE.ACCOUNT_USAGE.CORTEX_FUNCTIONS_USAGE_HISTORY → list[Row]
+        rows = load_cortex_spend()      # cached SELECT over SNOWFLAKE.ACCOUNT_USAGE.CORTEX_AISQL_USAGE_HISTORY → list[Row]
     except Exception as e:
         msg = str(e).lower()
         if any(sig in msg for sig in ("insufficient privileges", "not authorized", "does not exist")):
@@ -800,7 +800,7 @@ The `$sis` pre-deploy scan certifies the app **runs** and is **SQL-safe** (impor
 19. **Questions manager has the editable table.** FAIL if it isn't nested `st.tabs(["Bank","Generate"])`, OR the Bank tab lacks an `st.data_editor` with a `select` `CheckboxColumn` (+ disabled other columns), OR renders the KPIs as a table instead of `st.metric` (the app-v4 "two stacked sections, no table" regression).
 20. **Batch count = slider.** FAIL if the Generate batch count uses `st.number_input`, or the slider max exceeds 20.
 21. **Batch feedback.** FAIL if batch generation doesn't run under an `st.spinner` AND fire an `st.toast` AND show a transient `:green-badge[Added N …]` line (no silent batch).
-22. **Spend branches structurally.** FAIL if the Cortex-spend tab reads `METERING_DAILY_HISTORY` (must be `CORTEX_FUNCTIONS_USAGE_HISTORY`), OR uses a generic `except → GRANT` instead of the three-way branch (empty-on-success → caption; privilege signal → GRANT with the live `CURRENT_ROLE()`; other error → caption).
+22. **Spend branches structurally.** FAIL if the Cortex-spend tab reads `METERING_DAILY_HISTORY` or the deprecated `CORTEX_FUNCTIONS_USAGE_HISTORY` (must be `CORTEX_AISQL_USAGE_HISTORY`), OR uses a generic `except → GRANT` instead of the three-way branch (empty-on-success → caption; privilege signal → GRANT with the live `CURRENT_ROLE()`; other error → caption).
 23. **Logs reset is here and frameless.** FAIL if the "Reset all logs" button isn't in the Logs tab (never App config), isn't `type="tertiary"`, or uses a type-`DELETE` text gate instead of a bordered two-step `pending_reset` Confirm/Cancel; Logs also carries a domain filter applied in Python.
 
 ### Cross-cutting
