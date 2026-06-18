@@ -149,6 +149,8 @@ Only `DATABASE`, `SCHEMA`, `CORTEX_MODEL`, and `RESPONSE_FORMATS` constants may 
 
 **Output:** a table, one row per item (# · item · PASS/FAIL/N·A · `file:line` snippet). Verdict - all pass → "Clean. Proceed to deploy."; any FAIL → "Fix items [list] before deploying," each with file+line and a one-line fix.
 
+**A clean scan is necessary but NOT sufficient.** This scan checks that the app *runs* and is *SQL-safe* - it deliberately does **not** check screen/UX-contract conformance (that's `$quiz/screens`, out of this skill's scope). An app can pass every item here while the Home has no slider, answers show bare letters, the config crashes, and the Questions manager has no table. **Before deploy, also run the `$quiz/screens` UX-conformance gate** - both must be clean. (A clean scan alone is the documented "false 25/25 PASS" trap.)
+
 ---
 
 ## Output

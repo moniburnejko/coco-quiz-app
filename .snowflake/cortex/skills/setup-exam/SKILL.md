@@ -335,6 +335,8 @@ Edit `AGENTS.md` within these boundaries.
 
    **Byte-compile when this session can execute code (Cloud Agents) - this is automatic, not advanced-gated.** `python -m py_compile app/main.py app/_*.py app/pages/*.py` is the definitive backstop for `NameError`/`ImportError`; run it whenever the session can, regardless of the `self_verify` option. **A compile error blocks deploy exactly like a scan FAIL** - fix, re-read, re-scan, re-compile until clean. If the session can't execute code, the scan's static-resolution items are the substitute and must be done by hand, file by file. (The advanced `self_verify` option only forces the deeper Step 8.5 rigor on top.)
 
+9. **Run the `$quiz/screens` UX-conformance gate - a SEPARATE pre-deploy check from the `$sis` scan.** The scan certifies the app *runs* and is *SQL-safe*; it does NOT certify that the screens match the UX contracts, so an app can pass the scan 100% while shipping a slider-less Home, bare-letter answers, a crashing config, and a tableless Questions manager (the documented "false PASS"). **Re-read every generated file from disk this turn** and decide each gate check by a static read (slider Home, hint state machine, End Round, on-demand explanation, full-text answers + TO REMEMBER, Review filters + mnemonic guard, Admin's 4 tabs + minimal App config + `save_config`/`cfg_index` + editable Questions table + batch slider/toast + structural spend branch + Logs reset placement, loader return-types, teaching-style grounding, badges-not-`st.success`). ⚠️ **Do NOT deploy on any gate FAIL** - fix → re-read → re-run the affected checks, exactly like the scan. **A clean `$sis` scan AND a clean UX-conformance gate are both required to deploy.**
+
 ## Step 8.5 - Self-verify (advanced mode - forces extra rigor)
 
 Byte-compile already runs in Step 8 whenever the session can execute code. **self-verify** (Step 1d) makes that loop strict and explicit: byte-compile every module (`python -m py_compile app/main.py app/_*.py app/pages/*.py`), and on ANY failure **fix → re-read → re-run the full `$sis` scan → re-compile**, repeating until both are clean - no deploy until then. Snowflake-bound modules can't run outside SiS, so this is compile/parse only. If the session can't execute code, say so; the scan's static-resolution items (`$sis` items 24-25) are the mandatory substitute. Supplements the Step 8 scan, never replaces it.
@@ -403,6 +405,7 @@ Report: exam name + code, schema, domains extracted (N), questions loaded (N or 
 - **5 (conditional)** - pick among conflicting domain structures.
 - **5 verify** - Approve / Re-extract / Abort.
 - **8 scan** - every `$sis` item must PASS; do NOT deploy on any FAIL.
+- **8 gate** - the `$quiz/screens` UX-conformance gate must also be clean (a clean scan ≠ UX conformance); do NOT deploy on any gate FAIL.
 - **8.5** (if self-verify) - modules compile-clean, else fix → re-scan.
 - **9** - copy `app/` → `STAGE_SIS_APP` (`COPY FILES`) + `CREATE STREAMLIT` (warehouse runtime). Verify with `SHOW STREAMLITS`.
 - **10** - report; Done / Review.

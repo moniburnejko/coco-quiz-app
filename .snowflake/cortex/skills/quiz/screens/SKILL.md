@@ -750,6 +750,53 @@ Navigation is owned by `st.navigation` (no `nav_pills` / `_current_page` / `_red
 
 ---
 
+# UX-Conformance Gate (run before deploy — separate from the `$sis` scan)
+
+The `$sis` pre-deploy scan certifies the app **runs** and is **SQL-safe** (imports resolve, no `NameError`, binds, cache freshness). It does **NOT** certify that the generated screens match the UX contracts above — so an app can pass the scan 100% while shipping a slider-less Home, a bare-letter answer, a config crash, and a tableless Questions manager (the session-2 "false PASS"). This gate closes that gap: it is a **conformance checklist read statically against the generated `app/` files**, owned here because `$quiz/screens` owns the screen contracts.
+
+**How to run** (Step 8 item 9, after the `$sis` scan): **re-read every generated file from disk this turn** (`pages/quiz.py`, `pages/review.py`, `pages/admin.py`, `_data.py`, `_cortex.py`, `_config.py`, `main.py`) — never from memory. Each check is decided by a static read; output one row per check (**# · check · PASS/FAIL · `file:line`**). **Deploy only when every check PASSES**; on any FAIL, fix → re-read → re-run the affected checks (do NOT deploy on a FAIL, exactly like the scan). Most checks are mechanical (grep-able); the few marked *(judgment)* need a short read of the handler. The reference implementations these check against are the `# Reference code (COPY + ADAPT)` blocks above — a FAIL usually means the generator paraphrased instead of copying.
+
+### Quiz screen (`pages/quiz.py`)
+1. **Round size = slider.** FAIL if round size uses `st.pills` or `st.number_input` (must be `st.slider(1, 100, …)`). *(Home reference)*
+2. **Hint state machine.** FAIL if the hint button isn't gated on `hint_level < 2`, or never relabels `"💡 Hint"` → `"Need more help?"`, or reveals `hint_1` and `hint_2` together. *(Quiz reference)*
+3. **Hints persist on reveal.** FAIL if already-revealed hint(s) are not rendered **before** the button/spinner (render-then-fetch), so a click can't blank a shown hint.
+4. **On-demand generation.** FAIL if hint / explanation / deep-dive auto-generate (no button), or the button stays visible beside the spinner instead of being replaced by one `st.spinner`.
+5. **End Round in the sidebar.** FAIL if there is no `st.sidebar` "End Round" button while `screen == "quiz"`.
+6. **No per-option ✅/❌.** FAIL if answer options are annotated with per-option correct/incorrect markup, strikethrough, or color after submit (the result is a single badge + the correct-answer line only).
+7. **Deep dive exists, inside the explanation expander.** FAIL if there is **no** `🔬 Deep dive` control inside `_render_explanation_expander` (it must exist), OR if a deep-dive button/section renders anywhere outside it (it is topic-level, **no** per-option picker) — and see check 11.
+8. **Next pinned last.** FAIL if "Next"/"Finish Round" renders before the explanation expander, or both render at once (mutually exclusive, full-width, at the very bottom).
+9. **Explanation on-demand for all.** FAIL if the "💡 AI explanation" button is hidden for correct answers (it appears for correct + incorrect alike).
+
+### Summary screen (`pages/quiz.py`, `screen == "summary"`)
+10. **TO REMEMBER, not WRONG ANSWERS.** FAIL if the missed-questions expander isn't `st.expander("TO REMEMBER", expanded=True)`, OR shows **bare letters**, OR shows the user's pick (must be the correct answer in **full text** only).
+11. **No deep dive in the summary.** FAIL if any `deep`/`🔬` reference appears in the summary section (deep dive is a quiz-screen concept only).
+12. **"Round Summary" naming.** FAIL if a **button or section-heading label** reads "Round Brief" or "Debrief" (the on-demand button + heading must read "Round Summary"; the internal `debrief` state key and code comments are fine — check rendered label text only). The debrief is on-demand, gated by `debrief_enabled`, only when ≥1 wrong.
+
+### Review page (`pages/review.py`)
+13. **Full-text correct answer.** FAIL if the wrong-answer card shows a bare letter instead of the full-text `CORRECT_ANSWER` passthrough. *(judgment — read the card)*
+14. **Both filters present.** FAIL if there is no domain `st.pills` filter, or no always-rendered `st.date_input` range (must render even when `min == max`).
+15. **Mnemonic guard.** FAIL if `st.info(🧠 …)` renders without the `mnem and mnem.lower() != "none"` guard (the app-v4 `🧠 None` box).
+
+### Admin page (`pages/admin.py`)
+16. **Four tabs.** FAIL if Admin isn't four `st.tabs` — App config · Questions manager · Cortex spend · Logs.
+17. **App config is minimal.** FAIL if App config renders any selector for `question_source` / `round_size`/`default_round_size` / `difficulty` / `grounding_mode` / `pass_threshold` (it holds ONLY the two toggles + three model selectboxes).
+18. **Config writes are safe.** FAIL if any config write uses `TO_VARIANT(json.dumps(` or an inline config `MERGE`/`INSERT` in the page (must route through `save_config()` / `PARSE_JSON(?)`), OR if a config-seeded widget uses a bare `options.index(` instead of `cfg_index(`.
+19. **Questions manager has the editable table.** FAIL if it isn't nested `st.tabs(["Bank","Generate"])`, OR the Bank tab lacks an `st.data_editor` with a `select` `CheckboxColumn` (+ disabled other columns), OR renders the KPIs as a table instead of `st.metric` (the app-v4 "two stacked sections, no table" regression).
+20. **Batch count = slider.** FAIL if the Generate batch count uses `st.number_input`, or the slider max exceeds 20.
+21. **Batch feedback.** FAIL if batch generation doesn't run under an `st.spinner` AND fire an `st.toast` AND show a transient `:green-badge[Added N …]` line (no silent batch).
+22. **Spend branches structurally.** FAIL if the Cortex-spend tab reads `METERING_DAILY_HISTORY` (must be `CORTEX_FUNCTIONS_USAGE_HISTORY`), OR uses a generic `except → GRANT` instead of the three-way branch (empty-on-success → caption; privilege signal → GRANT with the live `CURRENT_ROLE()`; other error → caption).
+23. **Logs reset is here and frameless.** FAIL if the "Reset all logs" button isn't in the Logs tab (never App config), isn't `type="tertiary"`, or uses a type-`DELETE` text gate instead of a bordered two-step `pending_reset` Confirm/Cancel; Logs also carries a domain filter applied in Python.
+
+### Cross-cutting
+24. **No exam-code caption.** FAIL if `main.py`/`pages/quiz.py` renders the exam code as a subtitle/caption under a page title.
+25. **Loader return-type contract.** FAIL if any of `load_review_log` / `load_session_log` / `load_recent_sessions` / `load_domain_errors` / `load_bank_stats` / `load_domains` / `load_cortex_spend` is consumed with DataFrame ops (`.empty` / `.iterrows` / `.dropna` / `.isin` / `.head`) — they return `.collect()` `list[Row]`; only `load_questions_page` is a `.to_pandas()` DataFrame (for `st.data_editor`).
+26. **Grounding style** *(judgment — read the prompts)*. The explanation / hint / deep-dive calls are **teaching** calls: ground in the retrieved `<doc_context>` but explain in the model's own words, at most one short cited passage. FAIL if any of these prompts in `_cortex.py` instead instructs strict fact-extraction — e.g. "answer ONLY from the provided documentation", "do not use prior knowledge", "quote/excerpt the docs" — OR fails to tell the model to explain/teach in its own words. (The strict fact-extraction phrasing belongs ONLY to question/batch/flashcard generation — `$cortex`, "Grounded ≠ parroting".)
+27. **Status via badges only.** FAIL if `st.success` / `st.warning` / `st.error` appears anywhere, or `st.info` is used for anything other than the mnemonic 🧠 box (`$quiz/design`).
+
+**Verdict:** all PASS → "UX-conformance gate clean." Any FAIL → "Fix [list] before deploy" with `file:line` + the reference block to copy. A clean `$sis` scan + a clean gate are **both** required to deploy.
+
+---
+
 ## Output
 
 Code that conforms to page flow contracts, session state schema, and write-back + cache-invalidation patterns.
