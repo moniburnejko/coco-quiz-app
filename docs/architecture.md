@@ -30,7 +30,7 @@ flowchart TB
     Browser -->|"SQL · AI_COMPLETE · AI_PARSE_DOCUMENT · CREATE STREAMLIT"| Snowflake
 ```
 
-Nothing runs locally. The PDF lives in a Snowflake stage. CoCo lives in the Snowsight browser tab. The Streamlit app runs server-side in Snowflake (warehouse runtime — `environment.yml`, Snowflake Anaconda channel, trial-safe). The workspace is the bridge - it holds `AGENTS.md` (project context), the skills (orchestration logic), and the generated `app/` project (app code). The agent never touches the user's local filesystem because there isn't one involved.
+Nothing runs locally. The PDF lives in a Snowflake stage. CoCo lives in the Snowsight browser tab. The Streamlit app runs server-side in Snowflake (`environment.yml`, Snowflake Anaconda channel). The workspace is the bridge - it holds `AGENTS.md` (project context), the skills (orchestration logic), and the generated `app/` project (app code). The agent never touches the user's local filesystem because there isn't one involved.
 
 ---
 
@@ -46,7 +46,7 @@ The next branch depends on whether the user has a question bank. If yes, the age
 
 Once `QUIZ_QUESTIONS` is populated, the agent updates two lines in `AGENTS.md` (schema name and exam code), then reads the `$quiz/*` **and `$sis` skills** and writes the decomposed `app/` project — `snowflake.yml` + `.streamlit/config.toml` first (project identity + Workspace recognition), then the entry point, `_*.py` modules, and `pages/`. Generating `snowflake.yml` at the project root is what makes the Workspace treat the folder as a Streamlit app (no "Convert to Streamlit app" needed). Before those files are final, the agent runs `$sis` - a scan across all app files that catches SQL-injection risks, `ttl`-on-cache, `unsafe_allow_html`, and other pitfalls. Because the generation rules come from the same skills, the scan is a final confirmation, not a cleanup pass.
 
-On the `warehouse` runtime the agent deploys without any manual upload: it copies `app/` from the workspace's internal stage onto `STAGE_SIS_APP` with `COPY FILES`, then runs `CREATE OR REPLACE STREAMLIT … QUERY_WAREHOUSE = …` (`pandas`/`altair` come from the Snowflake Anaconda channel, so it works on trial accounts). The app is then live and shareable via its Snowsight URL.
+The agent deploys without any manual upload: it copies `app/` from the workspace's internal stage onto `STAGE_SIS_APP` with `COPY FILES`, then runs `CREATE OR REPLACE STREAMLIT … QUERY_WAREHOUSE = …` (`pandas`/`altair` come from the Snowflake Anaconda channel). The app is then live and shareable via its Snowsight URL.
 
 ### Quick reference
 
@@ -176,7 +176,7 @@ Skills are intentionally small and single-purpose: `$cortex` holds the AI deltas
 
 A few architectural decisions worth knowing:
 
-- **Schema-per-exam** is the mandatory isolation boundary, because Snowsight has no `git` the agent can run to isolate code per exam. A schema is the cleanest isolation Snowflake offers natively. (If the workspace is Git-backed the user can optionally create a branch per exam on top - same category as uploading files manually.)
+- **Schema-per-exam** is the mandatory isolation boundary, because Snowsight has no `git` the agent can run to isolate code per exam. A schema is the cleanest isolation Snowflake offers natively. (If the workspace is Git-backed the user can optionally create a branch per exam on top.)
 - **`AI_PARSE_DOCUMENT` + `AI_COMPLETE`** instead of `AI_EXTRACT` because we need both structured extraction (domains, weights, topic taxonomies) and free-form extraction (key_facts) from the same PDF. Re-parsing per pass would be wasteful; parse once, reuse the Markdown for both extractions.
 - **Cached `load_*` functions** in `_data.py` because Streamlit-in-Snowflake re-renders the whole function tree on every widget interaction. Without `@st.cache_data`, every Next/Submit would re-query several tables. TTL is unbounded (cache per SiS session).
 - **`st.rerun()` discipline, not a fixed count** - handlers pair `st.spinner()` with a single final `st.rerun()` (see `$sis`).

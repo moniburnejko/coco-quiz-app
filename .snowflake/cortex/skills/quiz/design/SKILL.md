@@ -66,9 +66,9 @@ No exam code caption under titles. Sidebar shows only `{EXAM_NAME} Quiz` and nav
 
 Use `st.markdown("**LABEL**")` for all section headers. Labels are UPPERCASE.
 
-Do NOT use `st.subheader()` — it's too visually heavy for section labels.
+Do NOT use `st.subheader()` for section labels — use `st.markdown("**LABEL**")`.
 
-Examples: `**QUESTIONS**`, `**DOMAINS**`, `**DIFFICULTY**`, `**SOURCE**`, `**SCORE PER SESSION**`, `**ERRORS BY DOMAIN**`, `**FOCUS AREAS**`, `**TOPICS TO REVIEW**`, `**NEXT STEPS**` (the summary's `WRONG ANSWERS` is an `st.expander` title now, not a bold label)
+Examples: `**QUESTIONS**`, `**DOMAINS**`, `**DIFFICULTY**`, `**SOURCE**`, `**SCORE PER SESSION**`, `**ERRORS BY DOMAIN**`, `**FOCUS AREAS**`, `**TOPICS TO REVIEW**`, `**NEXT STEPS**` (the summary's `WRONG ANSWERS` is an `st.expander` title, not a bold label)
 
 ---
 
@@ -143,7 +143,7 @@ Rules:
 
 # Docs Link
 
-Always use `st.markdown(f"📖 [Snowflake Documentation]({url})")` for Snowflake docs links. Do NOT use `st.caption` (too subtle) or abbreviated "Docs" (unclear). The 📖 emoji makes it scannable.
+Always use `st.markdown(f"📖 [Snowflake Documentation]({url})")` for Snowflake docs links. Do NOT use `st.caption` or an abbreviated "Docs" label.
 
 Applies in: inside the on-demand AI-explanation expander (after the **💡 AI explanation** click — correct + incorrect alike; never auto-shown on the quiz screen), review cards, AI recommendations topics.
 

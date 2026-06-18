@@ -18,7 +18,7 @@ Example: *"I have SnowProGenAIStudyGuide.pdf — create a quiz app for this exam
 
 # Environment
 
-Runs inside **CoCo in Snowsight**: no bash/git/`snow` CLI, no `PUT` (the agent can't read the local filesystem). The user only **drops files into the workspace** (the PDF/CSV, plus the generated `app/` project the agent writes); the agent then **copies them onto stages with `COPY FILES`** — the PDF onto `STAGE_QUIZ_DATA` (Step 4) and the `app/` onto `STAGE_SIS_APP`, deploying via `CREATE STREAMLIT` on the warehouse runtime (Step 9). No manual stage upload. Isolation is **schema-per-exam** (`QUIZ_<CODE>`) — no git branch.
+Runs inside **CoCo in Snowsight**: no bash/git/`snow` CLI, no `PUT` (the agent can't read the local filesystem). The user only **drops files into the workspace** (the PDF/CSV, plus the generated `app/` project the agent writes); the agent then **copies them onto stages with `COPY FILES`** — the PDF onto `STAGE_QUIZ_DATA` (Step 4) and the `app/` onto `STAGE_SIS_APP`, deploying via `CREATE STREAMLIT` on the warehouse runtime (Step 9). No manual stage upload. Isolation is **schema-per-exam** (`QUIZ_<CODE>`).
 
 Read `{database}`, `{warehouse}`, `{role}` from the `snowflake environment` table in `AGENTS.md`; every SQL placeholder below substitutes those. Never hardcode exam names/codes — extract the name from the PDF and ALWAYS confirm the code with the user.
 
@@ -40,7 +40,7 @@ All OFF by default — enabled only if the user asks in Step 1d. **Without an ex
 
 # Instructions
 
-> **Step 0 — read this entire skill before acting.** Run no SQL, create no object, generate no file until you've read every step. Each STOP prevents a known costly failure (stage without `SNOWFLAKE_SSE` → `AI_PARSE_DOCUMENT` fails; unfilled `<...>` placeholders → wrong objects). **Do NOT improvise from the AGENTS.md overview.** You create nothing before Step 2.
+> **Step 0 — read this entire skill before acting.** Run no SQL, create no object, generate no file until you've read every step. **Do NOT improvise from the AGENTS.md overview.** You create nothing before Step 2.
 
 ## Step 1 — Collect inputs
 
@@ -80,7 +80,7 @@ Ask: *"Any additional requirements? (optional features, AI study recommendations
 
 ### 1f — Deploy prerequisites
 
-**Nothing to check** — `pandas`/`altair` come from the Snowflake Anaconda channel via `environment.yml`. Skip to 1g.
+Skip to 1g — packages come from the Snowflake Anaconda channel via `environment.yml`.
 
 ### 1g — Doc grounding mode (decided here, fixed for the exam)
 
@@ -126,16 +126,16 @@ DESCRIBE STAGE {database}.QUIZ_<CODE>.STAGE_QUIZ_DATA;  -- confirm TYPE = SNOWFL
 
 **Tables** — all 5, exact DDL:
 ```sql
-CREATE TABLE IF NOT EXISTS {database}.QUIZ_<CODE>.EXAM_DOMAINS (
-    domain_id    VARCHAR PRIMARY KEY,
+CREATE OR ALTER TABLE {database}.QUIZ_<CODE>.EXAM_DOMAINS (
+    domain_id    VARCHAR NOT NULL,
     domain_name  VARCHAR NOT NULL,
     weight_pct   FLOAT NOT NULL,
     topics       VARIANT,
     key_facts    VARCHAR
 );
 
-CREATE TABLE IF NOT EXISTS {database}.QUIZ_<CODE>.QUIZ_QUESTIONS (
-    question_id    NUMBER AUTOINCREMENT PRIMARY KEY,
+CREATE OR ALTER TABLE {database}.QUIZ_<CODE>.QUIZ_QUESTIONS (
+    question_id    NUMBER AUTOINCREMENT,
     domain_id      VARCHAR NOT NULL,
     domain_name    VARCHAR,
     difficulty     VARCHAR DEFAULT 'medium',
@@ -151,8 +151,8 @@ CREATE TABLE IF NOT EXISTS {database}.QUIZ_<CODE>.QUIZ_QUESTIONS (
     created_at     TIMESTAMP_LTZ DEFAULT CURRENT_TIMESTAMP()
 );
 
-CREATE TABLE IF NOT EXISTS {database}.QUIZ_<CODE>.QUIZ_REVIEW_LOG (
-    log_id         NUMBER AUTOINCREMENT PRIMARY KEY,
+CREATE OR ALTER TABLE {database}.QUIZ_<CODE>.QUIZ_REVIEW_LOG (
+    log_id         NUMBER AUTOINCREMENT,
     logged_at      TIMESTAMP_LTZ DEFAULT CURRENT_TIMESTAMP(),
     domain_id      VARCHAR,
     domain_name    VARCHAR,
@@ -163,8 +163,8 @@ CREATE TABLE IF NOT EXISTS {database}.QUIZ_<CODE>.QUIZ_REVIEW_LOG (
     doc_url        VARCHAR(500)
 );
 
-CREATE TABLE IF NOT EXISTS {database}.QUIZ_<CODE>.QUIZ_SESSION_LOG (
-    session_id     NUMBER AUTOINCREMENT PRIMARY KEY,
+CREATE OR ALTER TABLE {database}.QUIZ_<CODE>.QUIZ_SESSION_LOG (
+    session_id     NUMBER AUTOINCREMENT,
     session_ts     TIMESTAMP_LTZ DEFAULT CURRENT_TIMESTAMP(),
     exam_code      VARCHAR NOT NULL,
     round_size     NUMBER NOT NULL,
@@ -174,8 +174,8 @@ CREATE TABLE IF NOT EXISTS {database}.QUIZ_<CODE>.QUIZ_SESSION_LOG (
     difficulty     VARCHAR
 );
 
-CREATE TABLE IF NOT EXISTS {database}.QUIZ_<CODE>.QUIZ_CONFIG (
-    config_key   VARCHAR PRIMARY KEY,
+CREATE OR ALTER TABLE {database}.QUIZ_<CODE>.QUIZ_CONFIG (
+    config_key   VARCHAR NOT NULL,
     config_value VARIANT,
     updated_at   TIMESTAMP_LTZ DEFAULT CURRENT_TIMESTAMP()
 );
@@ -267,7 +267,7 @@ Expected: N domains, weights sum to 100, all `key_facts` non-empty. Present the 
 
 **With a CSV** (uploaded in Step 4): if `SELECT COUNT(*) FROM QUIZ_QUESTIONS` already has rows (e.g. `$adapt-questions` ran), skip to verify. Else `COPY INTO QUIZ_QUESTIONS FROM @…STAGE_QUIZ_DATA/<csv> FILE_FORMAT = …FF_CSV;` then backfill `domain_name` from `EXAM_DOMAINS`. If columns/types differ from the target schema, run `$adapt-questions` first.
 
-**Without a CSV — the bank starts empty; do NOT mass-generate at build time** (slow, burns the token budget before the user sees the app, and confuses — "are these the only questions?"). The app is fully functional on runtime AI questions (`question_source` defaults to `'ai'`), and **every runtime AI question is saved to the bank** (`$quiz/questions` — Bank persistence), so it **fills organically as the user practices** — "Question Bank" mode then serves stored questions with no AI call. The user can also seed it deliberately: CSV/JSON + `$adapt-questions`, the Admin **Generate batch** button, the worksheet recipe (`docs/customization.md` §6), or a scheduled task/Automation.
+**Without a CSV — the bank starts empty; do NOT mass-generate at build time.** The app is fully functional on runtime AI questions (`question_source` defaults to `'ai'`), and **every runtime AI question is saved to the bank** (`$quiz/questions` — Bank persistence), so "Question Bank" mode then serves stored questions with no AI call. The user can also seed it deliberately: CSV/JSON + `$adapt-questions`, the Admin **Generate batch** button, the worksheet recipe (`docs/customization.md` §6), or a scheduled task/Automation.
 
 Verify (0 rows without a CSV is legitimate — state it, don't treat as error):
 ```sql
@@ -341,7 +341,7 @@ Only if **self-verify** was enabled (Step 1d) and the session can execute code (
 
 ## Step 9 — Deploy (warehouse, fully scriptable — no manual upload)
 
-The agent can't click the Workspaces UI or `PUT`, but the workspace files already live on an internal stage — so the agent copies them onto `STAGE_SIS_APP` with SQL and creates the app on the **warehouse runtime** — works on trial accounts.
+The agent can't click the Workspaces UI or `PUT`, but the workspace files already live on an internal stage — so the agent copies them onto `STAGE_SIS_APP` with SQL and creates the app on the **warehouse runtime**.
 
 **1. Copy `app/` from the workspace stage → `STAGE_SIS_APP`.** Workspace files sit at `snow://workspace/USER$.PUBLIC."<workspace_name>"/versions/live/app/` — **confirm the exact URI first** (the workspace name varies), then copy, preserving the `pages/` and `.streamlit/` subfolders:
 ```sql
@@ -396,7 +396,7 @@ Report: exam name + code, schema, domains extracted (N), questions loaded (N or 
 - **1a** — halt on unfilled `<...>` placeholders; resume when filled.
 - **1c** — confirm a PDF exists; Yes/No on an optional CSV (no filenames — resolved at Step 4's `LIST`).
 - **1e** — default vs custom look; if custom, run the dialog + confirm palette before Step 2.
-- **1f** — warehouse runtime needs nothing checked; skip to 1g.
+- **1f** — skip to 1g.
 - **4** — `LIST` the workspace stage, `COPY FILES` the PDF (+ optional CSV) onto `STAGE_QUIZ_DATA`, verify with `LIST`, resolve the real filenames for Steps 5–6. STOP only if the PDF isn't in the workspace.
 - **5 (conditional)** — pick among conflicting domain structures.
 - **5 verify** — Approve / Re-extract / Abort.
@@ -411,7 +411,7 @@ Report: exam name + code, schema, domains extracted (N), questions loaded (N or 
 
 # Important Notes
 
-- **Never drop or modify the previous exam's schema** — exams coexist in separate schemas (`QUIZ_<CODE>` is the only isolation; no git here).
+- **Never drop or modify the previous exam's schema** — exams coexist in separate schemas (`QUIZ_<CODE>` is the only isolation).
 - **Every query references `{database}.QUIZ_<CODE>`** — double-check.
 - **Env schema is authoritative; resume by probing, not assuming** — after a chat reload, target only the schema AGENTS.md env names, check what already exists (Step 1a), resume from the first incomplete step, and verify any "you already did X" claim against that schema — never redo work or write into a different `QUIZ_*` schema.
 - **Files reach stages via `COPY FILES` from the workspace stage** (no `PUT` in Snowsight) — the user drops files into the workspace file tree; the agent copies them onto `STAGE_QUIZ_DATA` (PDF/CSV, Step 4) and `STAGE_SIS_APP` (the `app/`, Step 9), then `LIST`s to verify.

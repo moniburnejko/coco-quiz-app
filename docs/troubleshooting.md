@@ -31,7 +31,7 @@ If you cannot get `ACCOUNTADMIN`, change the model in `AGENTS.md` > `cortex llm`
 
 **Cause:** `STAGE_QUIZ_DATA` was created without `ENCRYPTION = (TYPE = 'SNOWFLAKE_SSE')` or without `DIRECTORY = (ENABLE = TRUE)`. Both are required.
 
-`$setup-exam` always uses the right DDL - this only bites when you recycle a stage created by hand.
+This bites only when you recycle a stage created by hand; `$setup-exam` emits the correct DDL.
 
 ---
 
@@ -84,8 +84,6 @@ AI_PARSE_DOCUMENT(..., {'mode': 'OCR'});
 ```
 seed the question bank for domain_id = 3 with batch_size = 5.
 ```
-
-Usually one rerun is enough.
 
 ---
 
@@ -145,9 +143,7 @@ run $quiz/screens and $sis on the current app files. focus on the finish-round h
    ```
    Empty/error → install the listing or get access granted. If the imported database has a different name, set `DOCS_SEARCH_SERVICE` in `_config.py`.
 2. Confirm the exam's `grounding_mode` (shown **read-only** on the Admin → App config tab). It is fixed at setup — `cke` / `custom` / `none` — with **no runtime toggle**; to change it, re-run `$setup-exam` Step 1g.
-3. Cross-region: if your account's region can't reach the shared service, the runtime probe fails — and because `cke`/`custom` grounding is mandatory, the app does **not** silently continue ungrounded. It surfaces the unreachable-service message and blocks generation until access is restored (enable cross-region inference, or use a service your region can reach).
-
-In `cke`/`custom` mode, unavailable grounding **does** block generation — the app refuses to produce ungrounded content (no built-in-knowledge fallback). The `key_facts` + generic `doc_search` search-link path applies only in `none` mode, where generation is intentionally ungrounded.
+3. Cross-region: if your account's region can't reach the shared service, the runtime probe fails and the app surfaces the unreachable-service message, blocking generation until access is restored (enable cross-region inference, or use a service your region can reach).
 
 ---
 

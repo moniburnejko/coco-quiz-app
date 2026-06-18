@@ -2,7 +2,7 @@
 
 > ## ⛔ How to run this project — do NOT improvise
 > To set up an exam you **MUST** open `.snowflake/cortex/skills/setup-exam/SKILL.md` and execute it **step by step, top to bottom**, honoring every mandatory STOP. Read the whole skill first; create nothing before its Step 2.
-> The sections below are **reference context** (what the app is, the data model, constraints) — they are **NOT the build procedure** and are not detailed enough to improvise from. Improvising from this overview instead of loading the skill causes known failures (stage without `SNOWFLAKE_SSE` encryption → `AI_PARSE_DOCUMENT` fails, unfilled `<...>` placeholders → wrong objects, an incomplete `artifacts` list → a partial/broken deploy).
+> The sections below are **reference context** (what the app is, the data model, constraints) — they are **NOT the build procedure** and are not detailed enough to improvise from. Improvising from this overview instead of loading the skill produces wrong or broken objects.
 
 ## What this project is
 
@@ -28,11 +28,11 @@ Do not touch any database or schema other than the one configured below:
 | runtime   | `warehouse`                          |
 | deps_file | `environment.yml` (Snowflake Anaconda channel) |
 
-**Preconditions** (user-set before running `$setup-exam`): replace `<your_database>`, `<your_warehouse>`, `<your_role>` with actual object names. The role must have `CREATE SCHEMA` on `database`. **The `warehouse` runtime needs nothing else** — `pandas`/`altair` come from the Snowflake Anaconda channel, so it works on **trial accounts** out of the box. `$setup-exam` stops if any required `<...>` placeholder remains unfilled.
+**Preconditions** (user-set before running `$setup-exam`): replace `<your_database>`, `<your_warehouse>`, `<your_role>` with actual object names. The role must have `CREATE SCHEMA` on `database`. `pandas`/`altair` come from the Snowflake Anaconda channel. `$setup-exam` stops if any required `<...>` placeholder remains unfilled.
 
-**Outputs** (populated in the table above by `$setup-exam`): `schema` (= `<database>.QUIZ_<EXAM_CODE>`) and `exam_code` (from the study guide PDF). `$setup-exam` is idempotent (`IF NOT EXISTS`) and never drops. Each exam gets its own schema - never share a schema between exams.
+**Outputs** (populated in the table above by `$setup-exam`): `schema` (= `<database>.QUIZ_<EXAM_CODE>`) and `exam_code` (from the study guide PDF). `$setup-exam` is idempotent (`CREATE OR ALTER` for tables, `IF NOT EXISTS` for schema/stages) and never drops a schema or table. Each exam gets its own schema - never share a schema between exams.
 
-**Project defaults** (customizable but have working values): stages, `app_name`, `main_file`, `runtime` (`warehouse`), `deps_file` (`environment.yml`). Change only if you need to.
+**Project defaults** (customizable but have working values): stages, `app_name`, `main_file`, `deps_file` (`environment.yml`).
 
 All sections reference these values. Never hardcode environment names elsewhere in this file.
 
@@ -45,7 +45,7 @@ Five tables in `{database}.{schema}`, plus a transient `_DOC_CONTENT` used only 
 | Table | Purpose |
 |-------|---------|
 | `EXAM_DOMAINS` | Domains, weights, topics, key_facts — extracted once from the study-guide PDF. |
-| `QUIZ_QUESTIONS` | Question bank: CSV/seeded `'MANUAL'` rows plus every runtime AI question persisted as `'AI_GENERATED'`; the bank fills organically and is reused (randomized selection). |
+| `QUIZ_QUESTIONS` | Question bank: CSV/seeded `'MANUAL'` rows plus every runtime AI question persisted as `'AI_GENERATED'`; reused with randomized selection. |
 | `QUIZ_REVIEW_LOG` | Per-question wrong-answer history — drives the Review page and (when enabled) Flashcards. |
 | `QUIZ_SESSION_LOG` | Per-round summary — drives the Learning Dashboard. |
 | `QUIZ_CONFIG` | Runtime key-value app config edited from Admin (defaults in `_config.py`); also stores `grounding_mode`, set once at setup and read-only at runtime. |
@@ -91,7 +91,7 @@ CoCo in Snowsight ships with built-in skills, available natively from any worksp
 
 1. **Isolation**: all DDL/DML in `{database}.{schema}` only. Never cross schemas.
 2. **No DROP** on existing objects. Never `DROP SCHEMA`, `DROP DATABASE`, `DROP TABLE`.
-3. **Idempotent DDL**: `CREATE TABLE IF NOT EXISTS`, `CREATE STAGE IF NOT EXISTS`. `CREATE OR REPLACE` is allowed for `STREAMLIT` and `FILE FORMAT` only.
+3. **Idempotent DDL**: `CREATE OR ALTER TABLE` for the data-model tables (reconciles columns to the definition; never `DROP TABLE`); `CREATE … IF NOT EXISTS` for schema, stages, and the file format. `CREATE OR REPLACE` only for `STREAMLIT` (the redeployed app).
 4. **Parameterized SQL** for all user-derived values. Never interpolate widget values into f-string SQL.
 5. **AI_COMPLETE**: dollar-quote the prompt, sanitize any `$$` in interpolated content to `$ $`. `CORTEX_MODEL` is a hardcoded constant.
 6. **Schema-per-exam** is the mandatory isolation boundary the agent enforces. The user may additionally create a Git branch per exam.

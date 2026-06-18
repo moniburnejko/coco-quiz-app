@@ -35,11 +35,11 @@ main.py  ->  st.navigation([
 ])
 ```
 
-**Config layer**: runtime behavior toggles live in `QUIZ_CONFIG` (defaults in `_config.py` `CONFIG_DEFAULTS`, DB overrides; `load_config()` cached + `save_config()` in `_data.py`, both with `clear_caches()` on write). Gates used below: `hints_enabled`, `debrief_enabled`, `default_round_size`, `pass_threshold_override`. (There is no `explanations_default`/`contrast_enabled` config — the explanation + deep-dive are always-available on-demand, so they need no toggle.)
+**Config layer**: runtime behavior toggles live in `QUIZ_CONFIG` (defaults in `_config.py` `CONFIG_DEFAULTS`, DB overrides; `load_config()` cached + `save_config()` in `_data.py`, both with `clear_caches()` on write). Gates used below: `hints_enabled`, `debrief_enabled`, `default_round_size`, `pass_threshold_override`. (There is no `explanations_default`/`contrast_enabled` config — the explanation + deep-dive are always on-demand.)
 
 **Entry point (`main.py`)**: `st.set_page_config` (first `st.` call) -> `init_session_state()` -> shared sidebar title -> `st.navigation(pages).run()`. Pages share `st.session_state` (it persists across page switches).
 
-**Inside `pages/quiz.py`** the three screens are an internal state machine driven by `st.session_state["screen"]` (`home` / `quiz` / `summary`) — they are NOT separate pages, because they share one round lifecycle.
+**Inside `pages/quiz.py`** the three screens are an internal state machine driven by `st.session_state["screen"]` (`home` / `quiz` / `summary`) — they are NOT separate pages.
 
 **Inside `pages/review.py`** the tabs are `st.pills` with `st.divider()` and `st.title()` per tab, driven by `_review_page` — `WRONG ANSWERS` and `LEARNING DASHBOARD` always, plus `FLASHCARDS` when the flashcards feature is enabled (`$quiz/features` Feature 2).
 
@@ -56,9 +56,9 @@ Cross-page redirects (e.g. recommendations -> quiz): set the target state, then 
 3. **DIFFICULTY** — pills (mixed/easy/medium/hard), guard against None, initial value from `difficulty` if set
 4. **SOURCE** — pills multi-select (`["QUESTION BANK", "AI GENERATED"]`), mapped internally to `"mix"/"db"/"ai"`
 
-Each control **seeds its initial value from the matching session key** (`round_size`, `domain_filter`, `difficulty`) when present, so a cross-page redirect — e.g. the AI Study Recommendation "Start Focused Session" (`$quiz/features`) — pre-fills the round instead of landing on a blank Home.
+Each control **seeds its initial value from the matching session key** (`round_size`, `domain_filter`, `difficulty`) when present, so a cross-page redirect — e.g. the AI Study Recommendation "Start Focused Session" (`$quiz/features`) — pre-fills the round.
 
-There is **no "AI explanations" toggle** — the explanation is on-demand per question (a button after answering), never auto-loaded.
+The explanation is on-demand per question (a button after answering), never auto-loaded.
 
 **Grounding guard** (top of Home, `cke`/`custom` mode): if `not docs_available()` (`$cortex`/`_search.py`), show a red "install/grant the Snowflake Documentation CKE — the app can't generate until it's reachable" message and **disable Start Round**. The app must never generate from built-in knowledge. (In `none` mode there is no guard — generation is intentionally ungrounded.)
 
@@ -82,11 +82,11 @@ There is **no "AI explanations" toggle** — the explanation is on-demand per qu
 - **left = "Next"** (primary; **"Finish Round"** on the last question) → advances immediately
 - **right = "💡 AI explanation"** (secondary) → loads the explanation **on demand** (Explanation Contract below) into an expander rendered beneath the row
 
-The explanation is NEVER auto-generated, and the button appears for **correct answers too** (to learn why the distractors are wrong). Both buttons stay visible after the explanation loads (read, then Next). Do NOT render "Next" and "Finish" together — it causes accidental round termination. Do NOT add per-option markup (✓, strikethrough) — the explanation handles details.
+The explanation is NEVER auto-generated, and the button appears for **correct answers too** (to learn why the distractors are wrong). Both buttons stay visible after the explanation loads (read, then Next). Do NOT render "Next" and "Finish" together. Do NOT add per-option markup (✓, strikethrough) — the explanation handles details.
 - Correct: `:green-badge[✅ CORRECT]`
 - Incorrect: `:red-badge[❌ INCORRECT]` + newline + `Correct answer: **A**, **C**` (bold letters only, not full option text)
 
-**Sidebar "End Round"**: When `screen == "quiz"`, the sidebar shows an "End Round" button (secondary, full-width). This lets the user finish early without it competing with "Next" in the main area. Clicking sets `_pending_finish = True` and does a natural rerender.
+**Sidebar "End Round"**: When `screen == "quiz"`, the sidebar shows an "End Round" button (secondary, full-width). Clicking sets `_pending_finish = True` and does a natural rerender.
 
 **Button click safety**: guard slow-action buttons (Start Round, Submit, Next, Finish) with the `_transitioning` flag so a double-click can't double-fire during the rerun:
 ```python
@@ -174,7 +174,7 @@ Each submitted answer is appended to `round_history`:
 - **Perfect** (all correct): **"Configure New Round"** only.
 - **Passed, some wrong**: **"Round Brief"** + **"Configure New Round"**.
 - **Failed**: **"Round Brief"** + **"Configure New Round"**.
-- No "Retry Same Config" button (removed). Threshold = `pass_threshold_override` if set, else `PASS_THRESHOLD`. All buttons set state and call `st.rerun()`.
+- Threshold = `pass_threshold_override` if set, else `PASS_THRESHOLD`. All buttons set state and call `st.rerun()`.
 
 The optional **Remedial Round** feature (`$quiz/features`), when enabled, inserts a **"Remedial Round"** button into a *failed* round's outcome here and owns the re-test pass (which writes nothing). Core summary write-back never depends on it.
 
@@ -219,7 +219,7 @@ Optional features (`$quiz/features`) are generated as **separate pages** (`pages
 
 Five **`st.tabs`** — **App config · Question manager · Bank stats · Cortex spend · Tools** (not one long scrolling page); the five subsections below are the tab contents in order. Single-user app → visible to the owner; when multi-user lands, gate via restricted caller's rights (fail-closed) — do NOT build RBAC now.
 
-**1. App configuration**: toggles for `hints_enabled`, `debrief_enabled`; slider `default_round_size` (5–50); `pass_threshold_override` slider with an "exam default (75%)" reset button + warning caption that the official exam threshold does not change. **Grounding** is shown **read-only** — `grounding_mode` is fixed at setup (`$setup-exam` Step 1g), never a runtime toggle (an "off" switch would be a built-in-knowledge backdoor). In `cke`/`custom` mode, if `docs_available()` is False, show a red caption: "The doc grounding service is unavailable — install/grant the Snowflake Documentation CKE; the app can't generate until it's reachable." Every config change → `save_config(key, value)` (MERGE by key, bind params) → `clear_caches()` (clears `docs_available`/`search_docs` too) → `st.toast`.
+**1. App configuration**: toggles for `hints_enabled`, `debrief_enabled`; slider `default_round_size` (5–50); `pass_threshold_override` slider with an "exam default (75%)" reset button + warning caption that the official exam threshold does not change. **Grounding** is shown **read-only** — `grounding_mode` is fixed at setup (`$setup-exam` Step 1g), never a runtime toggle. In `cke`/`custom` mode, if `docs_available()` is False, show a red caption: "The doc grounding service is unavailable — install/grant the Snowflake Documentation CKE; the app can't generate until it's reachable." Every config change → `save_config(key, value)` (MERGE by key, bind params) → `clear_caches()` (clears `docs_available`/`search_docs` too) → `st.toast`.
 
 **2. Question manager**: filter pills (domain / difficulty / source) → cached query → `st.dataframe(..., on_select="rerun", selection_mode="single-row")` → selected row loads into an edit form below (question `st.text_area`, options A–E inputs, `correct_answer` multiselect restricted to NON-EMPTY options, difficulty pills; `is_multi` derived = len(correct) > 1) → UPDATE by `question_id`. "Add new question" = the same form, empty → INSERT with `source='MANUAL'`. **Hard rules**: every write via bind params (NEVER f-string); length caps enforced in the form AND by truncation (question 2000, options 500); `correct_answer` ⊆ non-empty options; ≥2 options. **"Generate batch (AI)"** button: pick domain + difficulty mix → generates 10 questions via the **same grounded `_questions.py` path** (`$quiz/questions`: in `cke`/`custom` mode each question embeds retrieved `<doc_context>` as the primary source with `key_facts` as supporting scope, answers ONLY from the docs, and fails visibly on empty retrieval — never built-in knowledge) → INSERT with `source='AI_GENERATED'` → report count; caption with an approximate-cost note.
 

@@ -135,7 +135,7 @@ When loading from DB, try in order:
 3. `domain only` (full pool, no exclusion)
 4. `generate_ai_question()` (auto-fallback when DB exhausted)
 
-**Every level selects with `ORDER BY RANDOM() LIMIT 1` — never sequential / ordered-by-id.** With the bank now growing from runtime AI, a Question-Bank round MUST serve freshly randomized questions, not the table in insertion order; combined with the `NOT IN (shown)` dedup this gives shuffled, non-repeating coverage. (`_shuffle_options` then randomizes option positions — see below.)
+**Every level selects with `ORDER BY RANDOM() LIMIT 1` — never sequential / ordered-by-id.** combined with the `NOT IN (shown)` dedup this gives shuffled, non-repeating coverage. (`_shuffle_options` then randomizes option positions — see below.)
 
 Reference: see `_get_db_question()` in `_questions.py`
 
@@ -231,17 +231,17 @@ Some SnowPro questions have 5 options. `option_e` is in the schema as optional. 
 
 The code then adds UPPERCASE keys (`QUESTION_TEXT`, `DOMAIN_ID`, `DOMAIN_NAME`, `DIFFICULTY`, etc.) and returns the dict for in-memory use during the current round.
 
-**Note**: every validated runtime AI question is **persisted to `QUIZ_QUESTIONS`** (`source='AI_GENERATED'`) so the bank grows as the user practices — see **Bank persistence** below. The `source` field distinguishes `'MANUAL'` (CSV) vs `'AI_GENERATED'` (runtime + Admin "Generate batch") rows. Build-time still never mass-generates.
+**Note**: every validated runtime AI question is **persisted to `QUIZ_QUESTIONS`** (`source='AI_GENERATED'`) so the bank grows as the user practices — see **Bank persistence** below. The `source` field distinguishes `'MANUAL'` (CSV) vs `'AI_GENERATED'` (runtime + Admin "Generate batch") rows. Build-time never mass-generates.
 
 ---
 
 # Bank persistence
 
-Runtime AI generation **grows the bank**: when `generate_ai_question` returns a validated question, **INSERT it into `QUIZ_QUESTIONS`** (bind params per `$sis`; `source='AI_GENERATED'`; columns `domain_id`, `domain_name`, `difficulty`, `question_text`, `is_multi`, `option_a..e`, `correct_answer` — `question_id`/`created_at` are auto). The persist is **fire-and-forget**: the in-memory question keeps `QUESTION_ID = None` (Snowflake has no portable `INSERT … RETURNING`, and a dedup-skip inserts no row — nothing downstream needs the id back; `history_item.question_id` is `int/None`). After a few rounds the bank holds real, reusable, CKE-grounded questions, so **"Question Bank" mode serves them with no AI call** (faster + cheaper).
+Runtime AI generation **grows the bank**: when `generate_ai_question` returns a validated question, **INSERT it into `QUIZ_QUESTIONS`** (bind params per `$sis`; `source='AI_GENERATED'`; columns `domain_id`, `domain_name`, `difficulty`, `question_text`, `is_multi`, `option_a..e`, `correct_answer` — `question_id`/`created_at` are auto). The persist is **fire-and-forget**: the in-memory question keeps `QUESTION_ID = None` (`history_item.question_id` is `int/None`). **"Question Bank" mode serves persisted rows with no AI call.**
 
 - **Exact-text dedup**: insert only when no row with the same `question_text` already exists — `INSERT … SELECT … WHERE NOT EXISTS (SELECT 1 FROM {FQ}.QUIZ_QUESTIONS WHERE QUESTION_TEXT = :q)` — so re-asked concepts don't pile up duplicates.
 - **Always on** (no toggle). Persist the question as generated; `_get_db_question` re-shuffles option order on load anyway.
-- A failed persist must **never break the round** — wrap the INSERT so an error just skips saving (the question still displays). Build-time never mass-generates; the bank fills organically from rounds + the Admin "Generate batch" button.
+- A failed persist must **never break the round** — wrap the INSERT so an error just skips saving (the question still displays). Bank rows come from rounds + the Admin "Generate batch" button.
 
 ## Output
 

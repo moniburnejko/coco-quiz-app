@@ -43,7 +43,7 @@ Load a study guide PDF, and the agent creates the schema, extracts exam domains,
 ## Prerequisites
 
 - Snowflake account with a role that has `USAGE`+`CREATE SCHEMA` on a database, `USAGE` on a warehouse, and access to Cortex AI functions.
-- The **`warehouse` runtime needs nothing extra** — `pandas`/`altair` install from the Snowflake Anaconda channel, so it **works on trial accounts**.
+- `pandas`/`altair` install from the Snowflake Anaconda channel, so the app **works on trial accounts**.
 - One-time as `ACCOUNTADMIN`, only if the model is not reachable in-region: `ALTER ACCOUNT SET CORTEX_ENABLED_CROSS_REGION = 'ANY_REGION';` (accounts created after 2026-03-09 default to it).
 - Snowsight > AI & ML > Agents > Settings > Tools and connectors > Web search > enable.
 - A study guide PDF for your target exam - [Snowflake certifications catalog](https://learn.snowflake.com/en/certifications/).

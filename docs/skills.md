@@ -2,17 +2,17 @@
 
 Custom Snowflake CoCo skills live under `.snowflake/cortex/skills/` and are uploaded once per workspace via **CoCo chat » + » Upload Folder(s)**.
 
-**9 skill files** — 4 invocable top-level skills plus a `quiz` router with 4 sub-skills. CoCo activates a skill by matching your message against its `description` (each also lists "Do NOT use for…" anti-triggers to stop cross-firing); you can also invoke explicitly with `/`. The `quiz` parent routes via its **body** ("for intent X, load `<sub-skill>` and follow it") — the same prose-routing CoCo's own bundled routers use.
+**9 skill files** — 4 invocable top-level skills plus a `quiz` router with 4 sub-skills. CoCo activates a skill by matching your message against its `description` (each also lists "Do NOT use for…" anti-triggers to stop cross-firing); you can also invoke explicitly with `/`. The `quiz` parent routes via its **body** ("for intent X, load `<sub-skill>` and follow it").
 
 | Invoke | Kind | Carries |
 |--------|------|---------|
 | `/setup-exam` | standalone | the end-to-end pipeline (PDF → schema → domains → bank → app → deploy) |
 | `/adapt-questions` | standalone | map a CSV/JSON question bank to the `QUIZ_QUESTIONS` schema |
 | `/cortex` | standalone | AI deltas: structured outputs, injection delimiting, CKE grounding, diagnostics, prompt audit |
-| `/sis` | standalone | Streamlit-in-Snowflake runtime gotchas (warehouse runtime) + the mandatory pre-deploy scan |
+| `/sis` | standalone | Streamlit-in-Snowflake runtime gotchas + the mandatory pre-deploy scan |
 | `/quiz` | router → `screens` · `questions` · `design` · `features` | building/modifying the app |
 
-**Thin layer over CoCo's bundled skills** (built-in, no upload): `$cortex` defers to **`cortex-ai-function-studio`** + **`document-intelligence`** (full Cortex AI / doc-parsing reference); `$sis` defers to **`developing-with-streamlit-in-snowflake`** (general Streamlit) and **`snowflake-apps`** (deploy mechanics). The bundled **`skill-development`** skill can lint this pack. Our skills carry only the project deltas — decisions, conventions, gotchas, and the app's contracts.
+**Thin layer over CoCo's bundled skills** (built-in, no upload): `$cortex` defers to **`cortex-ai-function-studio`** + **`document-intelligence`** (full Cortex AI / doc-parsing reference); `$sis` defers to **`developing-with-streamlit-in-snowflake`** (general Streamlit) and **`snowflake-apps`** (deploy mechanics). Our skills carry only the project deltas — decisions, conventions, gotchas, and the app's contracts.
 
 ---
 
@@ -32,11 +32,11 @@ Collects exam metadata + file names + optional features + look; validates AGENTS
 
 ## /cortex — standalone
 
-**Scope:** the project's Cortex AI deltas (not a general AI-function reference — that's bundled `cortex-ai-function-studio`). Covers: `AI_COMPLETE` **structured outputs** (`response_format` + `RESPONSE_FORMATS`, the `call_cortex_json` helper — guaranteed schema-conformant JSON, no fence parsing); `$$` dollar-quoting + sanitization; **untrusted-content delimiting** (prompt-injection defense); the **Cortex Search (CKE) `_search.py`** isolation pattern (Python `snowflake.core` at runtime, graceful fallback); a trimmed **diagnostics** runbook; and a **prompt-audit** checklist.
+**Scope:** the project's Cortex AI deltas (not a general AI-function reference — that's bundled `cortex-ai-function-studio`). Covers: `AI_COMPLETE` **structured outputs** (`response_format` + `RESPONSE_FORMATS`, the `call_cortex_json` helper — guaranteed schema-conformant JSON); `$$` dollar-quoting + sanitization; **untrusted-content delimiting** (prompt-injection defense); the **Cortex Search (CKE) `_search.py`** isolation pattern (Python `snowflake.core` at runtime, graceful fallback); a trimmed **diagnostics** runbook; and a **prompt-audit** checklist.
 
 ## /sis — standalone
 
-**Scope:** Streamlit-in-Snowflake runtime deltas (warehouse runtime) + the **mandatory pre-deploy scan** (run before every deploy). Gotchas: `get_active_session()` inside cached functions; no-`ttl` caching + `clear_caches()`; widget lifecycle (flag-at-top reset, `None`-guards); rerun discipline; multipage state; CSP / `unsafe_allow_html`; `.applymap`→`.map`; `showErrorDetails="none"`; uppercase columns; SQL bind-params. The scan checks every item across all app files; deploy only on a clean pass.
+**Scope:** Streamlit-in-Snowflake runtime deltas + the **mandatory pre-deploy scan** (run before every deploy). Gotchas: `get_active_session()` inside cached functions; no-`ttl` caching + `clear_caches()`; widget lifecycle (flag-at-top reset, `None`-guards); rerun discipline; multipage state; CSP / `unsafe_allow_html`; `.applymap`→`.map`; `showErrorDetails="none"`; uppercase columns; SQL bind-params. The scan checks every item across all app files; deploy only on a clean pass.
 
 ## /quiz — router
 
@@ -67,5 +67,4 @@ Optional features (only when explicitly requested) — exactly five: exam simula
 Bundled CoCo skills this pack defers to (built-in, no upload):
   /cortex → cortex-ai-function-studio + document-intelligence
   /sis    → developing-with-streamlit-in-snowflake, snowflake-apps
-  lint    → skill-development
 ```

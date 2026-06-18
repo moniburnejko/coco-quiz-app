@@ -3,7 +3,7 @@ name: sis
 description: "Streamlit-in-Snowflake runtime deltas for this app (warehouse runtime) + the MANDATORY pre-deploy scan. Use when writing app code that touches caching/widgets/session, or before any deploy. Triggers: SiS, streamlit in snowflake, get_active_session, cache_data, clear_caches, ttl, widget reset, showErrorDetails, config.toml, pre-deploy, scan, before deploying, deploy checklist. Do NOT use for general Streamlit authoring (bundled developing-with-streamlit-in-snowflake), app screen/state contracts (quiz-screens), or visual styling (quiz-design)."
 ---
 
-> **Thin wrapper.** For general Streamlit authoring (widgets, layout, caching, theming) use the bundled CoCo skill **`developing-with-streamlit-in-snowflake`**; for deploy mechanics, **`snowflake-apps`**. This skill keeps only the project deltas for **Streamlit-in-Snowflake** plus the mandatory pre-deploy scan. The **`warehouse` runtime** pins a supported Streamlit (currently ~1.52.2) and installs deps from the Snowflake Anaconda channel (`environment.yml`); works on trial accounts.
+> **Thin wrapper.** For general Streamlit authoring (widgets, layout, caching, theming) use the bundled CoCo skill **`developing-with-streamlit-in-snowflake`**; for deploy mechanics, **`snowflake-apps`**. This skill keeps only the project deltas for **Streamlit-in-Snowflake** plus the mandatory pre-deploy scan. The **`warehouse` runtime** pins a supported Streamlit (currently ~1.52.2) and installs deps from the Snowflake Anaconda channel (`environment.yml`).
 
 # When to Use
 
@@ -21,7 +21,7 @@ description: "Streamlit-in-Snowflake runtime deltas for this app (warehouse runt
 
 # SiS runtime gotchas
 
-The SiS-specific traps that bite — what CoCo's general Streamlit knowledge doesn't cover. Everything else, defer to the bundled skill.
+The SiS-specific traps that bite. Everything else, defer to the bundled skill.
 
 ## Sessions and caching
 
@@ -36,7 +36,7 @@ def load_domains():
     return _session.sql("SELECT ...").collect()
 ```
 
-**No `ttl` on any loader.** A ttl that expires mid-session silently swaps a stateful widget's input DataFrame and resets the widget (selections vanish, filters jump) — a miserable, time-dependent bug. Cache for the whole session and invalidate explicitly: `_data.py` defines `clear_caches()` (clears every loader) and **every DB write calls it** before the UI reads again.
+**No `ttl` on any loader.** A ttl that expires mid-session silently swaps a stateful widget's input DataFrame and resets the widget (selections vanish, filters jump). Cache for the whole session and invalidate explicitly: `_data.py` defines `clear_caches()` (clears every loader) and **every DB write calls it** before the UI reads again.
 
 ```python
 def clear_caches():

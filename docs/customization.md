@@ -124,9 +124,9 @@ What stays the same:
 
 ### 4b - Swap to a non-Snowflake cert (AWS, GCP, Azure, ...)
 
-You can absolutely use this scaffolding for AWS Certified AI Practitioner, Google Cloud Professional Data Engineer, Microsoft Certified: DevOps Engineer Expert, or anything else that has a published study guide PDF. The app itself still runs on Streamlit-in-Snowflake (because that is the runtime platform), but the content is fully exam-agnostic.
+This scaffolding works for any cert with a published study guide PDF — AWS Certified AI Practitioner, Google Cloud Professional Data Engineer, Microsoft Certified: DevOps Engineer Expert, and others. The app itself still runs on Streamlit-in-Snowflake (because that is the runtime platform), but the content is fully exam-agnostic.
 
-#### What works out of the box
+#### What works unchanged
 
 - `AI_PARSE_DOCUMENT` handles any PDF, not just Snowflake study guides.
 - `AI_COMPLETE` can extract domains, weights, topics, key facts from any structured cert blueprint.

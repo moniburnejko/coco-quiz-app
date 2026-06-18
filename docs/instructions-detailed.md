@@ -14,14 +14,14 @@ You give CoCo a Snowflake certification **study guide PDF**. The agent:
 4. Loads a question bank if you provide one (CSV/JSON); otherwise the bank stays empty and questions are AI-generated at runtime (you can seed the bank later from the Admin page, a worksheet recipe, or a scheduled task).
 5. Generates the multipage `app/` Streamlit project in the workspace (`main.py`, `_*.py` modules, `pages/`, configs — with `environment.yml` from the Snowflake Anaconda channel).
 6. Runs a mandatory pre-deploy scan to catch Streamlit-in-Snowflake footguns.
-7. Deploys the app — the agent copies `app/` from the workspace stage onto `STAGE_SIS_APP` and runs `CREATE STREAMLIT` on the warehouse runtime (no manual upload).
+7. Deploys the app — the agent copies `app/` from the workspace stage onto `STAGE_SIS_APP` and runs `CREATE STREAMLIT` on the warehouse runtime.
 
 You never leave the browser. You never run `bash`, `git`, `snow`, or `PUT`. You only:
 - Load this asset into a workspace — fork the repo and open a **Git-backed workspace**, or upload the `.snowflake/cortex/skills/` folder + `AGENTS.md` (Step 1);
-- Drop the study-guide PDF (and any optional CSV) into the workspace file tree when asked — the agent stages it via `COPY FILES` (no manual stage upload);
+- Drop the study-guide PDF (and any optional CSV) into the workspace file tree when asked — the agent stages it via `COPY FILES`;
 - Read what the agent proposes and say "go" or "no, do X differently".
 
-The deploy itself is **scripted on the warehouse runtime** (the agent runs `COPY FILES` + `CREATE STREAMLIT` — no clicks).
+The deploy itself is **scripted on the warehouse runtime** (the agent runs `COPY FILES` + `CREATE STREAMLIT`).
 
 ---
 
@@ -37,7 +37,7 @@ ALTER ACCOUNT SET CORTEX_ENABLED_CROSS_REGION = 'ANY_REGION';
 
 Without this, every `AI_COMPLETE` call will fail with "not allowed to access this endpoint". Accounts created after 2026-03-09 already default to `ANY_REGION`; `'AWS_GLOBAL'` is a narrower alternative, the legacy `'AWS_US'` still works but is narrowest.
 
-The **`warehouse` runtime needs nothing extra**; `pandas`/`altair` come from the Snowflake Anaconda channel, so it works on **trial accounts**.
+`pandas`/`altair` come from the Snowflake Anaconda channel.
 
 ### Doc grounding (required for Snowflake exams)
 
@@ -249,7 +249,7 @@ When the agent says something like *"drop SnowProCoreStudyGuide.pdf into the wor
 2. (If you also have a CSV/JSON question bank) add it alongside.
 3. Return to the CoCo chat and reply: **"added"** (or just "done").
 
-You never open the Stages UI or upload to a stage by hand. The agent stages the file for you:
+You never open the Stages UI; the agent stages the file for you:
 
 ```sql
 COPY FILES INTO @...STAGE_QUIZ_DATA FROM @<workspace_stage>/...;
@@ -299,7 +299,7 @@ Two paths depending on what you said in step 4:
 
 **CSV/JSON available** > `COPY INTO QUIZ_QUESTIONS FROM @STAGE_QUIZ_DATA/<filename>.csv FILE_FORMAT = FF_*;` then backfills `domain_name` from `EXAM_DOMAINS`. If the CSV columns don't match the target schema, the agent invokes `$adapt-questions` which maps columns. The agent reports row count, distinct domain count, and null-domain count.
 
-**No CSV/JSON** > the bank deliberately stays **empty** — the agent does NOT generate questions during setup (it's slow and would burn your token budget before you ever see the app). The app works fully on runtime AI questions. The agent explains why a populated bank is still worth having (resilience when AI calls fail, instant load, curated consistency) and how to seed it later: CSV upload, the Admin page **Generate batch** button, the worksheet recipe in [customization.md](customization.md) (section 6), or a scheduled task / Automation.
+**No CSV/JSON** > the bank deliberately stays **empty** — the agent does NOT generate questions during setup. The app works fully on runtime AI questions. The agent explains how to seed it later: CSV upload, the Admin page **Generate batch** button, the worksheet recipe in [customization.md](customization.md) (section 6), or a scheduled task / Automation.
 
 ---
 
@@ -340,7 +340,7 @@ If anything fails, the agent fixes it and re-scans until clean. Do not proceed t
 
 ## Step 9 - deploy
 
-When the scan is clean, the agent deploys. **The deploy is fully scripted — no manual upload.**
+When the scan is clean, the agent deploys. **The deploy is fully scripted.**
 
 Your workspace files already live on an internal stage, so the agent:
 
@@ -358,7 +358,7 @@ SHOW STREAMLITS LIKE 'SNOWPRO_QUIZ' IN SCHEMA <your_database>.QUIZ_<CODE>;
 
 3. After later edits, it re-copies the changed files (`COPY FILES` overwrites same-named files) and re-runs `CREATE OR REPLACE STREAMLIT`.
 
-No internet needed; packages come from the Snowflake Anaconda channel. Works on **trial accounts**.
+Packages come from the Snowflake Anaconda channel.
 
 ---
 

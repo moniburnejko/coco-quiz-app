@@ -12,7 +12,7 @@ As `ACCOUNTADMIN`, once per account — only if your account cannot reach the mo
 ALTER ACCOUNT SET CORTEX_ENABLED_CROSS_REGION = 'ANY_REGION';
 ```
 
-The **`warehouse` runtime needs nothing extra** — `pandas`/`altair` come from the Snowflake Anaconda channel, so it works on **trial accounts**.
+`pandas`/`altair` come from the Snowflake Anaconda channel, so the warehouse runtime works on **trial accounts**.
 
 In Snowsight: **AI & ML > Agents > Settings > Tools and connectors > Web search → enable**.
 
@@ -107,7 +107,7 @@ The agent then copies the file onto `STAGE_QUIZ_DATA` with `COPY FILES` and veri
 
 After the agent finishes generation + passes the pre-deploy scan, the `app/` project sits in your workspace file tree.
 
-**The agent deploys it for you, no manual upload:** your workspace files already live on an internal stage, so the agent copies them onto `STAGE_SIS_APP` with `COPY FILES` (preserving `pages/` and `.streamlit/`), then runs `CREATE OR REPLACE STREAMLIT … MAIN_FILE = 'main.py' QUERY_WAREHOUSE = …` and verifies with `SHOW STREAMLITS`. After later edits it re-copies the changed files and re-creates the app. Packages come from the Snowflake Anaconda channel, so this works on **trial accounts**.
+**The agent deploys it for you:** your workspace files already live on an internal stage, so the agent copies them onto `STAGE_SIS_APP` with `COPY FILES` (preserving `pages/` and `.streamlit/`), then runs `CREATE OR REPLACE STREAMLIT … MAIN_FILE = 'main.py' QUERY_WAREHOUSE = …` and verifies with `SHOW STREAMLITS`. After later edits it re-copies the changed files and re-creates the app.
 
 ---
 

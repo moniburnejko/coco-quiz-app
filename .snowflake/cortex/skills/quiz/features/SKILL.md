@@ -56,7 +56,7 @@ pages/exam_simulation.py (own page):
 - If either value is null (the guide didn't state it), prompt the user to confirm the count/time before enabling Start.
 
 **sim_quiz screen**: Same as regular quiz but:
-- Prominent timer: `st.metric("Time Remaining", f"{minutes}:{seconds:02d}")` at top, inside an `st.fragment(run_every="10s")` that recomputes remaining time from `_sim_end_time` and auto-submits the round when it hits 0. Streamlit does NOT rerun on its own, so a plain "check on render" timer would neither tick nor expire while the candidate sits on a question — the fragment is what actually enforces the limit. (Coarse `run_every` like 10s bounds warehouse reruns; if the SiS Streamlit version lacks `st.fragment(run_every=…)`, degrade to checking elapsed on each interaction and say so in a caption.)
+- Prominent timer: `st.metric("Time Remaining", f"{minutes}:{seconds:02d}")` at top, inside an `st.fragment(run_every="10s")` that recomputes remaining time from `_sim_end_time` and auto-submits the round when it hits 0. (Coarse `run_every` like 10s bounds warehouse reruns; if the SiS Streamlit version lacks `st.fragment(run_every=…)`, degrade to checking elapsed on each interaction and say so in a caption.)
 - Progress bar below timer
 - No AI-explanation button during the timed simulation (explanations suppressed in sim mode)
 - NO source selection — questions are sourced bank-first then AI, weighted by domain (see Implementation notes)
@@ -113,8 +113,8 @@ Source = the user's `QUIZ_REVIEW_LOG` rows (each carries `question_text`, the re
 
 DDL (generated ONLY when this feature is enabled; add to `$setup-exam` Step 3) — the table is the **durable card store + Leitner state**, so a due card always has content to render:
 ```sql
-CREATE TABLE IF NOT EXISTS {database}.QUIZ_<CODE>.FLASHCARD_PROGRESS (
-    card_id        VARCHAR PRIMARY KEY,   -- deterministic: <source_log_id>:<ordinal>
+CREATE OR ALTER TABLE {database}.QUIZ_<CODE>.FLASHCARD_PROGRESS (
+    card_id        VARCHAR NOT NULL,   -- deterministic: <source_log_id>:<ordinal>
     source_log_id  NUMBER,
     card_type      VARCHAR,
     card_front     VARCHAR,
@@ -207,7 +207,7 @@ The model authors only qualitative text: `exam_readiness.message`, the `recommen
 
 ## Start Focused Session
 
-Sets `domain_filter`, `difficulty`, `round_size` (=10), `screen="home"`, then `st.switch_page("pages/quiz.py")`. For the pre-fill to actually take, the **Home screen widgets must seed their initial value from these session keys** (`$quiz/screens` Home contract) — otherwise the redirect lands on a blank Home. (`st.navigation` owns the page, so there is no nav-widget key to mutate — the old `nav_pills` redirect machinery does not exist in the multipage app.)
+Sets `domain_filter`, `difficulty`, `round_size` (=10), `screen="home"`, then `st.switch_page("pages/quiz.py")`. For the pre-fill to actually take, the **Home screen widgets must seed their initial value from these session keys** (`$quiz/screens` Home contract) — otherwise the redirect lands on a blank Home. (`st.navigation` owns the page, so there is no nav-widget key to mutate.)
 
 ## Session state keys
 
