@@ -4,7 +4,7 @@ The quiz app has four layers you can tweak, from "one-line change" to "fork the 
 
 1. **Model and runtime defaults** (edit `AGENTS.md`).
 2. **Visual styling** (edit the app modules or tell the agent what to change via `$quiz/design`).
-3. **Functional features** (opt-in via `$quiz/features`: exam simulation, flashcards, AI study recommendation, comparison).
+3. **Functional features** (opt-in via `$quiz/features`: exam simulation, flashcards, AI study recommendation, remedial round).
 4. **Target exam** (swap the PDF for a different SnowPro cert, or with a little bit more work, any non-Snowflake exam like AWS / GCP / Azure).
 
 Everything below is safe to iterate on: change, redeploy, keep going. Nothing is a one-way door.
@@ -73,14 +73,15 @@ The agent updates `.streamlit/config.toml` (+ matching `_config.py` chart consta
 
 ## 3. Functional features
 
-`$quiz/features` implements **five** opt-in features: **Exam Simulation, Flashcards, AI Study Recommendation, Comparison, Remedial Round**. They are **not** enabled by default. Add any combination to your setup prompt, or ask the agent to bolt them onto an already-deployed app. (Five further ideas — Quick Stats, Smart Review, Achievement Badges, Misconception Analysis, Flag a Question — are specced but **not implemented**; they live in [docs/future-features.md](future-features.md). Don't request them as if they exist.)
+`$quiz/features` ships **four** opt-in features — **Exam Simulation, Flashcards, AI Study Recommendation, Remedial Round** — reference implementations that have been tested and hold up across different conditions (various exams, grounded and ungrounded modes, with or without a question bank). They are **not** enabled by default; add any combination to your setup prompt, or ask the agent to bolt them onto an already-deployed app.
+
+**These are examples, not a ceiling — you're encouraged to build your own.** Describe the feature you want (in the setup prompt or against a deployed app) and the agent designs it to the same `$quiz/screens` state + write-back contracts and `$quiz/design` visual conventions, so it fits the app cleanly.
 
 | Feature | What it adds | New session-state / data |
 |---|---|---|
 | **Exam Simulation Mode** | Timed mock exam on its own page (`pages/exam_simulation.py`): question count + time limit read from `_config.py` (`EXAM_QUESTION_COUNT` / `EXAM_TIME_LIMIT_MIN`, captured from the study guide at setup — never hardcoded), domain-weighted (largest-remainder), bank-first sourcing, `st.fragment`-enforced countdown, pass/fail vs `PASS_THRESHOLD`, per-domain breakdown | `_quiz_mode`, `_sim_start_time`, `_sim_end_time`, `_sim_time_limit`, `_sim_questions`, `_sim_screen`; `ALTER QUIZ_SESSION_LOG ADD session_type` |
 | **Flashcards** | A **FLASHCARDS tab on the Review page** (not a separate page). Atomic, recall-forcing cards (qa / cloze / compare) AI-decomposed from your wrong answers — never the verbatim MCQ — reviewed with Leitner spaced repetition (boxes 1–5). On-demand "Build cards from my wrong answers"; deck = cards due today | `_flashcard_cards`, `_flashcard_index`, `_flashcard_revealed`; new table `FLASHCARD_PROGRESS` |
 | **AI Study Recommendation** | Own page (`pages/recommendations.py`): readiness math computed in Python from your error history (not the LLM), plus an AI-authored qualitative study plan / weak-domain + weak-topic recommendations grounded on the docs CKE | `_ai_recommendations`, `_rec_cache_key`; reads `QUIZ_REVIEW_LOG` + `EXAM_DOMAINS`, writes nothing |
-| **Comparison** | A "⚖️ Compare two" control in the quiz-screen AI-explanation expander: pick exactly two options for a side-by-side discrimination of the underlying concepts (the core Deep dive explains ONE option) | `comparison` |
 | **Remedial Round** | A "Remedial Round" button on the summary of a *failed* practice round: re-tests just your wrong answers, reshuffled (no Admin toggle — present = enabled). The pass writes nothing — no stats, no review log, no debrief | `_round_type`, `_remedial_queue` |
 
 ### How to request features
@@ -94,7 +95,7 @@ i am setting up: SnowProAdvanced: Architect (ARA-C01). add exam simulation mode 
 Or bolt them on later:
 
 ```
-the quiz app is deployed. add flashcards and the comparison feature. treat the existing schema and tables as fixed except where the skill says to add FLASHCARD_PROGRESS.
+the quiz app is deployed. add flashcards and the remedial round feature. treat the existing schema and tables as fixed except where the skill says to add FLASHCARD_PROGRESS.
 ```
 
 The agent reads `$quiz/features`, implements only the ones you name, re-runs `$sis`, and redeploys.
@@ -216,8 +217,7 @@ read AGENTS.md. then:
 2. check QUIZ_QUESTIONS: if any domain has fewer than 20 questions, generate one
    batch (10) for that domain per the seeding recipe (docs/customization.md
    section 6) and report counts.
-3. if QUIZ_FLAGS exists (only if you re-added the backlog 'Flag a Question'
-   feature — see docs/future-features.md): regenerate flagged bank questions
+3. if a QUIZ_FLAGS table exists: regenerate flagged bank questions
    (status='OPEN' and question_id is not null), set status='REGENERATED', report.
 4. summarize: scan verdict, rows added per domain, flags handled, anything
    needing my attention.
@@ -273,7 +273,7 @@ Four ways to seed it, cheapest-effort first:
 
 4. **Scheduled** - wrap recipe 3 in a Snowflake `TASK` (weekly cron, UTC) or let the CoCo **Automation** from section 5c top up thin domains.
 
-Spot-check a few rows after seeding (`SELECT ... ORDER BY RANDOM() LIMIT 5`). For ongoing quality control, the Admin **Question manager** lets you edit or regenerate weak questions; misconception/flag tooling is on the backlog ([docs/future-features.md](future-features.md)).
+Spot-check a few rows after seeding (`SELECT ... ORDER BY RANDOM() LIMIT 5`). For ongoing quality control, the Admin **Question manager** lets you edit or regenerate weak questions.
 
 ---
 

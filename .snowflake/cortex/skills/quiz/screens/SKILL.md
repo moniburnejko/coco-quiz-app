@@ -35,7 +35,7 @@ main.py  ->  st.navigation([
 ])
 ```
 
-**Config layer**: runtime behavior toggles live in `QUIZ_CONFIG` (defaults in `_config.py` `CONFIG_DEFAULTS`, DB overrides; `load_config()` cached + `save_config()` in `_data.py`, both with `clear_caches()` on write). Gates used below: `hints_enabled`, `debrief_enabled` (both in `CONFIG_DEFAULTS`), and the **per-call-group model** keys `model_generation` / `model_explanation` / `model_meta` — these **default inline to `CORTEX_MODEL`** via `.get(key, CORTEX_MODEL)` (NOT a `CONFIG_DEFAULTS` entry), so they always track the base model instead of pinning a second hardcoded default; see Admin App config. (There is no `explanations_default`/`contrast_enabled` config — the explanation + deep-dive are always on-demand. There is **no** `default_round_size` or `pass_threshold_override` config — round size is set on Home each round, and the pass threshold is the fixed `PASS_THRESHOLD` study proxy, not user-tunable.)
+**Config layer**: runtime behavior toggles live in `QUIZ_CONFIG` (defaults in `_config.py` `CONFIG_DEFAULTS`, DB overrides; `load_config()` cached + `save_config()` in `_data.py`, both with `clear_caches()` on write). Gates used below: `hints_enabled`, `debrief_enabled` (both in `CONFIG_DEFAULTS`), and the **per-call-group model** keys `model_generation` / `model_explanation` / `model_meta` — these **default inline to `CORTEX_MODEL`** via `.get(key, CORTEX_MODEL)` (NOT a `CONFIG_DEFAULTS` entry), so they always track the base model instead of pinning a second hardcoded default; see Admin App config. (There is no `explanations_default` config — the explanation + deep-dive are always on-demand. There is **no** `default_round_size` or `pass_threshold_override` config — round size is set on Home each round, and the pass threshold is the fixed `PASS_THRESHOLD` study proxy, not user-tunable.)
 
 **Entry point (`main.py`)**: `st.set_page_config` (first `st.` call) -> `init_session_state()` -> shared sidebar title -> `st.navigation(pages).run()`. Pages share `st.session_state` (it persists across page switches).
 
@@ -74,15 +74,16 @@ The explanation is on-demand per question (a button after answering), never auto
 
 **Answer input**: `st.radio()` for single-answer (`index=None`, disabled once answered). For multi-answer, render each option as an independent `st.checkbox` with a stable key (`cb_A`, `cb_B`, …); read the selection from session state after rendering; disable all once answered. On "Next", clear the `cb_*` keys via the flag-at-top reset (queue `["cb_A", …, "cb_E"]` in `_op_clear_keys`, rerun, pop at the top — see `$sis` widget lifecycle).
 
-**Socratic hint (BEFORE answering; gate `hints_enabled`)**: a secondary "💡 Hint" button near the answer input, visible ONLY while `answered == False`. First click → `call_cortex_json(prompt, "hint")`, show `hint_1` and **relabel the button to "Need more help?"**; second click reveals `hint_2`, then hide the button. The hint is **grounded like every other generation** — in `cke`/`custom` mode embed retrieved `<doc_context>` in the hint prompt and derive the hints from it, never the model's built-in knowledge (`$cortex`); the prompt MUST instruct: hints narrow the concept space (level 1) or eliminate ONE distractor with reasoning (level 2) and must NEVER name or imply the correct option; embed question/options per the untrusted-content delimiting rule. State: `hint` (None/{}/dict), `hint_level` (0/1/2); once answered, the button disappears (the explanation takes over); record `hint_used = hint_level > 0` in the history item; reset both on Next.
+**Socratic hint (BEFORE answering; gate `hints_enabled`)**: a secondary "💡 Hint" button near the answer input, visible ONLY while `answered == False`. First click → `call_cortex_json(prompt, "hint", model=model_for("explanation"))`, show `hint_1` and **relabel the button to "Need more help?"**; second click reveals `hint_2`, then hide the button. **Render order:** always render the already-revealed hint(s) FIRST, then — on a click — hide the button and show a spinner *below* the visible hint while the next generates (render-then-fetch, never fetch-then-render), with a single `st.rerun()` after, so an already-shown hint stays on screen. The hint is **grounded like every other generation** — in `cke`/`custom` mode embed retrieved `<doc_context>` in the hint prompt and derive the hints from it, never the model's built-in knowledge (`$cortex`); the prompt MUST instruct: hints narrow the concept space (level 1) or eliminate ONE distractor with reasoning (level 2) and must NEVER name or imply the correct option; embed question/options per the untrusted-content delimiting rule. State: `hint` (None/{}/dict), `hint_level` (0/1/2); once answered, the button disappears (the explanation takes over); record `hint_used = hint_level > 0` in the history item; reset both on Next.
 
 **Submit**: Records result in `round_history` (incl. `hint_used`), increments counters, sets `answered=True`, reruns. Does NOT call Cortex.
 
-**After submission** — show the result badge, then a **two-button row** (`st.columns(2)`):
-- **left = "Next"** (primary; **"Finish Round"** on the last question) → advances immediately
-- **right = "💡 AI explanation"** (secondary) → loads the explanation **on demand** (Explanation Contract below) into an expander rendered beneath the row
+**After submission** — render **stacked and full-width, top to bottom** (NOT a `st.columns(2)` row):
+1. the **result badge**
+2. the **"💡 AI explanation"** button (full-width, secondary) → loads the explanation **on demand** (Explanation Contract below); while it generates, hide the button and show a labelled spinner (On-demand generation UX below); once loaded, the expander renders **here**
+3. **"Next"** (primary, full-width; **"Finish Round"** on the last question) at the **very bottom — beneath the whole explanation expander** — so the next action sits directly under what the user just read
 
-The explanation is NEVER auto-generated, and the button appears for **correct answers too** (to learn why the distractors are wrong). Both buttons stay visible after the explanation loads (read, then Next). Do NOT render "Next" and "Finish" together. Do NOT add per-option markup (✓, strikethrough) — the explanation handles details.
+The explanation is NEVER auto-generated, and the button appears for **correct answers too** (to learn why the distractors are wrong). Next stays pinned at the bottom whether or not the explanation is open. Do NOT render "Next" and "Finish" together. Do NOT add per-option markup (✓, strikethrough) — the explanation handles details.
 - Correct: `:green-badge[✅ CORRECT]`
 - Incorrect: `:red-badge[❌ INCORRECT]` + newline + `Correct answer: **A**, **C**` (bold letters only, not full option text)
 
@@ -98,6 +99,8 @@ if st.button("Next", disabled=st.session_state.get("_transitioning", False)):
 ```
 Pair this with the spinner + single-`st.rerun()` rule in `$sis`.
 
+**On-demand generation UX (hint, explanation, deep dive, Round Brief — MANDATORY).** When a button triggers a slow Cortex call: (1) render any already-generated content **first**; (2) **hide the button(s) that trigger that generation** while it runs — never leave a sibling sitting there dimmed; (3) show exactly **one** labelled `st.spinner("Generating <thing>…")`; (4) generate; (5) a single `st.rerun()`. Same pattern for all four.
+
 ---
 
 # Explanation Contract
@@ -112,10 +115,10 @@ Pair this with the spinner + single-`st.rerun()` rule in `$sis`.
 - `st.container(border=True)` **✅ WHY CORRECT** — `why_correct` bullet list
 - `st.container(border=True)` **WHY WRONG** — one line per *other* option (on a correct answer this is exactly the value: learn why the distractors are wrong)
 - `st.info()` mnemonic
-- a **"📚 From the docs"** block: `st.caption(DOCUMENT_TITLE)`, a short `CHUNK` excerpt (~280 chars), and `📖 [Snowflake Documentation]({doc_url})`
+- the doc link **only**: `📖 [Snowflake Documentation]({doc_url})` — **NO "📚 From the docs" heading, NO `DOCUMENT_TITLE` caption, and NO raw `CHUNK` excerpt** (the chunk renders an internal name + a truncated definition full of `¶` glyphs — drop it entirely; grounding still *uses* the chunk to write `why_correct`/`why_wrong`, the UI just shows the clean link)
 - the **Deep dive** control (below)
 
-The 📖 doc link appears **only inside this expander, only after the button is clicked** — never auto-shown (not even for correct answers). Render every dynamic field (`why_correct`, `why_wrong`, `mnemonic`, the `CHUNK` excerpt) through the `_ui.py` `md()` escaper before `st.markdown`/`st.info` (`$quiz/design` — escaping dynamic text). Store `mnemonic` + `doc_url` on `current_history_item` for the review log.
+The 📖 doc link appears **only inside this expander, only after the button is clicked** — never auto-shown (not even for correct answers). Render every dynamic field (`why_correct`, `why_wrong`, `mnemonic`) through the `_ui.py` `md()` escaper before `st.markdown`/`st.info` (`$quiz/design` — escaping dynamic text). Store `mnemonic` + `doc_url` on `current_history_item` for the review log.
 
 **Doc grounding is MANDATORY in `cke`/`custom` mode (`$cortex`)**: retrieve `chunks = search_docs(question_text)` once; if `[]`, broaden once, else **fail visibly** (no built-in). Embed the top chunk(s) in the prompt as `<doc_context>` so `why_correct`/`why_wrong` are doc-grounded; `doc_url = chunks[0]["SOURCE_URL"]`. **`none` mode only**: the prompt asks for `doc_search` ("2-3 words, no URLs/commas") → `https://docs.snowflake.com/en/search?q={query}`.
 
@@ -129,9 +132,7 @@ The 📖 doc link appears **only inside this expander, only after the button is 
 
 ## Deep dive (inside the expander, below the explanation)
 
-A picker over the question's options (`st.multiselect` / option pills) — **select ONE option** — + a **"🔬 Deep dive"** button → `call_cortex_json(prompt, "deep_dive")` — an in-depth breakdown of that single option (`$cortex` `deep_dive` schema: `summary`, `how_it_works[]`, `when_to_use`, `exam_traps[]`). Render in `st.container(border=True)` with bold sub-labels + bullets. **Grounded** like the explanation: reuse the retrieved `<doc_context>`, broaden once then **fail visibly** on empty — never built-in; embed the option text + question per the delimiting rule, render through the `_ui.py` `md()` escaper, carry **more detail** than the base explanation. State: `deep_dive` (None/{}/dict), reset on Next; default the picker to the correct option.
-
-**Comparing two options is NOT core** — it's the optional **Comparison feature** (`$quiz/features`), which when enabled adds a "⚖️ Compare two" control to this same expander (the `contrast` format).
+A single **"🔬 Deep dive"** button — **NO option picker** → `call_cortex_json(prompt, "deep_dive", model=model_for("explanation"))` — an in-depth breakdown of the **question's topic** (how it works / when to use / exam traps), not a single answer option. `$cortex` `deep_dive` schema: `summary`, `how_it_works[]`, `when_to_use`, `exam_traps[]`. Render in `st.container(border=True)` with bold sub-labels + bullets. **Grounded** like the explanation: reuse the retrieved `<doc_context>`, broaden once then **fail visibly** on empty — never built-in; embed the **question + its topic/domain** per the delimiting rule (not a selected option), render through the `_ui.py` `md()` escaper, carry **more detail** than the base explanation. State: `deep_dive` (None/{}/dict), reset on Next.
 
 ---
 
@@ -170,7 +171,7 @@ Each submitted answer is appended to `round_history`:
 - **Wrong answers** go inside a **collapsed `st.expander("WRONG ANSWERS", expanded=False)`** — each as an `st.container(border=True)` card with domain/difficulty badges, the **question text**, the **correct answer in full** (`"B) …text… & D) …text…"`, built from the card's `option_texts` + correct letters — NEVER bare letters), and the **mnemonic** (`st.info` 🧠) only when one was generated for it this round (`round_history[i]["mnemonic"]`; omit if empty). All dynamic text via the `md()` `$`-escaper (`$quiz/design`).
 - Perfect score: `:green-badge[PERFECT SCORE] No wrong answers this round.` (no expander)
 
-**Round Brief (on-demand; gate `debrief_enabled`; only when ≥1 wrong answer)**: a **"Round Brief"** button — NOT auto-generated. On click → `call_cortex_json(prompt, "debrief")` with per-question domain/topic/correctness/`hint_used` from `round_history` → open an **expander** with clean formatting: `st.container(border=True)` holding **PATTERNS** (bullets) and **PRIORITY ACTIONS** (max 3 bullets), then `one_thing` as a highlighted **🎯 FOCUS** line in its own bordered container (NOT `st.info` — that's reserved for the mnemonic per `$quiz/design`). **Grounding scope:** meta-analysis over the user's OWN round performance — names weak domains/topics + study actions but MUST NOT assert new Snowflake facts or emit doc links; the one runtime generation path exempt from doc-grounding (`$cortex`). State `debrief` (None=not requested / {}=failed / dict=success), reset on round start. A perfect round shows no Round Brief button. Render every dynamic field (PATTERNS, PRIORITY ACTIONS, `one_thing`) through the `md()` `$`-escaper before `st.markdown` (`$quiz/design`).
+**Round Brief (on-demand; gate `debrief_enabled`; only when ≥1 wrong answer)**: a **"Round Brief"** button — NOT auto-generated. On click, **hide all summary buttons and show one spinner "Generating round brief…"** (On-demand generation UX, Quiz Screen — don't leave "Configure New Round" dimmed beside it) → `call_cortex_json(prompt, "debrief", model=model_for("meta"))` with per-question domain/topic/correctness/`hint_used` from `round_history` → open an **expander** with clean formatting: `st.container(border=True)` holding **PATTERNS** (bullets) and **PRIORITY ACTIONS** (max 3 bullets), then `one_thing` as a highlighted **🎯 FOCUS** line in its own bordered container (NOT `st.info` — that's reserved for the mnemonic per `$quiz/design`). **Grounding scope:** meta-analysis over the user's OWN round performance — names weak domains/topics + study actions but MUST NOT assert new Snowflake facts or emit doc links; the one runtime generation path exempt from doc-grounding (`$cortex`). State `debrief` (None=not requested / {}=failed / dict=success), reset on round start. A perfect round shows no Round Brief button. Render every dynamic field (PATTERNS, PRIORITY ACTIONS, `one_thing`) through the `md()` `$`-escaper before `st.markdown` (`$quiz/design`).
 
 **Action buttons (by outcome)** — `Round Brief` applies only when there is ≥1 wrong answer.
 - **Perfect** (all correct): **"Configure New Round"** only.
@@ -213,7 +214,7 @@ Wrong answer cards: `st.container(border=True)` with domain badge + difficulty b
 
 # Optional Feature Pages
 
-Optional features (`$quiz/features`) are generated as **separate pages** (`pages/exam_simulation.py`, `pages/recommendations.py`) appended to the `st.navigation` list in `main.py` only when requested. Two features hook into existing pages instead: the **Flashcards** feature adds a FLASHCARDS tab to the Review page (+ the `FLASHCARD_PROGRESS` table), and the **Comparison** feature adds a "⚖️ Compare two" control to the quiz-screen AI-explanation expander. They read the same `_data.py` loaders and shared `_ui.py` helpers.
+Optional features (`$quiz/features`) are generated as **separate pages** (`pages/exam_simulation.py`, `pages/recommendations.py`) appended to the `st.navigation` list in `main.py` only when requested. Two features hook into existing surfaces instead: the **Flashcards** feature adds a FLASHCARDS tab to the Review page (+ the `FLASHCARD_PROGRESS` table), and the **Remedial Round** feature adds a button to the failed-round summary. They read the same `_data.py` loaders and shared `_ui.py` helpers.
 
 ---
 
@@ -237,7 +238,7 @@ Each defaults to `CORTEX_MODEL` (`load_config().get(f"model_{group}", CORTEX_MOD
 
 **Do NOT show:** `grounding_mode` (fixed at setup, `$setup-exam` Step 1g — not a runtime toggle, so don't surface it at all), `pass_threshold_override` (the official threshold doesn't change — removed), or `default_round_size` (set on Home before each round — redundant). The only grounding UI here is the guard: in `cke`/`custom` mode, if `docs_available()` is False, a red caption — "The doc grounding service is unavailable — install/grant the Snowflake Documentation CKE; the app can't generate until it's reachable." Every change → `save_config(key, value)` (MERGE by key, bind params) → `clear_caches()` (clears `docs_available`/`search_docs` too) → `st.toast`.
 
-## 2. Questions manager (merges the old Question manager + Bank stats)
+## 2. Questions manager
 
 Two nested `st.tabs` — **Bank** and **Generate**.
 
@@ -246,7 +247,7 @@ Two nested `st.tabs` — **Bank** and **Generate**.
 - **Editable / filterable / deletable table**:
   1. **Filters** in an `st.expander("Filters", expanded=True)` — domain / difficulty / source pills — then a **"Search"** button commits them to a `_qm_filters` session dict (don't query live off widget state). A "Reset filters" button.
   2. **`Select All` / `Clear`** buttons above the table (toggle a `_qm_select_all` flag).
-  3. **`st.data_editor`** with a leading `select` `st.column_config.CheckboxColumn`; **every other column `disabled`**; read the selection back as `edited[edited["select"]]`. The table's source is a **no-ttl cached loader returning a pandas DataFrame** (`.to_pandas()`) — `data_editor` preserves its checkbox selection across reruns ONLY when its input is byte-identical (a ttl that expired mid-edit would wipe the selection — `$sis` caching), and `.to_pandas()` columns come back UPPERCASE so there is **no `Row` access at all** (the selected-row fields are read as `row["QUESTION_TEXT"]`, never `.get()`/attr on a `Row` — `$sis` scan item 20; that was the `Row object has no attribute get` crash).
+  3. **`st.data_editor`** with a leading `select` `st.column_config.CheckboxColumn`; **every other column `disabled`**; read the selection back as `edited[edited["select"]]`. The table's source is a **no-ttl cached loader returning a pandas DataFrame** (`.to_pandas()`) — `data_editor` preserves its checkbox selection across reruns ONLY when its input is byte-identical (a ttl that expired mid-edit would wipe the selection — `$sis` caching), and `.to_pandas()` columns come back UPPERCASE so there is **no `Row` access at all** — selected-row fields are read as `row["QUESTION_TEXT"]`, never `.get()`/attr on a `Row` (`$sis` scan item 20).
   4. **`Load 10 more`** (page cap 10 — don't render 1000 rows; paginate via a `_qm_limit` that grows by 10).
   5. Below the table: **`Edit` · `Delete` · `Add`**.
      - **Edit** (enabled when exactly 1 row selected): loads that row into the form below → UPDATE by `question_id`.
@@ -261,7 +262,7 @@ Two nested `st.tabs` — **Bank** and **Generate**.
 
 ## 3. Cortex spend (graceful — distinguish "no grant" from "no data")
 
-`_cortex.py` sets a session `QUERY_TAG` (JSON: app, feature, model) per call. Read `SNOWFLAKE.ACCOUNT_USAGE.CORTEX_FUNCTIONS_USAGE_HISTORY` inside try/except and branch **structurally**, not "any-exception → GRANT" (the live bug: an ACCOUNTADMIN who already holds the grant saw the GRANT banner because the code blamed *any* exception/empty result on permissions):
+`_cortex.py` sets a session `QUERY_TAG` (JSON: app, feature, model) per call. Read `SNOWFLAKE.ACCOUNT_USAGE.CORTEX_FUNCTIONS_USAGE_HISTORY` inside try/except and branch **structurally**, not "any-exception → GRANT" (an ACCOUNTADMIN holds `IMPORTED PRIVILEGES` by default, so blaming every empty/error result on permissions shows a false GRANT banner):
 - **Success path** — the query returned. If the result is **empty** → a plain caption: "No Cortex spend recorded yet — ACCOUNT_USAGE lags up to ~2 h, or no AI calls have run." (This is the ACCOUNTADMIN-on-a-fresh-account case; ACCOUNTADMIN holds `IMPORTED PRIVILEGES` by default, so **never** show the GRANT banner here.) Otherwise render the charts.
 - **Exception path** — inspect the error. Only when its message signals a **privilege/visibility problem on the SNOWFLAKE share** (e.g. it contains `Insufficient privileges`, `not authorized`, or `does not exist or not authorized` — the symptom of a role lacking `IMPORTED PRIVILEGES`) → the info banner with the exact `GRANT IMPORTED PRIVILEGES ON DATABASE SNOWFLAKE TO ROLE <role>;` (substitute the live `CURRENT_ROLE()`). For any **other** exception → a generic "couldn't read Cortex spend: {error}" caption, NOT the GRANT banner.
 
@@ -279,7 +280,7 @@ A read-only log viewer plus a reset — the vendors02 logs page, no download:
 
 On round end (`_write_back_results()` in `pages/quiz.py`):
 
-**0. Write exactly once per round (idempotency guard — MANDATORY).** Re-entry is normal: the Finish button can be clicked twice during the rerun, and if anything *after* the INSERTs raises (e.g. `clear_caches()`), the page crashes and the user re-clicks Finish — each re-entry would otherwise re-INSERT every row (2 questions × 5 clicks = 10 review rows). Guard with a **plain boolean**, not a round id: at the very top of `_write_back_results()`, `if st.session_state.get("_results_written"): return`; otherwise set `st.session_state["_results_written"] = True` **before** the INSERTs. **Start Round is the SOLE reset site** — it sets `_results_written = False` (no other code path may reset it; any future "re-enter summary without a new round" path must NOT clear it, or it reopens this duplication). Pair with the `_transitioning`/`_pending_finish` button guards (Quiz Screen) so a slow Finish can't double-fire.
+**0. Write exactly once per round (idempotency guard — MANDATORY).** Re-entry is normal — the Finish button can fire twice during a rerun, or a failure *after* the INSERTs can send the user back to re-click — and each re-entry would otherwise re-INSERT every row. Guard with a **plain boolean**, not a round id: at the very top of `_write_back_results()`, `if st.session_state.get("_results_written"): return`; otherwise set `st.session_state["_results_written"] = True` **before** the INSERTs. **Start Round is the SOLE reset site** — it sets `_results_written = False`; no other path may clear it (any "re-enter summary without a new round" path must leave it set). Pair with the `_transitioning`/`_pending_finish` button guards (Quiz Screen) so a slow Finish can't double-fire.
 
 1. For each wrong answer in `round_history`: INSERT to `QUIZ_REVIEW_LOG` with bind params
    - `correct_answer` must be **resolved** before INSERT — store `"{letter}) {full_text}"`, not the raw letter. Pattern:
@@ -294,7 +295,7 @@ On round end (`_write_back_results()` in `pages/quiz.py`):
    - Fields: exam_code (from `_config.py`), round_size, correct_count, score_pct, domain_filter, difficulty
    - `round_size` = the **configured** round size from `st.session_state["round_size"]`, NOT `total_count` (which is how many questions were actually answered — may differ if user ends early)
 
-3. **Call `clear_caches()`** (from `_data.py`) as the **last** step, immediately after the INSERTs — the Review page loaders have no ttl, so without this the dashboard would not see the new round until a full session restart. `clear_caches()` must not be able to raise (every `.clear()` inside it names a loader actually defined in `_data.py` — `$sis` scan item 24); if it threw after the INSERTs, the writes would commit but the handler would crash and the user would re-click Finish → duplicate rows (the failure mode the step-0 guard also defends).
+3. **Call `clear_caches()`** (from `_data.py`) as the **last** step, immediately after the INSERTs — the Review page loaders have no ttl, so without this the dashboard would not see the new round until a full session restart. `clear_caches()` must not be able to raise: every `.clear()` inside it names a loader actually defined in `_data.py` (`$sis` scan item 24), so a write can't commit and then crash the handler.
 
 Always bind params (`?` qmark — `session.sql(sql, params=[...])`; never `:1`, see `$sis`), never f-string interpolation of values.
 
@@ -333,7 +334,7 @@ All keys initialized in `init_session_state()` in `main.py` (state is shared acr
 | `_op_clear_keys` | list | `[]` | Widget keys to pop at top of next run (flag-at-top reset) |
 | `hint` | None/{}/ dict | `None` | Socratic hint (None=not tried, {}=failed, dict=success) |
 | `hint_level` | int | `0` | 0=none, 1=hint_1 shown, 2=hint_2 shown |
-| `deep_dive` | None/{}/ dict | `None` | Deep-dive result for the selected option (explain ONE; compare-two is the optional Comparison feature, key `comparison`); reset on Next |
+| `deep_dive` | None/{}/ dict | `None` | Deep-dive result for the question's **topic** (no option picker); reset on Next |
 | `debrief` | None/{}/ dict | `None` | On-demand Round Brief (None=not requested, {}=failed, dict=success); generated from the Round Brief button, reset on round start |
 
 Navigation is owned by `st.navigation` (no `nav_pills` / `_current_page` / `_redirect_to_quiz` keys); cross-page redirects set the target state, then call `st.switch_page("pages/quiz.py")`.

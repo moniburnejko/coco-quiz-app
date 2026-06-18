@@ -16,7 +16,7 @@ When building or modifying any part of quiz.py — screens, question generation,
 | SCREENS | screen flow, quiz screen, home screen, summary, review, session state, write-back, explanation, history_item | `screens/SKILL.md` |
 | QUESTIONS | generate questions, topic schedule, dedup, difficulty, fallback, DIFFICULTY_GUIDE, question validation | `questions/SKILL.md` |
 | DESIGN | theme, color, badge, chart, config.toml, section label, button, card, layout, styling | `design/SKILL.md` |
-| FEATURES | exam simulation, timed/mock exam, flashcard, study card, study recommendation, exam readiness, comparison, compare options, A vs B, remedial round, retry wrong answers | `features/SKILL.md` |
+| FEATURES | exam simulation, timed/mock exam, flashcard, study card, study recommendation, exam readiness, remedial round, retry wrong answers | `features/SKILL.md` |
 
 ## Workflow
 
@@ -46,7 +46,7 @@ Multiple sub-skills may apply to a single task (e.g., adding a new page needs bo
 - **Screens**: Screen flow (home/quiz/summary + review tabs), session state contract, history item schema, write-back, explanation state machine
 - **Questions**: DIFFICULTY_GUIDE (3-tier with CONSTRAINT/STYLE), topic scheduling, deduplication, source logic (db/ai/mix), fallback chain, validation, answer shuffling
 - **Design**: Theme (config.toml keys), badge palette, section labels, chart colors + axis formatting, cards, buttons, titles, docs-link — the single source for all visual rules
-- **Features**: OPTIONAL add-ons — exam simulation mode, flashcard review, AI study recommendation, comparison (compare two options), remedial round (re-test wrong answers)
+- **Features**: OPTIONAL add-ons — exam simulation mode, flashcard review, AI study recommendation, remedial round (re-test wrong answers)
 
 ## App module map
 
@@ -66,7 +66,7 @@ The generated app is a decomposed multipage project under `app/`. What each file
 | `pages/admin.py` | ADMIN (4 tabs): app config (toggles + per-call-group model), questions manager (bank KPIs + editable table + generate batch), Cortex spend, logs |
 | `pages/<feature>.py` | ONLY when a feature is requested (`features/`) — e.g. `exam_simulation.py`, `recommendations.py` (flashcards is a Review tab, not a page — Feature 2) |
 
-Navigation is native multipage (`st.Page` + `st.navigation` in `main.py`); `st.session_state` is shared across pages; **most** optional features add their own pages, but a few hook into an existing page — the Flashcards feature adds a Review tab, the Comparison feature adds a control to the quiz explanation expander, and the Remedial Round feature adds a button to the summary screen. Full flow/state/write-back contracts → `screens/`.
+Navigation is native multipage (`st.Page` + `st.navigation` in `main.py`); `st.session_state` is shared across pages; **most** optional features add their own pages, but a few hook into an existing surface — the Flashcards feature adds a Review tab, and the Remedial Round feature adds a button to the summary screen. Full flow/state/write-back contracts → `screens/`.
 
 ## Output
 

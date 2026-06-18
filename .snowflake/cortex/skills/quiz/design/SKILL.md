@@ -172,6 +172,13 @@ Applies in: inside the on-demand AI-explanation expander (after the **💡 AI ex
 
 Headline numbers (Learning Dashboard, Admin bank stats) use **`st.metric`** in `st.columns` — never a table of counts. A KPI is a label + a big number (optionally a delta), not a row in a grid. Keep them on one row where they fit.
 
+# Selection controls
+
+**Never use `st.multiselect` to choose a FIXED number of items** — a multiselect lets the user pick all of them and only flags an invalid count *after* the pick. Match the widget to the count:
+- **Choose exactly 1** → `st.radio` or `st.selectbox` (it's structurally impossible to pick two).
+- **Choose exactly 2** → **two dependent selectboxes**: selectbox 2's options EXCLUDE selectbox 1's current value (pick A in box 1 → box 2 offers B/C/D only), so an illogical "same option twice" or ">2" state can't occur.
+- `st.multiselect` is for genuinely **open-ended** multi-select only (e.g. Home DOMAINS, the Admin filters, `correct_answer` for a multi-answer question).
+
 ---
 
 ## Output

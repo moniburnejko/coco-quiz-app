@@ -1,6 +1,6 @@
 ---
 name: quiz-features
-description: "Optional features for the quiz app — exam simulation, flashcards, AI study recommendation, comparison, remedial round. Implement ONLY features explicitly requested by the user, never by default. Triggers: exam simulation, timed exam, mock exam, flashcard, study card, study recommendation, exam readiness, comparison, compare options, A vs B, remedial round, retry wrong answers. Do NOT use for the core quiz flow (quiz-screens)."
+description: "Optional features for the quiz app — exam simulation, flashcards, AI study recommendation, remedial round. Implement ONLY features explicitly requested by the user, never by default. Triggers: exam simulation, timed exam, mock exam, flashcard, study card, study recommendation, exam readiness, remedial round, retry wrong answers. Do NOT use for the core quiz flow (quiz-screens)."
 ---
 
 # When to Load
@@ -26,7 +26,7 @@ All **visual rendering** (badges, cards, callouts, buttons, charts) follows `$qu
 
 **Model routing (MANDATORY):** any feature Cortex call passes `model=model_for(group)` (`$cortex`) — Flashcards → `"explanation"`; AI Study Recommendation → `"meta"`; Exam Simulation question sourcing → `"generation"` (it reuses the grounded `get_question()` path, already wired). Omitting `model=` silently pins the call to `CORTEX_MODEL` and the Admin model selector does nothing.
 
-Five features are specced here: **Exam Simulation, Flashcards, AI Study Recommendation, Comparison, Remedial Round.** Further ideas not yet implemented (Quick Stats, Smart Review, Achievement Badges, Misconception Analysis, Flag a Question) live in `docs/future-features.md` — re-add a spec here when one is requested.
+Four features are **fully specced** here: **Exam Simulation, Flashcards, AI Study Recommendation, Remedial Round** (tested reference features). Implement a feature only on the user's **explicit request**, never by default. If the user requests a feature **not** specced here, design it to the same `$quiz/screens` state + write-back contracts and `$quiz/design` visual conventions — clarify scope first.
 
 ---
 
@@ -137,7 +137,7 @@ Boxes 1–5 → cadences **1 / 2 / 4 / 7 / 14 days**. On reveal, three buttons: 
 
 **Data source**: the cached `load_flashcard_progress()` (the due-today deck — content + box from the table); the build step reads `load_review_log()` only to find un-carded rows. **Session state keys**: `_flashcard_cards` (the loaded due deck), `_flashcard_index` (int), `_flashcard_revealed` (bool). Because cards persist and `card_id` is deterministic per `(source_log_id, ordinal)`, a rebuild adds cards only for new wrong answers and never disturbs existing Leitner boxes.
 
-**Scope:** flashcards are atomic recall-card study (Review tab) built from wrong answers — distinct from the core quiz (full MCQs) and from any future spaced-repetition *quiz* mode (`docs/future-features.md`).
+**Scope:** flashcards are atomic recall-card study (Review tab) built from wrong answers — distinct from the core quiz (full MCQs) and from any future spaced-repetition *quiz* mode.
 
 ---
 
@@ -217,29 +217,7 @@ Sets `domain_filter`, `difficulty`, `round_size` (=10), `screen="home"`, then `s
 
 ---
 
-# Feature 4: Comparison
-
-**OPTIONAL** — implement only if user requests comparison, compare options, "A vs B", or concept contrast.
-
-## What
-
-Adds a **"⚖️ Compare two"** control to the **AI-explanation expander** on the quiz screen (alongside the core Deep dive — `$quiz/screens`). Pick **two** options and get a side-by-side discrimination of the underlying concepts. SnowPro questions are mostly "which similar feature fits?", so training that exact distinction is high-value. (Comparing two options is NOT in core — the core Deep dive explains ONE option; this feature adds the compare-two control.)
-
-## UI spec
-
-Inside the explanation expander, below the explanation + Deep dive: an option picker (`st.multiselect`, validated to **exactly 2**) + a **"⚖️ Compare two"** button → `call_cortex_json(prompt, "contrast")` → render a compact `aspect | A | B` table + the `exam_trap` as an `st.caption`, in `st.container(border=True)`. Default the picker to the user's wrong choice + the correct option (any two selectable). All dynamic text via the `md()` `$`-escaper.
-
-## Grounding (mandatory — `$cortex`)
-
-In `cke`/`custom` mode embed the two option texts + the question as `<doc_context>` ("compare ONLY from the provided documentation; never prior knowledge"); reuse the explanation's retrieved chunks, broaden once then fail visibly on empty — never built-in. `none` mode is the only ungrounded path. Schema `RESPONSE_FORMATS["contrast"]`: `concept_a`, `concept_b`, `differences[]` (max 4), `exam_trap`.
-
-## Session state keys
-
-`comparison` (None/{}/dict), reset on Next.
-
----
-
-# Feature 5: Remedial Round
+# Feature 4: Remedial Round
 
 **OPTIONAL** — implement only if user requests remedial round, remedial quiz, retry wrong answers, or a re-test of missed questions.
 

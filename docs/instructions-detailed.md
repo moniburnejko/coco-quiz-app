@@ -232,7 +232,7 @@ The agent will:
 
 1. Ask you for the exam name and exam code (e.g. "SnowPro Core" / "COF-C03").
 2. Ask for the PDF filename (required) and optionally the CSV filename.
-3. Ask about additional customisations (the five optional features from `$quiz/features` - exam simulation mode, flashcards, AI study recommendation, comparison, remedial round). Five further ideas (Quick Stats, Smart Review, Achievement Badges, Misconception Analysis, Flag a Question) are deferred to `docs/future-features.md`, not available out of the box.
+3. Ask about additional customisations (the four optional features from `$quiz/features` - exam simulation mode, flashcards, AI study recommendation, remedial round).
 4. Ask whether you want the **default look or a custom one** - custom means a short style dialog (light/dark, accent color, roundness, fonts), applied via Streamlit theming only.
 5. Create the schema, stages, tables, file format (SQL visible in the chat - approve or reject each step).
 6. Stop and ask you to add the PDF to the workspace (it stages it via `COPY FILES`).
@@ -367,7 +367,7 @@ Packages come from the Snowflake Anaconda channel.
 Snowsight > **Projects > Streamlit > SNOWPRO_QUIZ**.
 
 - On **Home**: pick 5 questions, medium difficulty, any domain, "AI Generated" source (there is no explanations toggle — the explanation is on-demand). Click **Start Round**.
-- On **Quiz**: wait a couple seconds for the first AI-generated question to load. Try the **💡 Hint** button *before* answering (two levels, never spoils). Answer, submit, then click **💡 AI explanation** to load it on demand (works for correct answers too). Inside the expander, try **🔬 Deep dive** on one option; if you enabled the Comparison feature, **⚖️ Compare two** contrasts two options.
+- On **Quiz**: wait a couple seconds for the first AI-generated question to load. Try the **💡 Hint** button *before* answering (two levels, never spoils). Answer, submit, then click **💡 AI explanation** to load it on demand (works for correct answers too); the **Next** button sits at the very bottom, under the explanation. Inside the expander, try **🔬 Deep dive** for an in-depth breakdown of the question's topic.
 - Click through all 5, then **Finish Round**.
 - **Summary**: score, pass/fail vs threshold, a collapsed **WRONG ANSWERS** expander, and an on-demand **Round Brief**. If you enabled the Remedial Round feature, a failed round also offers **Remedial Round** — your wrong answers back, reshuffled (it doesn't write to stats).
 - **Review** page (tabs: Wrong Answers · Learning Dashboard, plus Flashcards if enabled): filter Wrong Answers by domain and date; open **Learning Dashboard** - you should see your first session plotted (remedial rounds excluded by design).

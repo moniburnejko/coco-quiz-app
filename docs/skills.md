@@ -52,7 +52,7 @@ Question selection/generation: `DIFFICULTY_GUIDE`, topic schedule, deduplication
 **The single source for every visual rule** — theme/`config.toml` keys, badge palette, chart colors + axis formatting, cards, buttons, titles, docs-link. Other skills reference it; they never re-specify a color or chart rule.
 
 ### /quiz/features
-Optional features (only when explicitly requested) — exactly five: exam simulation, flashcards, AI study recommendation, comparison (compare two options), remedial round (re-test wrong answers). Each spec gives behavior/data/state; visuals follow `$quiz/design`. Five further ideas (quick stats, smart review, achievement badges, misconception analysis, flag a question) are deferred to `docs/future-features.md` — not implemented; re-add a spec here when one is requested.
+Optional features (only when explicitly requested) — four tested reference features: exam simulation, flashcards, AI study recommendation, remedial round (re-test wrong answers). Each spec gives behavior/data/state; visuals follow `$quiz/design`. A feature not specced here is built to the same contracts on explicit request.
 
 ---
 

@@ -40,7 +40,7 @@ All sections reference these values. Never hardcode environment names elsewhere 
 
 ## Domain model
 
-Five tables in `{database}.{schema}`, plus a transient `_DOC_CONTENT` used only during setup (dropped after the PDF is parsed). Enabled optional features add their own schema: Flashcards → `FLASHCARD_PROGRESS`; Exam Simulation → `QUIZ_SESSION_LOG.session_type`. (`QUIZ_FLAGS` and the misconception columns are deferred backlog — `docs/future-features.md` — not built.) Full DDL and column details live in `$setup-exam` Step 3 — the single source.
+Five tables in `{database}.{schema}`, plus a transient `_DOC_CONTENT` used only during setup (dropped after the PDF is parsed). Enabled optional features add their own schema: Flashcards → `FLASHCARD_PROGRESS`; Exam Simulation → `QUIZ_SESSION_LOG.session_type`. Full DDL and column details live in `$setup-exam` Step 3 — the single source.
 
 | Table | Purpose |
 |-------|---------|

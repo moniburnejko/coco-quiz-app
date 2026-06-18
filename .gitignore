@@ -46,6 +46,9 @@ Thumbs.db
 *.swp
 *.swo
 
+# private docs
+docs/private/
+
 # aisession artifacts
 .remember/
 .claude/settings.local.json
