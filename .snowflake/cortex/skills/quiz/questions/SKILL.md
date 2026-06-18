@@ -1,6 +1,6 @@
 ---
 name: quiz-questions
-description: "Question generation patterns — DIFFICULTY_GUIDE, topic scheduling, deduplication, fallback chain, retry logic, schema validation. Use when loading questions or generating via AI. Triggers: generate questions, question generation, topic schedule, deduplication, difficulty guide, fallback chain, question validation, DIFFICULTY_GUIDE. Do NOT use for page/screen contracts (quiz-screens) or prompt audits (cortex-prompt-audit)."
+description: "Question generation patterns - DIFFICULTY_GUIDE, topic scheduling, deduplication, fallback chain, retry logic, schema validation. Use when loading questions or generating via AI. Triggers: generate questions, question generation, topic schedule, deduplication, difficulty guide, fallback chain, question validation, DIFFICULTY_GUIDE. Do NOT use for page/screen contracts (quiz-screens) or prompt audits (cortex-prompt-audit)."
 ---
 
 # When to Load
@@ -24,13 +24,13 @@ Parent skill `$quiz` routes here for QUESTIONS intent.
 
 All question logic lives in `_questions.py`: `parse_topics`, `_build_topic_schedule`, `generate_ai_question`, `get_question`, `_shuffle_options`, `_get_shown_texts`. AI calls go through `call_cortex_json` from `_cortex.py`; `DIFFICULTY_GUIDE` and `RESPONSE_FORMATS` come from `_config.py`. Pages never call Cortex directly.
 
-**Model routing (MANDATORY):** every question-generation call passes the **generation** group's model — `call_cortex_json(prompt, "question", model=model_for("generation"))` (`model_for` from `_cortex.py`, `$cortex`). Without the `model=` arg the call silently stays on `CORTEX_MODEL` and the Admin model selector does nothing.
+**Model routing (MANDATORY):** every question-generation call passes the **generation** group's model - `call_cortex_json(prompt, "question", model=model_for("generation"))` (`model_for` from `_cortex.py`, `$cortex`). Without the `model=` arg the call silently stays on `CORTEX_MODEL` and the Admin model selector does nothing.
 
 ---
 
 # DIFFICULTY_GUIDE
 
-**REQUIRED constant** — must be defined at module level alongside `EXAM_CODE`, `CORTEX_MODEL`, `PASS_THRESHOLD`. Pass the full multi-sentence description to AI_COMPLETE prompts — never bare words like "easy" or "medium".
+**REQUIRED constant** - must be defined at module level alongside `EXAM_CODE`, `CORTEX_MODEL`, `PASS_THRESHOLD`. Pass the full multi-sentence description to AI_COMPLETE prompts - never bare words like "easy" or "medium".
 
 ```python
 DIFFICULTY_GUIDE = {
@@ -63,7 +63,7 @@ Each tier has CONSTRAINT (what the question must do) and STYLE (how the question
 
 `_build_topic_schedule(domains, domain_filter, round_size)` builds a shuffled list of `(domain, topic)` pairs for fair coverage.
 
-**Principle**: Generate questions per TOPIC, not per domain. This guarantees even coverage — if 5 topics and 20 questions, each topic gets exactly 4 questions.
+**Principle**: Generate questions per TOPIC, not per domain. This guarantees even coverage - if 5 topics and 20 questions, each topic gets exactly 4 questions.
 
 **How it works:**
 1. Collect all `(domain, topic)` pairs from `EXAM_DOMAINS.topics` JSON array
@@ -114,17 +114,17 @@ Three modes controlled by `question_source` in session state:
 | `"ai"` | Call `generate_ai_question` with topic from schedule, retry up to 5x; return `None` if all fail |
 | `"mix"` | 20% chance AI first; if AI fails, fall through to DB; if DB exhausted, try AI again |
 
-**Answer shuffling**: BEFORE returning any question from `get_question()`, apply `_shuffle_options(q)` to randomize answer positions. This is critical — without it, AI-generated questions always have the correct answer at position A. See "Answer Position Shuffling" section below for the function.
+**Answer shuffling**: BEFORE returning any question from `get_question()`, apply `_shuffle_options(q)` to randomize answer positions. This is critical - without it, AI-generated questions always have the correct answer at position A. See "Answer Position Shuffling" section below for the function.
 
 **Difficulty distribution** (mixed mode): 30% easy, 50% medium, 20% hard. Implementation pattern:
 ```python
 r = random.random()
 difficulty = "easy" if r < 0.30 else ("medium" if r < 0.80 else "hard")
 ```
-Do NOT use `random.choice(["easy", "medium", "hard"])` — that gives 33/33/33.
+Do NOT use `random.choice(["easy", "medium", "hard"])` - that gives 33/33/33.
 
 **Guards**:
-- If domain lookup fails (domain_name not in EXAM_DOMAINS), set `last_cortex_error` and return `None`. Do NOT default to `domain_id = "1"` — this silently picks a wrong domain.
+- If domain lookup fails (domain_name not in EXAM_DOMAINS), set `last_cortex_error` and return `None`. Do NOT default to `domain_id = "1"` - this silently picks a wrong domain.
 - Before calling `random.choice(eligible)`, check that the list is non-empty. If empty, set `last_cortex_error = "No eligible domains for the current filter"` and return `None`.
 
 ---
@@ -137,7 +137,7 @@ When loading from DB, try in order:
 3. `domain only` (full pool, no exclusion)
 4. `generate_ai_question()` (auto-fallback when DB exhausted)
 
-**Every level selects with `ORDER BY RANDOM() LIMIT 1` — never sequential / ordered-by-id.** combined with the `NOT IN (shown)` dedup this gives shuffled, non-repeating coverage. (`_shuffle_options` then randomizes option positions — see below.)
+**Every level selects with `ORDER BY RANDOM() LIMIT 1` - never sequential / ordered-by-id.** combined with the `NOT IN (shown)` dedup this gives shuffled, non-repeating coverage. (`_shuffle_options` then randomizes option positions - see below.)
 
 Reference: see `_get_db_question()` in `_questions.py`
 
@@ -145,13 +145,13 @@ Reference: see `_get_db_question()` in `_questions.py`
 
 # Validation
 
-Generation goes through `call_cortex_json(prompt, "question")` — the `RESPONSE_FORMATS["question"]` schema (see `$cortex`) **guarantees** the required keys and types (`question_text`, `is_multi`, `option_a`, `option_b`, `correct_answer`), so there is no key-stripping or shape-checking step.
+Generation goes through `call_cortex_json(prompt, "question")` - the `RESPONSE_FORMATS["question"]` schema (see `$cortex`) **guarantees** the required keys and types (`question_text`, `is_multi`, `option_a`, `option_b`, `correct_answer`), so there is no key-stripping or shape-checking step.
 
 What the code still does:
-- **Length — two mechanisms** (the schema guarantees shape, not length):
-  1. The AI prompt MUST include length guidance: `question_text (string, max 500 chars)`, `option_a through option_e (string, max 500 chars each)` — so the model targets the right length
-  2. After the call, apply safety-net truncation: `data["question_text"][:500]`, `data["option_a"][:500]`, etc. — this should rarely activate if the prompt constraint works, but prevents DB overflow (matches the `VARCHAR(500)` option columns)
-- **Sanity check**: `correct_answer` letters must reference options that are actually present (e.g. no `"E"` when `option_e` is empty) — regenerate on violation
+- **Length - two mechanisms** (the schema guarantees shape, not length):
+  1. The AI prompt MUST include length guidance: `question_text (string, max 500 chars)`, `option_a through option_e (string, max 500 chars each)` - so the model targets the right length
+  2. After the call, apply safety-net truncation: `data["question_text"][:500]`, `data["option_a"][:500]`, etc. - this should rarely activate if the prompt constraint works, but prevents DB overflow (matches the `VARCHAR(500)` option columns)
+- **Sanity check**: `correct_answer` letters must reference options that are actually present (e.g. no `"E"` when `option_e` is empty) - regenerate on violation
 - **Retry loop**: retry only on `None` (call failed / returned NULL / guard tripped):
   ```python
   for _attempt in range(5):
@@ -211,39 +211,39 @@ Reference: see `generate_ai_question()` in `_questions.py`
 
 ---
 
-# Doc grounding (MANDATORY in cke/custom mode — see `$cortex`)
+# Doc grounding (MANDATORY in cke/custom mode - see `$cortex`)
 
-In `cke`/`custom` grounding mode the generator grounds in retrieved docs and answers **ONLY from them — never the model's built-in knowledge**. Per `$cortex`:
+In `cke`/`custom` grounding mode the generator grounds in retrieved docs and answers **ONLY from them - never the model's built-in knowledge**. Per `$cortex`:
 
 ```python
 chunks = search_docs(f"{domain_name}: {topic}")
 ```
 - **Embed `chunks` in `<doc_context>`** as the primary source ("answer only from this; do not use prior knowledge"), with the topic-relevant `key_facts` as supporting scope (keeps coverage when a topic is thin in the docs). Store the top chunk's `SOURCE_URL` on the question as `DOC_URL`.
-- **If `chunks == []`:** broaden the query once (`f"{domain_name}"`); if still empty, **fail this generation** (`return None` — the retry loop counts it). Do NOT generate from built-in knowledge.
+- **If `chunks == []`:** broaden the query once (`f"{domain_name}"`); if still empty, **fail this generation** (`return None` - the retry loop counts it). Do NOT generate from built-in knowledge.
 
-`none` mode (non-Snowflake exams, explicit opt-in) is the only ungrounded path — `$cortex` owns that branch. Grounding never narrows exam scope: the topic/domain still drive the question.
+`none` mode (non-Snowflake exams, explicit opt-in) is the only ungrounded path - `$cortex` owns that branch. Grounding never narrows exam scope: the topic/domain still drive the question.
 
 ---
 
 # AI Question Format
 
-The response shape is enforced by `RESPONSE_FORMATS["question"]` (see `$cortex`) — `question_text`, `is_multi`, `option_a..e`, `correct_answer`. The prompt's job is **content**: it MUST still include the max-length guidance alongside the keys (`question_text` max 500 chars, options max 500 chars each), the topic constraint, the full `DIFFICULTY_GUIDE` text, and the dedup block — the schema cannot express any of that.
+The response shape is enforced by `RESPONSE_FORMATS["question"]` (see `$cortex`) - `question_text`, `is_multi`, `option_a..e`, `correct_answer`. The prompt's job is **content**: it MUST still include the max-length guidance alongside the keys (`question_text` max 500 chars, options max 500 chars each), the topic constraint, the full `DIFFICULTY_GUIDE` text, and the dedup block - the schema cannot express any of that.
 
 Some SnowPro questions have 5 options. `option_e` is in the schema as optional. After the call, set `OPTION_E` from `option_e` if present.
 
 The code then adds UPPERCASE keys (`QUESTION_TEXT`, `DOMAIN_ID`, `DOMAIN_NAME`, `DIFFICULTY`, etc.) and returns the dict for in-memory use during the current round.
 
-**Note**: every validated runtime AI question is **persisted to `QUIZ_QUESTIONS`** (`source='AI_GENERATED'`) so the bank grows as the user practices — see **Bank persistence** below. The `source` field distinguishes `'MANUAL'` (CSV) vs `'AI_GENERATED'` (runtime + Admin "Generate batch") rows. Build-time never mass-generates.
+**Note**: every validated runtime AI question is **persisted to `QUIZ_QUESTIONS`** (`source='AI_GENERATED'`) so the bank grows as the user practices - see **Bank persistence** below. The `source` field distinguishes `'MANUAL'` (CSV) vs `'AI_GENERATED'` (runtime + Admin "Generate batch") rows. Build-time never mass-generates.
 
 ---
 
 # Bank persistence
 
-Runtime AI generation **grows the bank**: when `generate_ai_question` returns a validated question, **INSERT it into `QUIZ_QUESTIONS`** (bind params per `$sis`; `source='AI_GENERATED'`; columns `domain_id`, `domain_name`, `difficulty`, `question_text`, `is_multi`, `option_a..e`, `correct_answer` — `question_id`/`created_at` are auto). The persist is **fire-and-forget**: the in-memory question keeps `QUESTION_ID = None` (`history_item.question_id` is `int/None`). **"Question Bank" mode serves persisted rows with no AI call.**
+Runtime AI generation **grows the bank**: when `generate_ai_question` returns a validated question, **INSERT it into `QUIZ_QUESTIONS`** (bind params per `$sis`; `source='AI_GENERATED'`; columns `domain_id`, `domain_name`, `difficulty`, `question_text`, `is_multi`, `option_a..e`, `correct_answer` - `question_id`/`created_at` are auto). The persist is **fire-and-forget**: the in-memory question keeps `QUESTION_ID = None` (`history_item.question_id` is `int/None`). **"Question Bank" mode serves persisted rows with no AI call.**
 
-- **Exact-text dedup**: insert only when no row with the same `question_text` already exists — `INSERT … SELECT … WHERE NOT EXISTS (SELECT 1 FROM {FQ}.QUIZ_QUESTIONS WHERE QUESTION_TEXT = ?)` (qmark bind, per `$sis`) — so re-asked concepts don't pile up duplicates.
+- **Exact-text dedup**: insert only when no row with the same `question_text` already exists - `INSERT … SELECT … WHERE NOT EXISTS (SELECT 1 FROM {FQ}.QUIZ_QUESTIONS WHERE QUESTION_TEXT = ?)` (qmark bind, per `$sis`) - so re-asked concepts don't pile up duplicates.
 - **Always on** (no toggle). Persist the question as generated; `_get_db_question` re-shuffles option order on load anyway.
-- A failed persist must **never break the round** — wrap the INSERT so an error just skips saving (the question still displays). Bank rows come from rounds + the Admin "Generate batch" button.
+- A failed persist must **never break the round** - wrap the INSERT so an error just skips saving (the question still displays). Bank rows come from rounds + the Admin "Generate batch" button.
 
 ## Output
 

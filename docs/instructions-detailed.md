@@ -9,16 +9,16 @@ A full walk-through for someone who has never used Snowflake CoCo in Snowsight. 
 You give CoCo a Snowflake certification **study guide PDF**. The agent:
 
 1. Creates a dedicated schema `QUIZ_<EXAM_CODE>` inside your database.
-2. Creates 2 stages (one for input data, one for the Streamlit app) and 5 tables (`EXAM_DOMAINS`, `QUIZ_QUESTIONS`, `QUIZ_REVIEW_LOG`, `QUIZ_SESSION_LOG`, `QUIZ_CONFIG`) — plus a transient `_DOC_CONTENT` that holds the parsed PDF during setup and is dropped afterward (and a CSV file format only if you load a bank CSV).
+2. Creates 2 stages (one for input data, one for the Streamlit app) and 5 tables (`EXAM_DOMAINS`, `QUIZ_QUESTIONS`, `QUIZ_REVIEW_LOG`, `QUIZ_SESSION_LOG`, `QUIZ_CONFIG`) - plus a transient `_DOC_CONTENT` that holds the parsed PDF during setup and is dropped afterward (and a CSV file format only if you load a bank CSV).
 3. Extracts domain list, weights, topics, and testable facts from the PDF using `AI_PARSE_DOCUMENT` + `AI_COMPLETE`.
 4. Loads a question bank if you provide one (CSV/JSON); otherwise the bank stays empty and questions are AI-generated at runtime (you can seed the bank later from the Admin page, a worksheet recipe, or a scheduled task).
-5. Generates the multipage `app/` Streamlit project in the workspace (`main.py`, `_*.py` modules, `pages/`, configs — with `environment.yml` from the Snowflake Anaconda channel).
+5. Generates the multipage `app/` Streamlit project in the workspace (`main.py`, `_*.py` modules, `pages/`, configs - with `environment.yml` from the Snowflake Anaconda channel).
 6. Runs a mandatory pre-deploy scan to catch Streamlit-in-Snowflake footguns.
-7. Deploys the app — the agent copies `app/` from the workspace stage onto `STAGE_SIS_APP` and runs `CREATE STREAMLIT` on the warehouse runtime.
+7. Deploys the app - the agent copies `app/` from the workspace stage onto `STAGE_SIS_APP` and runs `CREATE STREAMLIT` on the warehouse runtime.
 
 You never leave the browser. You never run `bash`, `git`, `snow`, or `PUT`. You only:
-- Load this asset into a workspace — fork the repo and open a **Git-backed workspace**, or upload the `.snowflake/cortex/skills/` folder + `AGENTS.md` (Step 1);
-- Drop the study-guide PDF (and any optional CSV) into the workspace file tree when asked — the agent stages it via `COPY FILES`;
+- Load this asset into a workspace - fork the repo and open a **Git-backed workspace**, or upload the `.snowflake/cortex/skills/` folder + `AGENTS.md` (Step 1);
+- Drop the study-guide PDF (and any optional CSV) into the workspace file tree when asked - the agent stages it via `COPY FILES`;
 - Read what the agent proposes and say "go" or "no, do X differently".
 
 The deploy itself is **scripted on the warehouse runtime** (the agent runs `COPY FILES` + `CREATE STREAMLIT`).
@@ -41,7 +41,7 @@ Without this, every `AI_COMPLETE` call will fail with "not allowed to access thi
 
 ### Doc grounding (required for Snowflake exams)
 
-Get the free **Snowflake Documentation** listing (Snowsight » Data Products » Marketplace; `IMPORT SHARE`/ACCOUNTADMIN). It gives the app a Cortex Search service over real Snowflake docs. `$setup-exam` Step 1g probes it and sets `grounding_mode = cke` for a Snowflake exam. For a Snowflake exam this is a **hard gate**: if the CKE listing is absent, setup stops and asks you to install it — the app never generates from built-in knowledge. The mode is fixed once at setup (stored in `QUIZ_CONFIG`); the Admin page shows it read-only — there is no runtime toggle. (`none`, an explicitly ungrounded mode, is only for non-Snowflake exams.)
+Get the free **Snowflake Documentation** listing (Snowsight » Data Products » Marketplace; `IMPORT SHARE`/ACCOUNTADMIN). It gives the app a Cortex Search service over real Snowflake docs. `$setup-exam` Step 1g probes it and sets `grounding_mode = cke` for a Snowflake exam. For a Snowflake exam this is a **hard gate**: if the CKE listing is absent, setup stops and asks you to install it - the app never generates from built-in knowledge. The mode is fixed once at setup (stored in `QUIZ_CONFIG`) - there is no runtime toggle (the Admin page doesn't surface it; it only warns if the doc service is unreachable). (`none`, an explicitly ungrounded mode, is only for non-Snowflake exams.)
 
 ### Role-level
 
@@ -79,7 +79,7 @@ CoCo in Snowsight supports two kinds of skills:
 - **Custom / project-scoped** - live in `.snowflake/cortex/skills/` inside the workspace. You bring them into the workspace yourself.
 
 Two paths:
-- **Git integration** is the recommended one — you get all repo files (skills + `AGENTS.md` + `docs/`) in the workspace, plus commit/branch from inside Snowsight. 
+- **Git integration** is the recommended one - you get all repo files (skills + `AGENTS.md` + `docs/`) in the workspace, plus commit/branch from inside Snowsight. 
 - **Manual upload** is the fallback when you cannot enable Git integration on your account.
 
 ### Via Git integration (recommended)
@@ -87,10 +87,10 @@ Two paths:
 Snowsight workspaces can be backed by a `GIT REPOSITORY` object. Editing inside the workspace is editing a local checkout. You commit and push from inside Snowsight. 
 
 Benefits:
-- `docs/troubleshooting.md`, `docs/architecture.md`, etc. are visible inside Snowsight — no need to jump back to GitHub while working.
-- Skill updates come via `git pull` — no re-upload.
+- `docs/troubleshooting.md`, `docs/architecture.md`, etc. are visible inside Snowsight - no need to jump back to GitHub while working.
+- Skill updates come via `git pull` - no re-upload.
 - The generated `app/` project can be committed back to your fork for reproducibility.
-- Branch for experiments (new optional feature, different exam).
+- Branch for experiments (a different exam, your own tweaks).
 - Teammate with access to the same fork can open the same workspace against the same branch.
 
 #### 1a - fork the repo
@@ -99,7 +99,7 @@ Fork `coco-quiz-app` on GitHub. The fork is your own copy. Upstream pulls are op
 
 #### 1b - create the Snowflake-side integration objects
 
-As a role with `CREATE INTEGRATION` — run these in a Snowflake worksheet:
+As a role with `CREATE INTEGRATION` - run these in a Snowflake worksheet:
 
 ```sql
 -- 1. API INTEGRATION: authorises Snowflake to reach GitHub's API.
@@ -129,9 +129,9 @@ CREATE OR REPLACE GIT REPOSITORY <your_database>.<schema>.coco_quiz_fork
 For a public fork you intend to only pull from: skip the `SECRET` and omit `GIT_CREDENTIALS` from `CREATE GIT REPOSITORY`.
 
 Auth method summary:
-- **OAuth2** — browser flow, cleanest, but needs admin to approve the Snowflake GitHub App in your GitHub org.
-- **PAT** (shown above) — works without admin approval; you rotate the token yourself.
-- **Public read-only** — no auth; you can `pull` but not `push`. Fine for consuming upstream only.
+- **OAuth2** - browser flow, cleanest, but needs admin to approve the Snowflake GitHub App in your GitHub org.
+- **PAT** (shown above) - works without admin approval; you rotate the token yourself.
+- **Public read-only** - no auth; you can `pull` but not `push`. Fine for consuming upstream only.
 
 See [Integrate workspaces with a Git repository](https://docs.snowflake.com/en/user-guide/ui-snowsight/workspaces-git).
 
@@ -139,7 +139,7 @@ See [Integrate workspaces with a Git repository](https://docs.snowflake.com/en/u
 
 In Snowsight: **Projects > Workspaces > + Workspace > From Git repository** > select `coco_quiz_fork` > pick the branch (`main` or your own).
 
-The workspace mounts the full repo: `.snowflake/cortex/skills/`, `AGENTS.md`, `docs/`, `README.md`, etc. all appear in the file tree. CoCo picks up the skills as slash commands automatically (`/setup-exam`, `/adapt-questions`, and routers for `/cortex`, `/sis`, `/quiz` — see [skills.md](skills.md)).
+The workspace mounts the full repo: `.snowflake/cortex/skills/`, `AGENTS.md`, `docs/`, `README.md`, etc. all appear in the file tree. CoCo picks up the skills as slash commands automatically (`/setup-exam`, `/adapt-questions`, and routers for `/cortex`, `/sis`, `/quiz` - see [skills.md](skills.md)).
 
 #### Working with the Git-backed workspace
 
@@ -182,8 +182,8 @@ Drag-drop `AGENTS.md` from your local clone into the workspace root (or use **+*
 
 #### What you give up vs. Git integration
 
-- `docs/` stays on your local clone — no in-browser access; reference from local or GitHub.
-- No version control inside Snowsight — skill edits live in the workspace only.
+- `docs/` stays on your local clone - no in-browser access; reference from local or GitHub.
+- No version control inside Snowsight - skill edits live in the workspace only.
 - Skill updates require re-uploading the folder.
 - No branching for experiments.
 
@@ -226,15 +226,15 @@ Save. CoCo re-reads `AGENTS.md` on the next message. If you forget to fill any r
 
 ## Step 3 - run the setup prompt
 
-Copy the **setup prompt** from [prompts.md](prompts.md) and paste it into CoCo. The prompt is intentionally short — it attaches `@AGENTS.md` (always-on context) and invokes `/setup-exam`; the skill itself carries every step and stop. You don't re-describe the procedure in the prompt.
+Copy the **setup prompt** from [prompts.md](prompts.md) and paste it into CoCo. The prompt is intentionally short - it attaches `@AGENTS.md` (always-on context) and invokes `/setup-exam`; the skill itself carries every step and stop. You don't re-describe the procedure in the prompt.
 
 The agent will:
 
 1. Ask you for the exam name and exam code (e.g. "SnowPro Core" / "COF-C03").
 2. Ask for the PDF filename (required) and optionally the CSV filename.
-3. Ask about additional customisations (the four optional features from `$quiz/features` - exam simulation mode, flashcards, AI study recommendation, remedial round).
+3. Ask about additional customisations (e.g. a specific extra you want, or different scoring).
 4. Ask whether you want the **default look or a custom one** - custom means a short style dialog (light/dark, accent color, roundness, fonts), applied via Streamlit theming only.
-5. Create the schema, stages, and tables (and a CSV file format only if you're loading a bank CSV) — SQL visible in the chat, approve or reject each step.
+5. Create the schema, stages, and tables (and a CSV file format only if you're loading a bank CSV) - SQL visible in the chat, approve or reject each step.
 6. Stop and ask you to add the PDF to the workspace (it stages it via `COPY FILES`).
 
 Do **not** try to pre-empt the agent by creating objects manually. Let it drive.
@@ -245,7 +245,7 @@ Do **not** try to pre-empt the agent by creating objects manually. Let it drive.
 
 When the agent says something like *"drop SnowProCoreStudyGuide.pdf into the workspace"*:
 
-1. In the workspace file tree (the same place the `app/` project lives), add the PDF — drag-drop it, or use the file-browser **+** / upload control.
+1. In the workspace file tree (the same place the `app/` project lives), add the PDF - drag-drop it, or use the file-browser **+** / upload control.
 2. (If you also have a CSV/JSON question bank) add it alongside.
 3. Return to the CoCo chat and reply: **"added"** (or just "done").
 
@@ -299,7 +299,7 @@ Two paths depending on what you said in step 4:
 
 **CSV/JSON available** > `COPY INTO QUIZ_QUESTIONS FROM @STAGE_QUIZ_DATA/<filename>.csv FILE_FORMAT = FF_*;` then backfills `domain_name` from `EXAM_DOMAINS`. If the CSV columns don't match the target schema, the agent invokes `$adapt-questions` which maps columns. The agent reports row count, distinct domain count, and null-domain count.
 
-**No CSV/JSON** > the bank deliberately stays **empty** — the agent does NOT generate questions during setup. The app works fully on runtime AI questions. The agent explains how to seed it later: CSV upload, the Admin page **Generate batch** button, the worksheet recipe in [customization.md](customization.md) (section 6), or a scheduled task / Automation.
+**No CSV/JSON** > the bank deliberately stays **empty** - the agent does NOT generate questions during setup. The app works fully on runtime AI questions. The agent explains how to seed it later: CSV upload, the Admin page **Generate batch** button, the worksheet recipe in [customization.md](customization.md) (section 6), or a scheduled task / Automation.
 
 ---
 
@@ -318,11 +318,11 @@ Other sections (table schemas, platform constraints, Cortex LLM patterns, app st
 
 ## Step 8 - generate the `app/` project and scan
 
-The agent reads the updated `AGENTS.md` plus all `$quiz/*` skills (screens, questions, style, optionally features) and writes the decomposed multipage project into the workspace:
+The agent reads the updated `AGENTS.md` plus all `$quiz/*` skills (screens, questions, style) and writes the decomposed multipage project into the workspace:
 
 - `app/main.py` - entry point: `st.set_page_config`, session-state init, `st.navigation`;
 - `app/_config.py`, `app/_cortex.py`, `app/_data.py`, `app/_questions.py`, `app/_ui.py`, `app/_search.py` - constants, Cortex calls, cached loaders, question engine, shared UI helpers, docs-CKE retrieval;
-- `app/pages/quiz.py` + `app/pages/review.py` + `app/pages/admin.py` - the core pages (plus one page per requested optional feature, e.g. `exam_simulation.py` / `recommendations.py`);
+- `app/pages/quiz.py` + `app/pages/review.py` + `app/pages/admin.py` - the three pages;
 - `app/.streamlit/config.toml` + `app/environment.yml` + `app/snowflake.yml` - app config, dependencies (Snowflake Anaconda channel), deploy descriptor.
 
 Everything appears in the workspace file tree under `app/`.
@@ -366,11 +366,11 @@ Packages come from the Snowflake Anaconda channel.
 
 Snowsight > **Projects > Streamlit > SNOWPRO_QUIZ**.
 
-- On **Home**: pick 5 questions, medium difficulty, any domain, "AI Generated" source (there is no explanations toggle — the explanation is on-demand). Click **Start Round**.
+- On **Home**: pick 5 questions, medium difficulty, any domain, "AI Generated" source (there is no explanations toggle - the explanation is on-demand). Click **Start Round**.
 - On **Quiz**: wait a couple seconds for the first AI-generated question to load. Try the **💡 Hint** button *before* answering (two levels, never spoils). Answer, submit, then click **💡 AI explanation** to load it on demand (works for correct answers too); the **Next** button sits at the very bottom, under the explanation. Inside the expander, try **🔬 Deep dive** for an in-depth breakdown of the question's topic.
 - Click through all 5, then **Finish Round**.
-- **Summary**: score, pass/fail vs threshold, a collapsed **WRONG ANSWERS** expander, and an on-demand **Round Brief**. If you enabled the Remedial Round feature, a failed round also offers **Remedial Round** — your wrong answers back, reshuffled (it doesn't write to stats).
-- **Review** page (tabs: Wrong Answers · Learning Dashboard, plus Flashcards if enabled): filter Wrong Answers by domain and date; open **Learning Dashboard** - you should see your first session plotted (remedial rounds excluded by design).
+- **Summary**: score, pass/fail vs threshold, a collapsed **WRONG ANSWERS** expander, and an on-demand **Round Brief**.
+- **Review** page (tabs: Wrong Answers · Learning Dashboard): filter Wrong Answers by domain and date; open **Learning Dashboard** - you should see your first session plotted.
 - **Admin** page (4 tabs: App config · Questions manager · Cortex spend · Logs): flip an App-config toggle (e.g. hints off/on) or set a per-call-group model, check the bank KPIs in Questions manager, use its filter/edit/delete table, and optionally **Generate batch (AI)** to start seeding the bank; Logs shows the review + session tables with a guarded "reset all logs".
 
 Confirm:
@@ -394,16 +394,16 @@ Both Streamlit apps coexist at `Projects > Streamlit > SNOWPRO_QUIZ` (new) and w
 
 ### Optional: branch per exam (Git-backed workspace)
 
-If you followed the **Git integration** path in step 2, you can additionally isolate each exam on its own branch. The agent does not switch branches — you do, before running the setup prompt:
+If you followed the **Git integration** path in step 2, you can additionally isolate each exam on its own branch. The agent does not switch branches - you do, before running the setup prompt:
 
 - **Workspace Git panel** (bottom bar): click the branch name > **Create new branch from `main`** > e.g. `exam/ARA-C01`. Workspace switches automatically.
 - **GitHub**: create the branch on github.com, then in the workspace Git panel click **Switch branch**.
 
 Run the setup prompt on the new branch. `AGENTS.md` edits and the `app/` generation happen on that branch. Commit when ready.
 
-To switch back to a previous exam later: change branch in the Git panel — the matching `AGENTS.md` snapshot comes with it, so you don't even need to re-edit the schema / exam_code lines. This matches the CLI variant's `exam/<code>` branch pattern, just with the branch creation step being manual rather than `git checkout -b`.
+To switch back to a previous exam later: change branch in the Git panel - the matching `AGENTS.md` snapshot comes with it, so you don't even need to re-edit the schema / exam_code lines. This matches the CLI variant's `exam/<code>` branch pattern, just with the branch creation step being manual rather than `git checkout -b`.
 
-Skip this step if you only plan one or two exams — the schema-per-exam + single-`AGENTS.md`-that-you-edit approach is simpler and already isolates runtime data.
+Skip this step if you only plan one or two exams - the schema-per-exam + single-`AGENTS.md`-that-you-edit approach is simpler and already isolates runtime data.
 
 ---
 
@@ -417,6 +417,8 @@ Paste the **fix prompt** from [prompts.md](prompts.md), describe the symptom. Th
 - Screen flow glitches > reads `$quiz/screens`.
 
 After a fix it re-copies the changed files onto `STAGE_SIS_APP` and re-runs `CREATE OR REPLACE STREAMLIT` to redeploy.
+
+**Seeing errors while you test:** the app ships with `[client] showErrorDetails = "none"` in `app/.streamlit/config.toml` - viewers get a generic message, never a traceback (the production setting). While debugging your own setup, set it to `"full"` and redeploy (`COPY FILES` the `.streamlit/config.toml` + `CREATE OR REPLACE STREAMLIT`) to see the real traceback in the app; set it back to `"none"` before sharing.
 
 See [troubleshooting.md](troubleshooting.md) for a curated list of the most common Snowsight-specific issues.
 

@@ -1,12 +1,12 @@
 # SnowPro Core certification quiz app - Streamlit in Snowflake
 
-> ## ⛔ How to run this project — do NOT improvise
+> ## ⛔ How to run this project - do NOT improvise
 > To set up an exam you **MUST** open `.snowflake/cortex/skills/setup-exam/SKILL.md` and execute it **step by step, top to bottom**, honoring every mandatory STOP. Read the whole skill first; create nothing before its Step 2.
-> The sections below are **reference context** (what the app is, the data model, constraints) — they are **NOT the build procedure** and are not detailed enough to improvise from. Improvising from this overview instead of loading the skill produces wrong or broken objects.
+> The sections below are **reference context** (what the app is, the data model, constraints) - they are **NOT the build procedure** and are not detailed enough to improvise from. Improvising from this overview instead of loading the skill produces wrong or broken objects.
 
 ## What this project is
 
-A context package for Snowflake CoCo that, given a study guide PDF, autonomously creates the Snowflake schema, extracts exam domains, loads an optional question bank, builds and deploys a multipage Streamlit-in-Snowflake quiz app, and tracks learning progress across sessions. Invoked via `$setup-exam` — **which you must read and follow, not summarize.**
+A context package for Snowflake CoCo that, given a study guide PDF, autonomously creates the Snowflake schema, extracts exam domains, loads an optional question bank, builds and deploys a multipage Streamlit-in-Snowflake quiz app, and tracks learning progress across sessions. Invoked via `$setup-exam` - **which you must read and follow, not summarize.**
 
 ---
 
@@ -40,17 +40,15 @@ All sections reference these values. Never hardcode environment names elsewhere 
 
 ## Domain model
 
-Five tables in `{database}.{schema}`, plus a transient `_DOC_CONTENT` used only during setup (dropped after the PDF is parsed). Enabled optional features add their own schema: Flashcards → `FLASHCARD_PROGRESS`; Exam Simulation → `QUIZ_SESSION_LOG.session_type`. Full DDL and column details live in `$setup-exam` Step 3 — the single source.
+Five tables in `{database}.{schema}`, plus a transient `_DOC_CONTENT` used only during setup (dropped after the PDF is parsed). Full DDL and column details live in `$setup-exam` Step 3 - the single source.
 
 | Table | Purpose |
 |-------|---------|
-| `EXAM_DOMAINS` | Domains, weights, topics, key_facts — extracted once from the study-guide PDF. |
+| `EXAM_DOMAINS` | Domains, weights, topics, key_facts - extracted once from the study-guide PDF. |
 | `QUIZ_QUESTIONS` | Question bank: CSV/seeded `'MANUAL'` rows plus every runtime AI question persisted as `'AI_GENERATED'`; reused with randomized selection. |
-| `QUIZ_REVIEW_LOG` | Per-question wrong-answer history — drives the Review page and (when enabled) Flashcards. |
-| `QUIZ_SESSION_LOG` | Per-round summary — drives the Learning Dashboard. |
+| `QUIZ_REVIEW_LOG` | Per-question wrong-answer history - drives the Review page. |
+| `QUIZ_SESSION_LOG` | Per-round summary - drives the Learning Dashboard. |
 | `QUIZ_CONFIG` | Runtime key-value app config edited from Admin (defaults in `_config.py`); also stores `grounding_mode`, set once at setup and read-only at runtime. |
-
-Exam structure (question count, time limit) is captured from the study guide at setup and baked into `_config.py` as `EXAM_QUESTION_COUNT` / `EXAM_TIME_LIMIT_MIN` (read by the Exam Simulation feature).
 
 ---
 
@@ -70,7 +68,7 @@ For calling patterns, dollar-quoting, structured outputs (`response_format`), di
 |-------|--------|---------|------------|
 | `$cortex` | Cortex AI work | Structured outputs, injection delimiting, CKE grounding, diagnostics, prompt audit | (standalone) |
 | `$sis` | SiS code or deploy | SiS runtime gotchas (warehouse) + mandatory pre-deploy scan | (standalone) |
-| `$quiz` | app code work | App module map + screen contracts, question generation, design (visuals), optional features | `$quiz/screens`, `$quiz/questions`, `$quiz/design`, `$quiz/features` |
+| `$quiz` | app code work | App module map + screen contracts, question generation, design (visuals) | `$quiz/screens`, `$quiz/questions`, `$quiz/design` |
 | `$setup-exam` | new exam | Full 10-step pipeline (schema, stages, tables, domains, questions, app build, deploy) | (standalone) |
 | `$adapt-questions` | question bank import | Schema mapping, loading strategies, domain coverage | (standalone) |
 

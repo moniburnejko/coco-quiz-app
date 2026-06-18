@@ -4,7 +4,7 @@ Two short prompts: the procedure lives in the skills, the project context in `AG
 
 How to invoke in Snowsight CoCo:
 - **`@AGENTS.md`** attaches the context file (kept in view for the whole session).
-- **`/setup-exam`** (also `/cortex`, `/sis`, `/quiz`, `/adapt-questions`) invokes a skill — type `/` to pick it. The skill carries every step, stop, and check.
+- **`/setup-exam`** (also `/cortex`, `/sis`, `/quiz`, `/adapt-questions`) invokes a skill - type `/` to pick it. The skill carries every step, stop, and check.
 
 ---
 
@@ -15,10 +15,10 @@ Attach the context, then invoke the skill (type `/` and pick `setup-exam`):
 ```
 @AGENTS.md
 
-/setup-exam  —  I'm setting up: SnowPro Core (COF-C03).
+/setup-exam  -  I'm setting up: SnowPro Core (COF-C03).
 ```
 
-Add anything optional on that line — features ("add exam simulation and flashcards"), advanced mode ("use the quality model profile"), or look ("let me pick the colors"). That's the whole prompt; `/setup-exam` drives the rest and stops at each checkpoint.
+Add anything optional on that line - advanced mode ("use the quality model profile") or look ("let me pick the colors"). That's the whole prompt; `/setup-exam` drives the rest and stops at each checkpoint.
 
 ### When to paste
 - First use of the workspace - before anything is created.
@@ -26,11 +26,11 @@ Add anything optional on that line — features ("add exam simulation and flashc
 
 ### What the skill will ask you during the run (in order)
 1. Exam name + code (e.g. "SnowPro Core", "COF-C03").
-2. PDF filename (required) — the study guide you drop into the workspace file tree (CoCo stages it for you via `COPY FILES`; no manual stage upload).
-3. CSV/JSON question-bank filename — optional; without one the bank starts empty (runtime AI questions; seed it later from Admin / worksheet / Automation).
-4. Optional features + advanced mode (quality model / self-verify / Automations).
+2. PDF filename (required) - the study guide you drop into the workspace file tree (CoCo stages it for you via `COPY FILES`; no manual stage upload).
+3. CSV/JSON question-bank filename - optional; without one the bank starts empty (runtime AI questions; seed it later from Admin / worksheet / Automation).
+4. Advanced mode (quality model / self-verify / Automations).
 5. Default look, or a short custom-theming dialog.
-6. Doc grounding mode — set once and stored in `QUIZ_CONFIG` (no runtime toggle): `cke` (default, Snowflake-docs CKE; a hard gate that stops the run if the CKE listing isn't installed), `custom` (your own Cortex Search service), or `none` (ungrounded — non-Snowflake exams only).
+6. Doc grounding mode - set once and stored in `QUIZ_CONFIG` (no runtime toggle): `cke` (default, Snowflake-docs CKE; a hard gate that stops the run if the CKE listing isn't installed), `custom` (your own Cortex Search service), or `none` (ungrounded - non-Snowflake exams only).
 7. Confirm the PDF is in the workspace (CoCo stages it via `COPY FILES`) → Approve/Re-extract/Abort after domain extraction → deploy → final report.
 
 ---
@@ -55,8 +55,8 @@ The parent skills route by intent: Cortex/AI errors → `/cortex`; app crash, de
 
 ## Tips
 
-- **`AGENTS.md` is always in context** (`@AGENTS.md`) — project constraints, env table, data model, skill index.
-- **Skills carry the procedure** — `/setup-exam` has its own Step 0–10 with mandatory stops (placeholder guard, stage verify, deploy preflight, domain approval, pre-deploy scan, deploy).
+- **`AGENTS.md` is always in context** (`@AGENTS.md`) - project constraints, env table, data model, skill index.
+- **Skills carry the procedure** - `/setup-exam` has its own Step 0-10 with mandatory stops (placeholder guard, stage verify, deploy preflight, domain approval, pre-deploy scan, deploy).
 - If the agent drifts, nudge it: "what did the `/sis` scan return?" or "show me the `EXAM_DOMAINS` rows".
 
 Invoke a skill directly when you want just one piece: `/sis` (the pre-deploy scan), `/cortex` (a prompt audit), or a `/quiz` sub-skill like `/quiz/design`.

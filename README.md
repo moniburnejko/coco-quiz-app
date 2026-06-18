@@ -4,7 +4,7 @@ A browser-only asset for building a Streamlit-in-Snowflake certification quiz ap
 
 > **Naming:** Snowflake renamed *Cortex Code* → *Snowflake CoCo* at Summit 26 (2026-06-02). Some Snowflake doc pages and URLs still use `cortex-code`; the on-disk skills path stays `.snowflake/cortex/skills/`. Both are expected.
 
-Load a study guide PDF, and the agent creates the schema, extracts exam domains, generates questions, builds a decomposed multipage `app/` project, and deploys it on the warehouse runtime — copying the files to a stage and running `CREATE STREAMLIT` for you. All from a single chat session, zero local tooling.
+Load a study guide PDF, and the agent creates the schema, extracts exam domains, generates questions, builds a decomposed multipage `app/` project, and deploys it on the warehouse runtime - copying the files to a stage and running `CREATE STREAMLIT` for you. All from a single chat session, zero local tooling.
 
 > Baseline exam: **SnowPro Core COF-C03**. Swappable to any Snowflake certification by re-running `/setup-exam` with a different study guide PDF.
 
@@ -16,14 +16,14 @@ Load a study guide PDF, and the agent creates the schema, extracts exam domains,
   - **Quiz** - configure round, answer single-/multi-select questions, see score + pass/fail (75% threshold) with wrong-answer cards.
   - **Review** - filterable history of every mistake + learning dashboard (score trend, per-domain error distribution, session history).
   - **Admin** (4 tabs) - app config (feature toggles + AI model per call-group), Questions manager (bank KPIs + a filterable/editable/deletable table + one-click AI batch generation), Cortex spend dashboard, and Logs.
-- **A learning loop, not just a quiz**: Socratic hints before answering (never spoil), an on-demand AI explanation after (for correct answers too) with a 🔬 deep dive into the question's topic, and an AI debrief of round patterns. An optional Remedial Round add-on re-tests your wrong answers when you fail.
+- **A learning loop, not just a quiz**: Socratic hints before answering (never spoil), an on-demand AI explanation after (for correct answers too) with a 🔬 deep dive into the question's topic, and an AI debrief of round patterns.
 - **AI-grounded content**: domains and key facts come from the official study guide PDF (`AI_PARSE_DOCUMENT`); questions are AI-generated at runtime (`AI_COMPLETE`), with an optional question bank you can seed from CSV/JSON, the Admin panel, or a scheduled recipe (resilience + speed when AI calls are unavailable).
-- **Real documentation grounding** (required for Snowflake exams): questions and explanations are generated ONLY from real Snowflake docs — the free **Snowflake Documentation** Cortex Knowledge Extension (install from Marketplace), citing the **exact `SOURCE_URL`** with a readable excerpt, never the model's built-in knowledge. The grounding mode is fixed once at setup (`cke` by default); `$setup-exam` treats the CKE as a hard gate and stops until it's reachable. Only a non-Snowflake exam can opt into the ungrounded `none` mode.
+- **Real documentation grounding** (required for Snowflake exams): questions and explanations are generated ONLY from real Snowflake docs - the free **Snowflake Documentation** Cortex Knowledge Extension (install from Marketplace), citing the **exact `SOURCE_URL`** with a readable excerpt, never the model's built-in knowledge. The grounding mode is fixed once at setup (`cke` by default); `$setup-exam` treats the CKE as a hard gate and stops until it's reachable. Only a non-Snowflake exam can opt into the ungrounded `none` mode.
 - **Persistent progress** across sessions via five tables (`EXAM_DOMAINS`, `QUIZ_QUESTIONS`, `QUIZ_REVIEW_LOG`, `QUIZ_SESSION_LOG`, `QUIZ_CONFIG`) - the app remembers your weak domains between logins.
 - **Schema-per-exam isolation** (`QUIZ_<EXAM_CODE>`) so multiple certifications coexist in one database.
 - **Custom CoCo skills** in `.snowflake/cortex/skills/` drive the whole pipeline end to end.
-- **Optional add-ons** (four, off by default): exam-simulation mode, flashcards (atomic recall cards + Leitner spaced repetition), AI study recommendations, and a remedial round (re-test your wrong answers) (`$quiz/features`).
-- **Advanced mode (opt-in)**: quality model profile (`claude-opus-4-7`), agent self-verify via Cloud Agents, scheduled maintenance via Automations (**Preview**) — all off by default ([docs/customization.md](docs/customization.md) section 5).
+- **Tested features coming soon**: a CoCo skill with verified, ready-to-enable features that extend the quiz app is on the way. For now the asset ships in its core form (Quiz · Review · Admin).
+- **Advanced mode (opt-in)**: quality model profile (`claude-opus-4-7`), agent self-verify via Cloud Agents, scheduled maintenance via Automations (**Preview**) - all off by default ([docs/customization.md](docs/customization.md) section 5).
 
 ## What is different from the CLI version
 
@@ -86,13 +86,13 @@ coco-quiz-app
 │   ├── adapt-questions               -- optional CSV/JSON question-bank import
 │   ├── cortex/                       -- Cortex AI patterns + prompt audit
 │   ├── sis/                          -- Streamlit-in-Snowflake patterns + pre-deploy scan
-│   └── quiz/                         -- screens, questions, style, optional features
+│   └── quiz/                         -- screens, questions, style
 └── docs/
     ├── instructions.md               -- concise step-by-step
     ├── instructions-detailed.md      -- detailed walk-through with Snowsight UI paths
     ├── prompts.md                    -- the prompt to paste into CoCo chat
     ├── skills.md                     -- one-paragraph description per skill
-    ├── customization.md              -- model, UI, features, cross-provider exam swap
+    ├── customization.md              -- model, UI, cross-provider exam swap
     ├── architecture.md               -- data flow, table relationships, skill graph
     └── troubleshooting.md            -- common issues and fixes
 ```

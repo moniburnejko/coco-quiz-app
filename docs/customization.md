@@ -4,7 +4,7 @@ The quiz app has four layers you can tweak, from "one-line change" to "fork the 
 
 1. **Model and runtime defaults** (edit `AGENTS.md`).
 2. **Visual styling** (edit the app modules or tell the agent what to change via `$quiz/design`).
-3. **Functional features** (opt-in via `$quiz/features`: exam simulation, flashcards, AI study recommendation, remedial round).
+3. **Functional features** (core app today; a tested-features skill is coming - meanwhile, experiment with your own).
 4. **Target exam** (swap the PDF for a different SnowPro cert, or with a little bit more work, any non-Snowflake exam like AWS / GCP / Azure).
 
 Everything below is safe to iterate on: change, redeploy, keep going. Nothing is a one-way door.
@@ -46,9 +46,9 @@ Run `$cortex` after the prompt change to catch JSON key mismatches.
 
 Two moments to style the app:
 
-**At build time** — `$setup-exam` Step 1e asks: default look or custom? Custom focuses on the essentials (base light/dark + accent color); roundness, font stack, and sidebar tint are optional. Anything you state up front (e.g. "dark + violet") is taken as-is, not re-asked. All of it maps to native Streamlit `[theme]` / `[theme.sidebar]` keys in `.streamlit/config.toml` — no CSS is ever used.
+**At build time** - `$setup-exam` Step 1e asks: default look or custom? Custom focuses on the essentials (base light/dark + accent color); roundness, font stack, and sidebar tint are optional. Anything you state up front (e.g. "dark + violet") is taken as-is, not re-asked. All of it maps to native Streamlit `[theme]` / `[theme.sidebar]` keys in `.streamlit/config.toml` - no CSS is ever used.
 
-**After build** — invoke `$quiz/design` and describe the change. Modern theming covers much more than colors:
+**After build** - invoke `$quiz/design` and describe the change. Modern theming covers much more than colors:
 
 - **Badge palette** - `:green-badge[]` / `:red-badge[]` / `:orange-badge[]` colors are themable (`greenColor`, `redColor`, ... + `*BackgroundColor`/`*TextColor`).
 - **Chart colours** - `chartCategoricalColors` in the theme, aligned with the `_config.py` constants (`#29b5e8` score line, `#F1914C` error bars by default).
@@ -65,40 +65,22 @@ The agent updates `.streamlit/config.toml` (+ matching `_config.py` chart consta
 
 ### Branding (title, exam name, logo)
 
-- `EXAM_NAME` constant in `_config.py`: affects the in-app title and the Exam Simulation results screen.
-- Note: `st.set_page_config` `page_title` / `page_icon` / `menu_items` are **not supported in Streamlit-in-Snowflake** — the browser tab is controlled by Snowsight. Don't fight it.
+- `EXAM_NAME` constant in `_config.py`: affects the in-app title.
+- Note: `st.set_page_config` `page_title` / `page_icon` / `menu_items` are **not supported in Streamlit-in-Snowflake** - the browser tab is controlled by Snowsight. Don't fight it.
 - For a custom logo on the Home screen: `st.image(url_or_stage_path)` at the top of the home screen in `pages/quiz.py`.
 
 ---
 
 ## 3. Functional features
 
-`$quiz/features` ships **four** opt-in features — **Exam Simulation, Flashcards, AI Study Recommendation, Remedial Round** — reference implementations that have been tested and hold up across different conditions (various exams, grounded and ungrounded modes, with or without a question bank). They are **not** enabled by default; add any combination to your setup prompt, or ask the agent to bolt them onto an already-deployed app.
+The asset ships in its **core form** (Quiz · Review · Admin). A CoCo skill with **verified, fully-tested features** - built and validated by the asset owner to work across exams, grounded and ungrounded modes, and with or without a question bank - **will be added soon**. Until then, no extra features are bundled.
 
-**These are examples, not a ceiling — you're encouraged to build your own.** Describe the feature you want (in the setup prompt or against a deployed app) and the agent designs it to the same `$quiz/screens` state + write-back contracts and `$quiz/design` visual conventions, so it fits the app cleanly.
+**In the meantime, experiment with your own.** Describe the feature you want and the agent builds it to the same `$quiz/screens` state + write-back contracts and `$quiz/design` visual conventions, so it fits the app cleanly. For best results:
 
-| Feature | What it adds | New session-state / data |
-|---|---|---|
-| **Exam Simulation Mode** | Timed mock exam on its own page (`pages/exam_simulation.py`): question count + time limit read from `_config.py` (`EXAM_QUESTION_COUNT` / `EXAM_TIME_LIMIT_MIN`, captured from the study guide at setup — never hardcoded), domain-weighted (largest-remainder), bank-first sourcing, `st.fragment`-enforced countdown, pass/fail vs `PASS_THRESHOLD`, per-domain breakdown | `_quiz_mode`, `_sim_start_time`, `_sim_end_time`, `_sim_time_limit`, `_sim_questions`, `_sim_screen`; `ALTER QUIZ_SESSION_LOG ADD session_type` |
-| **Flashcards** | A **FLASHCARDS tab on the Review page** (not a separate page). Atomic, recall-forcing cards (qa / cloze / compare) AI-decomposed from your wrong answers — never the verbatim MCQ — reviewed with Leitner spaced repetition (boxes 1–5). On-demand "Build cards from my wrong answers"; deck = cards due today | `_flashcard_cards`, `_flashcard_index`, `_flashcard_revealed`; new table `FLASHCARD_PROGRESS` |
-| **AI Study Recommendation** | Own page (`pages/recommendations.py`): readiness math computed in Python from your error history (not the LLM), plus an AI-authored qualitative study plan / weak-domain + weak-topic recommendations grounded on the docs CKE | `_ai_recommendations`, `_rec_cache_key`; reads `QUIZ_REVIEW_LOG` + `EXAM_DOMAINS`, writes nothing |
-| **Remedial Round** | A "Remedial Round" button on the summary of a *failed* practice round: re-tests just your wrong answers, reshuffled (no Admin toggle — present = enabled). The pass writes nothing — no stats, no review log, no debrief | `_round_type`, `_remedial_queue` |
+- **Write a precise prompt.** Spell out exactly what the feature does, where it lives in the flow (a new page? a Review tab? a button on the summary?), what it reads and writes, and any new session state or table. Vague asks produce vague features.
+- **Turn on `showErrorDetails` for the duration of these tests.** Set `[client] showErrorDetails = "full"` in `.streamlit/config.toml` and redeploy, so you see real tracebacks while iterating on an experimental feature. Set it back to `"none"` before sharing the app - that's the production setting, which hides tracebacks from viewers.
 
-### How to request features
-
-Include them in your setup prompt:
-
-```
-i am setting up: SnowProAdvanced: Architect (ARA-C01). add exam simulation mode and AI study recommendation.
-```
-
-Or bolt them on later:
-
-```
-the quiz app is deployed. add flashcards and the remedial round feature. treat the existing schema and tables as fixed except where the skill says to add FLASHCARD_PROGRESS.
-```
-
-The agent reads `$quiz/features`, implements only the ones you name, re-runs `$sis`, and redeploys.
+When the tested-features skill lands it will be the supported way to add the proven ones; your own experiments stay yours.
 
 ---
 
@@ -125,7 +107,7 @@ What stays the same:
 
 ### 4b - Swap to a non-Snowflake cert (AWS, GCP, Azure, ...)
 
-This scaffolding works for any cert with a published study guide PDF — AWS Certified AI Practitioner, Google Cloud Professional Data Engineer, Microsoft Certified: DevOps Engineer Expert, and others. The app itself still runs on Streamlit-in-Snowflake (because that is the runtime platform), but the content is fully exam-agnostic.
+This scaffolding works for any cert with a published study guide PDF - AWS Certified AI Practitioner, Google Cloud Professional Data Engineer, Microsoft Certified: DevOps Engineer Expert, and others. The app itself still runs on Streamlit-in-Snowflake (because that is the runtime platform), but the content is fully exam-agnostic.
 
 #### What works unchanged
 
@@ -146,7 +128,6 @@ This scaffolding works for any cert with a published study guide PDF — AWS Cer
 - `EXAM_NAME` and `EXAM_CODE` constants in `_config.py`: obvious.
 - `AGENTS.md` title line (`> snowpro core certification quiz`): update.
 - `AGENTS.md` section `## what this is`: the bullet "extract from SnowProCoreStudyGuide.pdf" becomes generic "extract from the study guide PDF". `$setup-exam` step 7 does this automatically if you change the filename in step 1b.
-- Exam-simulation question count + time limit (`$quiz/features` Feature 1): extracted from your study guide at setup (`$setup-exam` Step 5) into `EXAM_QUESTION_COUNT` / `EXAM_TIME_LIMIT_MIN` in `_config.py` — never hardcoded. If the guide doesn't state them, the feature confirms the values with you before the first round.
 - Any hard-coded "Snowflake" strings in helper text, placeholders, disclaimers. Search the generated `app/` files for "Snowflake" after generation, review each hit. Note: the **platform** runs on Snowflake so some references (e.g. `get_active_session`) are correct; only change exam-content references.
 
 #### Minimum viable non-Snowflake run
@@ -154,7 +135,7 @@ This scaffolding works for any cert with a published study guide PDF — AWS Cer
 For a first pass on, say, "AWS Solutions Architect Associate":
 
 1. Upload `AWS-Certified-Solutions-Architect-Associate-Exam-Guide.pdf` to a new workspace.
-2. Run the setup prompt with: `i am setting up: AWS Certified Solutions Architect Associate (SAA-C03). use the exam simulation feature with 65 questions, 130 minutes, pass threshold 72%.`
+2. Run the setup prompt with: `i am setting up: AWS Certified Solutions Architect Associate (SAA-C03).`
 3. The agent extracts AWS domains (4 domains), generates ~30 questions per domain grounded on AWS key facts, deploys.
 4. Verify: `EXAM_DOMAINS` has 4 rows, weights sum to 100, a couple of sample questions mention AWS services correctly.
 
@@ -177,12 +158,12 @@ Each has its own `SNOWPRO_QUIZ` Streamlit app (rename to `AWS_SAA_QUIZ`, `AZURE_
 
 If you loaded the asset via Git integration (recommended path in step 2 of [instructions.md](instructions.md)), you can isolate each exam on its own git branch in addition to the schema. This mirrors the CLI variant's setup and keeps each exam's `AGENTS.md` + generated `app/` project pinned to a separate commit history.
 
-The agent does **not** run `git checkout` — you create the branch yourself:
+The agent does **not** run `git checkout` - you create the branch yourself:
 
 - **Via the workspace Git panel**: click the branch name in the bottom bar » **Create new branch from `main`** > name it e.g. `exam/aws-saa-c03`. Workspace switches to the new branch.
 - **Via GitHub**: create the branch on GitHub, then in Snowsight workspace Git panel click **Pull** / **Switch branch**.
 
-Once on the new branch, run the setup prompt. The agent edits `AGENTS.md` and generates the `app/` project on that branch. Commit when you are happy. To switch back to a previous exam: change branch in the Git panel — the matching `AGENTS.md` snapshot comes with it.
+Once on the new branch, run the setup prompt. The agent edits `AGENTS.md` and generates the `app/` project on that branch. Commit when you are happy. To switch back to a previous exam: change branch in the Git panel - the matching `AGENTS.md` snapshot comes with it.
 
 Cost: one manual branch-switch step per exam. 
 Benefit: clean history, easier diffs between exams, one fork can hold many exam configurations without any file churn on `main`.
@@ -191,25 +172,25 @@ Benefit: clean history, easier diffs between exams, one fork can hold many exam 
 
 ## 5. Advanced mode (opt-in)
 
-Three extras for power users. All OFF by default — enable by asking for them in the setup prompt (Step 1d) or in any later chat. Items marked **Preview** depend on account/region availability; verify before relying on them. Summary table: `AGENTS.md` > `Advanced options`.
+Three extras for power users. All OFF by default - enable by asking for them in the setup prompt (Step 1d) or in any later chat. Items marked **Preview** depend on account/region availability; verify before relying on them. Summary table: `AGENTS.md` > `Advanced options`.
 
 ### 5a - Quality model profile (opus-4-x)
 
-The default `CORTEX_MODEL` is `claude-sonnet-4-6` — the best balance of quality, speed, and cost for question generation. The **quality profile** swaps it for `claude-opus-4-7`: noticeably stronger on hard questions (plausible distractors, multi-concept trade-offs), but slower and markedly more expensive per token.
+The default `CORTEX_MODEL` is `claude-sonnet-4-6` - the best balance of quality, speed, and cost for question generation. The **quality profile** swaps it for `claude-opus-4-7`: noticeably stronger on hard questions (plausible distractors, multi-concept trade-offs), but slower and markedly more expensive per token.
 
-`claude-opus-4-8` is **Public Preview** — use only on explicit request (preview models aren't production-ready). Check the [models & regional availability page](https://docs.snowflake.com/en/user-guide/snowflake-cortex/aisql-regional-availability) for current status.
+`claude-opus-4-8` is **Public Preview** - use only on explicit request (preview models aren't production-ready). Check the [models & regional availability page](https://docs.snowflake.com/en/user-guide/snowflake-cortex/aisql-regional-availability) for current status.
 
-Enable: say "use the quality model profile" in the setup prompt — the agent sets `CORTEX_MODEL = "claude-opus-4-7"` in `_config.py`. Cheaper hybrid worth considering: seed the question bank once on opus (Admin "Generate batch" or the worksheet recipe in §6), keep runtime AI questions and explanations on sonnet.
+Enable: say "use the quality model profile" in the setup prompt - the agent sets `CORTEX_MODEL = "claude-opus-4-7"` in `_config.py`. Cheaper hybrid worth considering: seed the question bank once on opus (Admin "Generate batch" or the worksheet recipe in §6), keep runtime AI questions and explanations on sonnet.
 
 ### 5b - Agent self-verify (Cloud Agents)
 
 With self-verify enabled, `$setup-exam` adds Step 8.5: before handing you the app, the agent byte-compiles every generated module (`py_compile` over `main.py`, `_*.py`, `pages/*.py`) and fixes whatever fails. Catches syntax errors before you ever click **Run**.
 
-Requires a CoCo session that can execute code (**Cloud Agents** — rolling out since Summit 26). If the session cannot execute code, the agent says so and skips the step — the Step 8 pre-deploy scan still runs either way.
+Requires a CoCo session that can execute code (**Cloud Agents** - rolling out since Summit 26). If the session cannot execute code, the agent says so and skips the step - the Step 8 pre-deploy scan still runs either way.
 
 ### 5c - Automations (Preview)
 
-CoCo **Automations** (Preview) run recurring, unattended jobs. A useful report-only recipe for this asset — weekly maintenance:
+CoCo **Automations** (Preview) run recurring, unattended jobs. A useful report-only recipe for this asset - weekly maintenance:
 
 ```
 read AGENTS.md. then:
@@ -224,7 +205,7 @@ read AGENTS.md. then:
 do not deploy anything; report only.
 ```
 
-Schedule it weekly in CoCo's Automations UI once available in your account. Keep automations **report-only** — deploys stay a human decision (see the commit/deploy hygiene the whole asset follows).
+Schedule it weekly in CoCo's Automations UI once available in your account. Keep automations **report-only** - deploys stay a human decision (see the commit/deploy hygiene the whole asset follows).
 
 ---
 
@@ -279,16 +260,16 @@ Spot-check a few rows after seeding (`SELECT ... ORDER BY RANDOM() LIMIT 5`). Fo
 
 ## 7. Doc-grounded mode (Snowflake Documentation CKE)
 
-Install the free **Snowflake Documentation** listing from Marketplace (Snowsight » Data Products » Marketplace; needs `IMPORT SHARE`/ACCOUNTADMIN; creates `SNOWFLAKE_DOCUMENTATION`) and the app grounds its AI in real Snowflake docs — a Cortex Knowledge Extension (a shared Cortex Search service, ~56K chunks). The grounding source is governed by `grounding_mode` (`cke` | `custom` | `none`), **set once at setup** (`$setup-exam` Step 1g) and stored in `QUIZ_CONFIG` — a fixed value, **not a runtime toggle**. The Admin page shows it **read-only**. `cke` (default for Snowflake exams) uses this CKE; `custom` points at a private Cortex Search service over your own corpus; `none` is ungrounded (non-Snowflake exams only).
+Install the free **Snowflake Documentation** listing from Marketplace (Snowsight » Data Products » Marketplace; needs `IMPORT SHARE`/ACCOUNTADMIN; creates `SNOWFLAKE_DOCUMENTATION`) and the app grounds its AI in real Snowflake docs - a Cortex Knowledge Extension (a shared Cortex Search service, ~56K chunks). The grounding source is governed by `grounding_mode` (`cke` | `custom` | `none`), **set once at setup** (`$setup-exam` Step 1g) and stored in `QUIZ_CONFIG` - a fixed value, **not a runtime toggle** (so the Admin page does not surface it; it only warns if the doc service is unreachable). `cke` (default for Snowflake exams) uses this CKE; `custom` points at a private Cortex Search service over your own corpus; `none` is ungrounded (non-Snowflake exams only).
 
 What changes when on:
-- **Questions** are generated from retrieved doc chunks + `key_facts` (hybrid — prefers the docs, keeps the exam scope).
-- **Explanations** cite the chunk's exact `SOURCE_URL` and show a "📚 From the docs" excerpt — instead of a guessed search link.
-- All retrieval is isolated in `app/_search.py` (Python `snowflake.core` API). In `cke`/`custom` mode grounding is **mandatory — no silent fallback to built-in knowledge**: if retrieval is empty the query broadens once, then the generation **fails visibly** ("couldn't ground — retry"); if the service is unreachable (CKE uninstalled / no grant), the app shows an install/grant message and **disables Start Round** rather than guessing. Only `none` mode (non-Snowflake exams, explicit opt-in) is ungrounded — there `$setup-exam` sets `grounding_mode='none'`.
+- **Questions** are generated from retrieved doc chunks + `key_facts` (hybrid - prefers the docs, keeps the exam scope).
+- **Explanations** link the chunk's exact `SOURCE_URL` (a clean 📖 doc link - no raw excerpt) - instead of a guessed search link.
+- All retrieval is isolated in `app/_search.py` (Python `snowflake.core` API). In `cke`/`custom` mode grounding is **mandatory - no silent fallback to built-in knowledge**: if retrieval is empty the query broadens once, then the generation **fails visibly** ("couldn't ground - retry"); if the service is unreachable (CKE uninstalled / no grant), the app shows an install/grant message and **disables Start Round** rather than guessing. Only `none` mode (non-Snowflake exams, explicit opt-in) is ungrounded - there `$setup-exam` sets `grounding_mode='none'`.
 
 Cost: each grounded question/explanation adds one Cortex Search query (consumer-billed compute, small; cached per query/session).
 
-**Doc-grounded seeding (worksheet):** the section-6 recipe can ground the bank too — `SEARCH_PREVIEW` is fine in a worksheet (ad-hoc):
+**Doc-grounded seeding (worksheet):** the section-6 recipe can ground the bank too - `SEARCH_PREVIEW` is fine in a worksheet (ad-hoc):
 
 ```sql
 WITH ctx AS (
@@ -303,7 +284,7 @@ WITH ctx AS (
 -- instructing the model to prefer the documentation context.
 SELECT * FROM ctx;
 ```
-(In the app, Admin "Generate batch" uses the Python `search_docs()` — never `SEARCH_PREVIEW`.)
+(In the app, Admin "Generate batch" uses the Python `search_docs()` - never `SEARCH_PREVIEW`.)
 
 ---
 
@@ -311,5 +292,5 @@ SELECT * FROM ctx;
 
 - **Don't hard-code domain names, weights, or topic lists anywhere in the app code.** They come from `EXAM_DOMAINS` at runtime. Hard-coding breaks the multi-exam design.
 - **Don't bypass `$sis` even for "tiny" UI tweaks.** The scan catches regressions that only surface at runtime in SiS - a 5-minute scan is cheaper than a production redeploy loop.
-- **Don't add features by editing the app code without consulting `$quiz/features`.** The skill documents session-state key conventions and write-back contracts - ad-hoc additions will collide with future features.
+- **Don't add features by editing the app code ad-hoc.** Follow the `$quiz/screens` session-state + write-back contracts and `$quiz/design` visual conventions so additions fit the app and don't collide with its state model.
 - **Don't change the 5-table schema casually.** Every screen and every skill assumes those exact columns. Add columns via `ALTER TABLE` if needed.

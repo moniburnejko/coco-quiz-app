@@ -6,7 +6,7 @@
 
 ## Step 0 - one-time account prerequisites
 
-As `ACCOUNTADMIN`, once per account — only if your account cannot reach the model in-region (accounts created after 2026-03-09 already default to `ANY_REGION`):
+As `ACCOUNTADMIN`, once per account - only if your account cannot reach the model in-region (accounts created after 2026-03-09 already default to `ANY_REGION`):
 
 ```sql
 ALTER ACCOUNT SET CORTEX_ENABLED_CROSS_REGION = 'ANY_REGION';
@@ -16,7 +16,7 @@ ALTER ACCOUNT SET CORTEX_ENABLED_CROSS_REGION = 'ANY_REGION';
 
 In Snowsight: **AI & ML > Agents > Settings > Tools and connectors > Web search → enable**.
 
-**Required for Snowflake exams** (recommended for all): install the free **Snowflake Documentation** listing in Snowsight » Data Products » Marketplace. Snowflake-exam apps default to CKE doc-grounding (`grounding_mode = cke`) — questions and explanations are generated ONLY from real docs, never built-in knowledge — so `$setup-exam` treats the CKE as a hard gate and stops until it's reachable (free, works on trial). Grounding mode is fixed once at setup; only a non-Snowflake exam can opt into the ungrounded `none` mode.
+**Required for Snowflake exams** (recommended for all): install the free **Snowflake Documentation** listing in Snowsight » Data Products » Marketplace. Snowflake-exam apps default to CKE doc-grounding (`grounding_mode = cke`) - questions and explanations are generated ONLY from real docs, never built-in knowledge - so `$setup-exam` treats the CKE as a hard gate and stops until it's reachable (free, works on trial). Grounding mode is fixed once at setup; only a non-Snowflake exam can opt into the ungrounded `none` mode.
 
 ---
 
@@ -63,7 +63,7 @@ Benefits: `docs/` accessible inside Snowsight, commit and branch from the worksp
 
 Clone the repo locally. In Snowsight: **Projects > Workspaces > + Workspace** (empty). Then:
 
-1. **Custom skills**: in Snowflake CoCo chat, click **+** > **Upload Folder(s)** > select `.snowflake/cortex/skills/` from the clone. All skills (5 invocable — `$setup-exam`, `$adapt-questions`, `$cortex`, `$sis`, `$quiz` — across 9 `SKILL.md` files incl. the 4 `$quiz` sub-skills) become available as slash commands.
+1. **Custom skills**: in Snowflake CoCo chat, click **+** > **Upload Folder(s)** > select `.snowflake/cortex/skills/` from the clone. All skills (5 invocable - `$setup-exam`, `$adapt-questions`, `$cortex`, `$sis`, `$quiz` - across 9 `SKILL.md` files incl. the 4 `$quiz` sub-skills) become available as slash commands.
 2. **AGENTS.md**: drag-and-drop to the workspace root (or use **+** > **Upload File(s)**).
 
 `docs/` is not uploaded - reference it from your local clone or from GitHub.
@@ -77,17 +77,17 @@ Clone the repo locally. In Snowsight: **Projects > Workspaces > + Workspace** (e
 
 ## Step 2 - edit the environment table in AGENTS.md
 
-Open `AGENTS.md` in the workspace, find the `snowflake environment` table. Replace the `<your_...>` placeholders (`<your_database>`, `<your_warehouse>`, `<your_role>`) with the actual object names. Leave `schema` and `exam_code` as is — `$setup-exam` fills `schema`/`exam_code` once the exam code is known. `$setup-exam` halts if it finds unfilled required placeholders, so replace them before running the setup prompt.
+Open `AGENTS.md` in the workspace, find the `snowflake environment` table. Replace the `<your_...>` placeholders (`<your_database>`, `<your_warehouse>`, `<your_role>`) with the actual object names. Leave `schema` and `exam_code` as is - `$setup-exam` fills `schema`/`exam_code` once the exam code is known. `$setup-exam` halts if it finds unfilled required placeholders, so replace them before running the setup prompt.
 
 ---
 
 ## Step 3 - run the setup prompt
 
-Paste the **setup prompt** from [prompts.md](prompts.md) into the CoCo chat — it attaches `@AGENTS.md` and invokes `/setup-exam`. The agent runs the skill end-to-end and stops at three checkpoints:
+Paste the **setup prompt** from [prompts.md](prompts.md) into the CoCo chat - it attaches `@AGENTS.md` and invokes `/setup-exam`. The agent runs the skill end-to-end and stops at three checkpoints:
 
 - After asking you to add the study guide PDF (and optionally a CSV) → you drop it into the workspace file tree and the agent stages it via `COPY FILES` (step 4).
 - After extracting domains → approve / re-extract / abort.
-- Before deploy → the agent copies the generated `app/` onto `STAGE_SIS_APP` and deploys it on the warehouse runtime — nothing for you to upload (step 5).
+- Before deploy → the agent copies the generated `app/` onto `STAGE_SIS_APP` and deploys it on the warehouse runtime - nothing for you to upload (step 5).
 
 ---
 
@@ -95,11 +95,11 @@ Paste the **setup prompt** from [prompts.md](prompts.md) into the CoCo chat — 
 
 When the agent stops and asks for the PDF:
 
-1. Drop the study-guide PDF into the **workspace file tree** (same place as the `app/` project) — not a stage.
+1. Drop the study-guide PDF into the **workspace file tree** (same place as the `app/` project) - not a stage.
 2. (Optional) drop a CSV/JSON question bank in alongside it.
 3. Reply to the agent: "added".
 
-The agent then copies the file onto `STAGE_QUIZ_DATA` with `COPY FILES` and verifies with `LIST @STAGE_QUIZ_DATA` before continuing — you never upload to a stage by hand.
+The agent then copies the file onto `STAGE_QUIZ_DATA` with `COPY FILES` and verifies with `LIST @STAGE_QUIZ_DATA` before continuing - you never upload to a stage by hand.
 
 ---
 
@@ -117,8 +117,8 @@ Snowsight > **Projects > Streamlit > SNOWPRO_QUIZ** (or whatever `app_name` is s
 
 Walk through the pages (navigation is native multipage):
 
-- **Quiz page** - home (round size, difficulty, domain, source — no explanations toggle; the explanation is on-demand) → quiz (try the 💡 Hint *before* answering; after submitting: instant feedback, then an on-demand **💡 AI explanation** button — for correct answers too — opening an expander with the explanation and a 🔬 Deep dive into the question's topic, with **Next** pinned at the very bottom under the expander) → summary (score, pass/fail vs threshold, a collapsed WRONG ANSWERS expander, an on-demand Round Brief; if you enabled the Remedial Round feature, a failed round also offers a **Remedial Round** button — your wrong answers, reshuffled).
-- **Review page** - sub-tabs (`st.pills`): **Wrong answers** (history with domain + date-range filters), **Learning Dashboard** (charts), and **Flashcards** when that feature is enabled (atomic recall cards built from wrong answers, Leitner spaced repetition).
+- **Quiz page** - home (round size, difficulty, domain, source - no explanations toggle; the explanation is on-demand) → quiz (try the 💡 Hint *before* answering; after submitting: instant feedback, then an on-demand **💡 AI explanation** button - for correct answers too - opening an expander with the explanation and a 🔬 Deep dive into the question's topic, with **Next** pinned at the very bottom under the expander) → summary (score, pass/fail vs threshold, a collapsed WRONG ANSWERS expander, an on-demand Round Brief).
+- **Review page** - sub-tabs (`st.pills`): **Wrong answers** (history with domain + date-range filters) and **Learning Dashboard** (charts).
 - **Admin page** (4 tabs: App config, Questions manager, Cortex spend, Logs) - flip a feature toggle (hints / Round Brief) or pick a model per call-group in App config, check the bank KPIs, and in Questions manager use the filter/edit/delete table or **Generate batch (AI)** to seed the question bank; Logs shows the review + session tables with a guarded reset.
 
 Complete at least one round so `QUIZ_SESSION_LOG` and `QUIZ_REVIEW_LOG` get data for dashboard charts.
@@ -134,5 +134,7 @@ Keep the same workspace, run the **setup prompt** again with a different PDF. Th
 ## Something broke?
 
 Paste the **fix prompt** from [prompts.md](prompts.md) with a description of what happened. The agent will run the relevant diagnostic skill, fix the issue, and redeploy.
+
+**Seeing errors while you test:** the app ships with `[client] showErrorDetails = "none"` in `app/.streamlit/config.toml` - viewers get a generic message, never a traceback. While debugging your own setup, set it to `"full"` and redeploy to see the real traceback; set it back to `"none"` before sharing the app.
 
 See also [troubleshooting.md](troubleshooting.md) for common Snowsight-specific pitfalls.

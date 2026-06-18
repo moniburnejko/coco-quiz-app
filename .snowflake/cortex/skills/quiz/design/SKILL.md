@@ -1,13 +1,13 @@
 ---
 name: quiz-design
-description: "THE single source for every visual rule in the quiz app — theme/config.toml keys, badge palette, chart colors + axis formatting, cards, buttons, titles, docs-link style. Use for any visual, color, theme, or chart work. Triggers: theme, color, badge, chart, config.toml, styling, layout, card, button, section label, docs link. Do NOT use for screen behavior/state (quiz-screens), question generation (quiz-questions), or platform constraints (sis)."
+description: "THE single source for every visual rule in the quiz app - theme/config.toml keys, badge palette, chart colors + axis formatting, cards, buttons, titles, docs-link style. Use for any visual, color, theme, or chart work. Triggers: theme, color, badge, chart, config.toml, styling, layout, card, button, section label, docs link. Do NOT use for screen behavior/state (quiz-screens), question generation (quiz-questions), or platform constraints (sis)."
 ---
 
 # When to Load
 
 Parent skill `$quiz` routes here for DESIGN intent.
 
-- Any UI work — styling, layout, new components
+- Any UI work - styling, layout, new components
 - Reviewing visual consistency across screens
 - Adding new badges, cards, or sections
 
@@ -21,7 +21,7 @@ Parent skill `$quiz` routes here for DESIGN intent.
 
 # Language
 
-**All generated UI text is English** — every label, button, heading, badge, toast, caption, and section header. No other language, regardless of the conversation or prompt language. (Exam *content* follows the study guide.)
+**All generated UI text is English** - every label, button, heading, badge, toast, caption, and section header. No other language, regardless of the conversation or prompt language. (Exam *content* follows the study guide.)
 
 # Badges
 
@@ -66,7 +66,7 @@ No exam code caption under titles. Sidebar shows only `{EXAM_NAME} Quiz` and nav
 
 Use `st.markdown("**LABEL**")` for all section headers. Labels are UPPERCASE.
 
-Do NOT use `st.subheader()` for section labels — use `st.markdown("**LABEL**")`.
+Do NOT use `st.subheader()` for section labels - use `st.markdown("**LABEL**")`.
 
 Examples: `**QUESTIONS**`, `**DOMAINS**`, `**DIFFICULTY**`, `**SOURCE**`, `**SCORE PER SESSION**`, `**ERRORS BY DOMAIN**`, `**FOCUS AREAS**`, `**TOPICS TO REVIEW**`, `**NEXT STEPS**` (the summary's `WRONG ANSWERS` is an `st.expander` title, not a bold label)
 
@@ -74,7 +74,7 @@ Examples: `**QUESTIONS**`, `**DOMAINS**`, `**DIFFICULTY**`, `**SOURCE**`, `**SCO
 
 # Escaping dynamic text
 
-Streamlit Markdown renders text between two `$` as LaTeX math, so any model- or DB-sourced string containing `$` (e.g. `SYSTEM$CLASSIFY`) renders garbled (everything between the two `$` turns into italic math). Route **every** rendered dynamic string — question text, options, explanation / deep-dive fields, mnemonics, summary + review + flashcard cards — through a `md()` helper in `_ui.py` that **backslash-escapes `$`** so it renders literally. Never pass raw question/option/AI text straight to `st.markdown` / `st.write`. (Enforced by the `$sis` pre-deploy scan.)
+Streamlit Markdown renders text between two `$` as LaTeX math, so any model- or DB-sourced string containing `$` (e.g. `SYSTEM$CLASSIFY`) renders garbled (everything between the two `$` turns into italic math). Route **every** rendered dynamic string - question text, options, explanation / deep-dive fields, mnemonics, summary + review cards - through a `md()` helper in `_ui.py` that **backslash-escapes `$`** so it renders literally. Never pass raw question/option/AI text straight to `st.markdown` / `st.write`. (Enforced by the `$sis` pre-deploy scan.)
 
 # Question Text
 
@@ -82,7 +82,7 @@ Use `st.markdown(f"#### {text}")` (h4 heading) for question text display. NOT `s
 
 ---
 
-# Theming Contract (config.toml — the ONLY styling mechanism)
+# Theming Contract (config.toml - the ONLY styling mechanism)
 
 NO `unsafe_allow_html` anywhere in the app (enforced by `$sis`). ALL visual styling = native Streamlit `[theme]` / `[theme.sidebar]` keys in `.streamlit/config.toml`; any key the pinned Streamlit doesn't recognize is ignored gracefully.
 
@@ -111,7 +111,7 @@ secondaryBackgroundColor = "#eef6fa"
 | Background tones | `backgroundColor`, `secondaryBackgroundColor` |
 | Corner roundness (sharp/soft/round) | `baseRadius`, `buttonRadius` ("none"/"small"/"medium"/"large"/"full"/rem) |
 | Borders on/off + color | `showWidgetBorder`, `borderColor`, `showSidebarBorder`, `dataframeBorderColor` |
-| Font stack | `font`, `headingFont`, `codeFont` — **built-in stacks only** ("sans-serif"/"serif"/"monospace"); NO `fontFaces`/external font URLs (CSP) |
+| Font stack | `font`, `headingFont`, `codeFont` - **built-in stacks only** ("sans-serif"/"serif"/"monospace"); NO `fontFaces`/external font URLs (CSP) |
 | Text sizing/weight | `baseFontSize`, `baseFontWeight`, `headingFontSizes`, `headingFontWeights` |
 | Badge palette (`:green-badge[]` etc.) | `greenColor`/`redColor`/`orangeColor`/`blueColor`/`grayColor` + their `*BackgroundColor`/`*TextColor` variants |
 | Chart series colors | `chartCategoricalColors` (array) |
@@ -120,16 +120,16 @@ secondaryBackgroundColor = "#eef6fa"
 Rules:
 - Map dialog answers ONLY to these keys; if the user asks for something theming cannot do (animations, per-element CSS, custom layout), say so and offer the nearest theme-level effect.
 - **Charts ↔ theme alignment**: `chartCategoricalColors[0]` must equal the score-line constant and `[1]` the error-bar constant in `_config.py` (the Altair specs reference the constants explicitly).
-- SiS caveats: `st.set_page_config` `page_title`/`page_icon`/`menu_items` are NOT supported in SiS — do not set them; `layout="centered"` always, never `"wide"` (set once, in `main.py`).
-- Shared visual helpers (badges, cards, doc links) live in `_ui.py` as plain Streamlit components — no raw HTML.
+- SiS caveats: `st.set_page_config` `page_title`/`page_icon`/`menu_items` are NOT supported in SiS - do not set them; `layout="centered"` always, never `"wide"` (set once, in `main.py`).
+- Shared visual helpers (badges, cards, doc links) live in `_ui.py` as plain Streamlit components - no raw HTML.
 
 ---
 
 # Color Scheme
 
-**Charts** (the single source — `$quiz/screens` and `$quiz/features` reference this, never restate chart rules):
+**Charts** (the single source - `$quiz/screens` references this, never restate chart rules):
 
-*Score per Session* (line): X = `LABEL:N` (NOMINAL, `sort=None` to keep chronological order; label `#{session_id} · {date}`) — never `:Q`, which interpolates floats (1.0, 1.1, …); Y = `SCORE_PCT:Q`, `scale=alt.Scale(domain=[0, 100])`; `mark_line(point=True, color="#29b5e8")` (Snowflake blue); threshold = dashed gray rule (`strokeDash=[4, 4]`) at `PASS_THRESHOLD`.
+*Score per Session* (line): X = `LABEL:N` (NOMINAL, `sort=None` to keep chronological order; label `#{session_id} · {date}`) - never `:Q`, which interpolates floats (1.0, 1.1, …); Y = `SCORE_PCT:Q`, `scale=alt.Scale(domain=[0, 100])`; `mark_line(point=True, color="#29b5e8")` (Snowflake blue); threshold = dashed gray rule (`strokeDash=[4, 4]`) at `PASS_THRESHOLD`.
 
 *Errors by Domain* (bar): X = `ERROR_COUNT:Q`, `axis=alt.Axis(tickMinStep=1, title=None)` (integer ticks, no fractional counts); Y = `DOMAIN_NAME:N`, `sort="-x"`, `axis=alt.Axis(labelLimit=500, title=None)` (full names, no truncation); `mark_bar(color="#F1914C")` (orange, NOT red).
 
@@ -145,7 +145,7 @@ Rules:
 
 Always use `st.markdown(f"📖 [Snowflake Documentation]({url})")` for Snowflake docs links. Do NOT use `st.caption` or an abbreviated "Docs" label.
 
-Applies in: inside the on-demand AI-explanation expander (after the **💡 AI explanation** click — correct + incorrect alike; never auto-shown on the quiz screen), review cards, AI recommendations topics.
+Applies in: inside the on-demand AI-explanation expander (after the **💡 AI explanation** click - correct + incorrect alike; never auto-shown on the quiz screen) and review cards.
 
 ---
 
@@ -153,11 +153,8 @@ Applies in: inside the on-demand AI-explanation expander (after the **💡 AI ex
 
 `st.container(border=True)` for grouped content:
 - Wrong answer cards (summary + review)
-- Focus area cards (AI recommendations)
-- Topics to review cards
-- Next steps container
 - Explanation containers (why correct, why wrong)
-- Round Brief containers (summary): the PATTERNS + PRIORITY ACTIONS block, and the 🎯 FOCUS one-thing line (its own bordered container — NOT `st.info`; `st.info` is mnemonic-only)
+- Round Brief containers (summary): the PATTERNS + PRIORITY ACTIONS block, and the 🎯 FOCUS one-thing line (its own bordered container - NOT `st.info`; `st.info` is mnemonic-only)
 
 ---
 
@@ -166,15 +163,15 @@ Applies in: inside the on-demand AI-explanation expander (after the **💡 AI ex
 - No emoji in button labels: `"Start Round"` not `"▶️ Start Round"`
 - Action buttons: `type="primary"`, `use_container_width=True`
 - All pills: `label_visibility="collapsed"` (bold Markdown label above instead)
-- **Low-emphasis / deliberately understated destructive action** (e.g. Admin "Reset all logs"): `type="tertiary"` (borderless/frameless) — no expander, no "DANGER ZONE" framing; the safety is the **two-step Confirm/Cancel**, not visual alarm. (`type="tertiary"` is the borderless variant; `"secondary"` still draws a border.)
+- **Low-emphasis / deliberately understated destructive action** (e.g. Admin "Reset all logs"): `type="tertiary"` (borderless/frameless) - no expander, no "DANGER ZONE" framing; the safety is the **two-step Confirm/Cancel**, not visual alarm. (`type="tertiary"` is the borderless variant; `"secondary"` still draws a border.)
 
 # KPIs / metrics
 
-Headline numbers (Learning Dashboard, Admin bank stats) use **`st.metric`** in `st.columns` — never a table of counts. A KPI is a label + a big number (optionally a delta), not a row in a grid. Keep them on one row where they fit.
+Headline numbers (Learning Dashboard, Admin bank stats) use **`st.metric`** in `st.columns` - never a table of counts. A KPI is a label + a big number (optionally a delta), not a row in a grid. Keep them on one row where they fit.
 
 # Selection controls
 
-**Never use `st.multiselect` to choose a FIXED number of items** — a multiselect lets the user pick all of them and only flags an invalid count *after* the pick. Match the widget to the count:
+**Never use `st.multiselect` to choose a FIXED number of items** - a multiselect lets the user pick all of them and only flags an invalid count *after* the pick. Match the widget to the count:
 - **Choose exactly 1** → `st.radio` or `st.selectbox` (it's structurally impossible to pick two).
 - **Choose exactly 2** → **two dependent selectboxes**: selectbox 2's options EXCLUDE selectbox 1's current value (pick A in box 1 → box 2 offers B/C/D only), so an illogical "same option twice" or ">2" state can't occur.
 - `st.multiselect` is for genuinely **open-ended** multi-select only (e.g. Home DOMAINS, the Admin filters, `correct_answer` for a multi-answer question).

@@ -40,8 +40,8 @@ This bites only when you recycle a stage created by hand; `$setup-exam` emits th
 **Cause:** The PDF is added to the **workspace file tree** and CoCo stages it onto `STAGE_QUIZ_DATA` via `COPY FILES` (no manual stage upload). An oversized scanned PDF can be slow to stage or parse, or hit workspace file limits.
 
 **Fix options:**
-- Compress the PDF first (most study guides are under 10 MB; a 300 MB file is almost always scanned images — run it through a PDF optimiser).
-- After CoCo stages it, it verifies with `LIST @STAGE_QUIZ_DATA` — confirm the file appears there before extraction proceeds.
+- Compress the PDF first (most study guides are under 10 MB; a 300 MB file is almost always scanned images - run it through a PDF optimiser).
+- After CoCo stages it, it verifies with `LIST @STAGE_QUIZ_DATA` - confirm the file appears there before extraction proceeds.
 
 ---
 
@@ -79,7 +79,7 @@ AI_PARSE_DOCUMENT(..., {'mode': 'OCR'});
 
 **Cause:** `AI_COMPLETE` hit the output token limit on a 10-question batch (Admin "Generate batch", the worksheet recipe, or an Automation run). With structured outputs that surfaces as a failed/NULL call (not malformed JSON).
 
-**Fix:** Reduce the batch to 5 questions and rerun for that domain only — in the worksheet recipe change "Generate 10" to "Generate 5"; from chat:
+**Fix:** Reduce the batch to 5 questions and rerun for that domain only - in the worksheet recipe change "Generate 10" to "Generate 5"; from chat:
 
 ```
 seed the question bank for domain_id = 3 with batch_size = 5.
@@ -132,7 +132,7 @@ run $quiz/screens and $sis on the current app files. focus on the finish-round h
 
 ## Questions/explanations aren't grounded in docs (no real citations)
 
-**Cause:** The exam's `grounding_mode` is `cke`/`custom` but the Snowflake Documentation CKE (or your custom Cortex Search service) isn't reachable — uninstalled, no grant, or unreachable from your region. In `cke`/`custom` mode grounding is **mandatory**: the app will not generate from built-in knowledge, so when the service is down the Home screen disables **Start Round** and shows an install/grant message rather than producing ungrounded content. (`none` mode — non-Snowflake exams, chosen at setup — is the only ungrounded path.)
+**Cause:** The exam's `grounding_mode` is `cke`/`custom` but the Snowflake Documentation CKE (or your custom Cortex Search service) isn't reachable - uninstalled, no grant, or unreachable from your region. In `cke`/`custom` mode grounding is **mandatory**: the app will not generate from built-in knowledge, so when the service is down the Home screen disables **Start Round** and shows an install/grant message rather than producing ungrounded content. (`none` mode - non-Snowflake exams, chosen at setup - is the only ungrounded path.)
 
 **Fix:**
 1. Confirm the free **Snowflake Documentation** listing is installed (Snowsight » Data Products » Marketplace) and your role can query it:
@@ -142,14 +142,14 @@ run $quiz/screens and $sis on the current app files. focus on the finish-round h
      '{"query": "time travel", "columns": ["DOCUMENT_TITLE"], "limit": 1}');
    ```
    Empty/error → install the listing or get access granted. If the imported database has a different name, set `DOCS_SEARCH_SERVICE` in `_config.py`.
-2. Confirm the exam's `grounding_mode` (shown **read-only** on the Admin → App config tab). It is fixed at setup — `cke` / `custom` / `none` — with **no runtime toggle**; to change it, re-run `$setup-exam` Step 1g.
+2. Confirm the exam's `grounding_mode` (shown **read-only** on the Admin → App config tab). It is fixed at setup - `cke` / `custom` / `none` - with **no runtime toggle**; to change it, re-run `$setup-exam` Step 1g.
 3. Cross-region: if your account's region can't reach the shared service, the runtime probe fails and the app surfaces the unreachable-service message, blocking generation until access is restored (enable cross-region inference, or use a service your region can reach).
 
 ---
 
 ## Everything looks fine but the Streamlit app is using an old version
 
-**Cause:** SiS caches app bundles by stage URL — after the files on `STAGE_SIS_APP` change, the running app doesn't auto-refresh.
+**Cause:** SiS caches app bundles by stage URL - after the files on `STAGE_SIS_APP` change, the running app doesn't auto-refresh.
 
 **Fix:** the agent re-copies the changed files and re-runs `CREATE OR REPLACE STREAMLIT` (`OR REPLACE` invalidates the cached bundle):
 
