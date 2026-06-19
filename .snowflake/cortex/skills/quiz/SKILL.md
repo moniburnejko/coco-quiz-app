@@ -1,6 +1,6 @@
 ---
 name: quiz
-description: "Quiz app implementation - page/screen contracts, question generation, UI styling. Use when building or modifying any part of the generated app. Triggers: screen, page, quiz, home, summary, review, questions, generate, badge, styling, layout, session state, write-back"
+description: "Quiz app implementation - page/screen contracts, question generation, UI styling. Use when building or modifying any part of an already-set-up quiz app. Triggers: screen, page, quiz, home, summary, review, questions, generate, badge, styling, layout, session state, write-back. Do NOT use for first-time exam setup/deploy (setup-exam) or question-bank import (adapt-questions)."
 ---
 
 # Quiz App
@@ -8,6 +8,13 @@ description: "Quiz app implementation - page/screen contracts, question generati
 ## When to Use
 
 When building or modifying any part of quiz.py - screens, question generation, or UI styling.
+
+## When NOT to Use
+
+- First-time exam setup / deploy → `$setup-exam`
+- Question-bank import (CSV/JSON) → `$adapt-questions`
+- Platform/runtime constraints, pre-deploy scan → `$sis`
+- Cortex AI calls / prompt audit → `$cortex`
 
 ## Intent Detection
 

@@ -199,8 +199,8 @@ Run when a prompt produces wrong keys, shallow content, or unsafe interpolation.
 
 1. **Structured output requested** - JSON calls use `call_cortex_json` with a `RESPONSE_FORMATS` schema covering every key the code reads (not prose "return JSON").
 2. **No ambiguous key descriptions** - flag "Brief explanation of…", or a `doc_url`/"URL"/"link" key (model hallucinates URLs). Good: `why_correct` as a JSON array; per-option `why_wrong`; `doc_search` = "exactly 2-3 words, no URLs, no commas".
-3. **Question prompt required fields** - full `DIFFICULTY_GUIDE` text (not a bare "easy"/"medium"/"hard"), domain, topic, the "DO NOT repeat" dedup block from `_get_shown_texts()`, length guidance (question ≤500, options ≤200). N/A if not a question prompt.
-4. **Explanation prompt required context** - full question, all options with letters, correct letter(s), what the student picked, explicit wrong-option letters; `why_correct` described as an array; `doc_search` (not `doc_url`). N/A otherwise.
+3. **Question prompt required fields** - full `DIFFICULTY_GUIDE` text (not a bare "easy"/"medium"/"hard"), domain, topic, the "DO NOT repeat" dedup block from `_get_shown_texts()`, length guidance (question ≤500, options ≤500). N/A if not a question prompt.
+4. **Explanation prompt required context** - full question, all options with letters, correct letter(s), explicit wrong-option letters; `why_correct` described as an array; `doc_search` (not `doc_url`). N/A otherwise.
 4b. **Teaching calls explain, don't parrot** (explanation, hint, deep dive) - the prompt uses the **teaching** grounding style ("ground every claim in the docs but EXPLAIN in your own words; do NOT quote line-by-line or say 'the documentation says'"), NOT the bare *"answer ONLY from the provided documentation; do not use prior knowledge"* line (that's for fact-extraction calls). FAIL if a teaching prompt carries the strict fact-extraction line - it produces doc-parroting (see "Grounded ≠ parroting").
 5. **Dollar-quoting** - `$${safe_prompt}$$`, not single quotes.
 6. **`$$` sanitization** - `.replace("$$", "$ $")` present.

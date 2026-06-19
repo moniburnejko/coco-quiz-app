@@ -9,7 +9,7 @@ A full walk-through for someone who has never used Snowflake CoCo in Snowsight. 
 You give CoCo a Snowflake certification **study guide PDF**. The agent:
 
 1. Creates a dedicated schema `QUIZ_<EXAM_CODE>` inside your database.
-2. Creates 2 stages (one for input data, one for the Streamlit app) and 5 tables (`EXAM_DOMAINS`, `QUIZ_QUESTIONS`, `QUIZ_REVIEW_LOG`, `QUIZ_SESSION_LOG`, `QUIZ_CONFIG`) - plus a transient `_DOC_CONTENT` that holds the parsed PDF during setup and is dropped afterward (and a CSV file format only if you load a bank CSV).
+2. Creates 2 stages (one for input data, one for the Streamlit app) and 5 tables (`EXAM_DOMAINS`, `QUIZ_QUESTIONS`, `QUIZ_REVIEW_LOG`, `QUIZ_SESSION_LOG`, `QUIZ_CONFIG`) - plus a transient `_DOC_CONTENT` that holds the parsed PDF during setup and is kept across the run and reloads to avoid re-parsing, not auto-dropped (and a CSV file format only if you load a bank CSV).
 3. Extracts domain list, weights, topics, and testable facts from the PDF using `AI_PARSE_DOCUMENT` + `AI_COMPLETE`.
 4. Loads a question bank if you provide one (CSV/JSON); otherwise the bank stays empty and questions are AI-generated at runtime (you can seed the bank later from the Admin page, a worksheet recipe, or a scheduled task).
 5. Generates the multipage `app/` Streamlit project in the workspace (`main.py`, `_*.py` modules, `pages/`, configs - with `environment.yml` from the Snowflake Anaconda channel).
@@ -372,7 +372,7 @@ Snowsight > **Projects > Streamlit > SNOWPRO_QUIZ**.
 - On **Quiz**: wait a couple seconds for the first AI-generated question to load. Try the **💡 Hint** button *before* answering (two levels, never spoils). Answer, submit, then click **💡 AI explanation** to load it on demand (works for correct answers too); the **Next** button sits at the very bottom, under the explanation. Inside the expander, try **🔬 Deep dive** for an in-depth breakdown of the question's topic.
 - Click through all 5, then **Finish Round**.
 - **Summary**: score, pass/fail vs threshold, a **TO REMEMBER** expander (the missed questions, correct answer in full text), and an on-demand **Round Summary**.
-- **Review** page (tabs: Wrong Answers · Learning Dashboard): filter Wrong Answers by domain and date; open **Learning Dashboard** - you should see your first session plotted.
+- **Review** page (tabs: Learning Dashboard · Wrong Answers, Dashboard first): the **Learning Dashboard** opens by default - you should see your first session plotted; switch to **Wrong Answers** and filter by domain and date.
 - **Admin** page (4 tabs: App config · Questions manager · Cortex spend · Logs): flip an App-config toggle (e.g. hints off/on) or set a per-call-group model, check the bank KPIs in Questions manager, use its filter/edit/delete table, and optionally **Generate batch (AI)** to start seeding the bank; Logs shows the review + session tables with a guarded "reset all logs".
 
 Confirm:
@@ -403,7 +403,7 @@ If you followed the **Git integration** path in step 2, you can additionally iso
 
 Run the setup prompt on the new branch. `AGENTS.md` edits and the `app/` generation happen on that branch. Commit when ready.
 
-To switch back to a previous exam later: change branch in the Git panel - the matching `AGENTS.md` snapshot comes with it, so you don't even need to re-edit the schema / exam_code lines. This matches the CLI variant's `exam/<code>` branch pattern, just with the branch creation step being manual rather than `git checkout -b`.
+To switch back to a previous exam later: change branch in the Git panel - the matching `AGENTS.md` snapshot comes with it, so you don't even need to re-edit the schema / exam_code lines. Branch creation is manual (via the workspace Git panel or GitHub), an `exam/<code>` branch per exam.
 
 Skip this step if you only plan one or two exams - the schema-per-exam + single-`AGENTS.md`-that-you-edit approach is simpler and already isolates runtime data.
 

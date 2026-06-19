@@ -25,21 +25,6 @@ Load a study guide PDF, and the agent creates the schema, extracts exam domains,
 - **Tested features coming soon**: a CoCo skill with verified, ready-to-enable features that extend the quiz app is on the way. For now the asset ships in its core form (Quiz · Review · Admin).
 - **Advanced mode (opt-in)**: quality model profile (`claude-opus-4-7`), agent self-verify via Cloud Agents, scheduled maintenance via Automations (**Preview**) - all off by default ([docs/customization.md](docs/customization.md) section 5).
 
-## What is different from the CLI version
-
-| | CLI variant | Snowsight variant (this branch) |
-|---|---|---|
-| environment | terminal + `snow` CLI + bash | browser workspace, zero local tooling |
-| input file uploads | `snow stage copy` | user drops PDF/CSV into the workspace; agent stages them with `COPY FILES` onto `STAGE_QUIZ_DATA` (no manual upload) |
-| app deploy | `snow streamlit deploy` | agent copies `app/` to a stage with `COPY FILES` + runs `CREATE STREAMLIT` |
-| isolation | Git branch per exam + schema (agent-automated) | schema per exam always; optional branch per exam if workspace is Git-backed (user creates the branch manually) |
-| custom skills path | `.cortex/skills/` | `.snowflake/cortex/skills/` |
-| global skills | `~/.snowflake/cortex/skills/` | built into CoCo |
-| app code | tracked in repo | generated `app/` project (multi-file), not committed |
-| input data (`data/`) | tracked in repo | user drops PDF/CSV into the workspace file tree; agent copies them to the stage via `COPY FILES` |
-
----
-
 ## Prerequisites
 
 - Snowflake account with a role that has `USAGE`+`CREATE SCHEMA` on a database, `USAGE` on a warehouse, and access to Cortex AI functions.
@@ -54,7 +39,7 @@ Load a study guide PDF, and the agent creates the schema, extracts exam domains,
 
 > AI-generated questions and explanations may be inaccurate - LLMs hallucinate, especially on niche Snowflake features. Verify against official [Snowflake docs](https://docs.snowflake.com/) when in doubt.
 >
-> When AI question generation or AI explanations are enabled, the app runs slower a little bit: each question is a live `AI_COMPLETE` round-trip. You can switch to a faster model (see `docs/customization.md` if present, or edit `cortex llm` in `AGENTS.md`) at the cost of quality and more hallucinations.
+> When AI question generation or AI explanations are enabled, the app runs slower a little bit: each question is a live `AI_COMPLETE` round-trip. You can switch to a faster model (see `docs/customization.md`, or edit the `Cortex LLM` line in `AGENTS.md`) at the cost of quality and more hallucinations.
 
 ---
 

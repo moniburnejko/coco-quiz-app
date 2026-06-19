@@ -40,7 +40,7 @@ All sections reference these values. Never hardcode environment names elsewhere 
 
 ## Domain model
 
-Five tables in `{database}.{schema}`, plus a transient `_DOC_CONTENT` used only during setup (dropped after the PDF is parsed). Full DDL and column details live in `$setup-exam` Step 3 - the single source.
+Five tables in `{database}.{schema}`, plus a transient `_DOC_CONTENT` scratch table used only during setup (kept cheaply with no Fail-safe so a resumed setup does not re-parse the PDF; drop it manually if you want). Full DDL and column details live in `$setup-exam` Step 3 - the single source.
 
 | Table | Purpose |
 |-------|---------|

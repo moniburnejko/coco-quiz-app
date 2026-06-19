@@ -21,7 +21,7 @@ Everything below is safe to iterate on: change, redeploy, keep going. Nothing is
 preferred model: <llm_model_name>. store as constant `CORTEX_MODEL`.
 ```
 
-Trade-off: `claude-sonnet-4-6` is the best quality for question generation and explanations but is also the slowest. `mistral-large2` or `llama3.1-405b` are noticeably faster but hallucinate more on Snowflake-specific minutiae. After changing, regenerate the app so the constant value propagates, or just edit `CORTEX_MODEL = "..."` in `_config.py` and redeploy.
+Trade-off: `claude-sonnet-4-6` (the default) balances quality and speed; `claude-haiku-4-5` is the faster in-set option and `claude-opus-4-8` the strongest but slowest. You can set `CORTEX_MODEL` to any Cortex model for the base default, but the Admin **per-call-group** picker only lists the Claude `MODEL_OPTIONS` tiers - a non-Claude base model (e.g. `mistral-large2`, `llama3.1-405b`) won't appear there (the picker falls back to the first option), and non-Claude models hallucinate more on Snowflake-specific minutiae. After changing, regenerate the app so the constant value propagates, or just edit `CORTEX_MODEL = "..."` in `_config.py` and redeploy.
 
 ### 1b - Round size defaults / default question source / any other default
 
@@ -121,7 +121,7 @@ This scaffolding works for any cert with a published study guide PDF - AWS Certi
 - **Domain extraction prompt** (`$setup-exam` Step 5): the prompt says "extract ALL exam domains from this certification study guide" which is generic, but AWS / Azure study guides sometimes mix "domains" with "subject areas" or "task statements". Spot-check the extracted `EXAM_DOMAINS` rows against the official blueprint.
 - **Key facts grounding** (`$setup-exam` Step 5): for Snowflake, facts are SQL-heavy (DDL, function names, limits). For AWS, they are service-heavy (API names, quotas, pricing tiers). The extraction prompt is generic enough that both work, but the agent will extract whatever is in the PDF. Snowflake-specific hints in the current prompt (e.g. "feature names, SQL syntax") are suggestive examples - not exclusive filters. Edit the prompt in the skill if the output leans Snowflake-ish on a non-Snowflake PDF.
 - **Question difficulty guide** (`$quiz/questions`): `DIFFICULTY_GUIDE` is Snowflake-flavoured ("easy = surface feature recognition; hard = cross-feature architecture trade-offs"). Tweak the wording for AWS / Azure but keep the 3-tier structure.
-- **Explanation doc_url**: the explanation contract asks for a `doc_url`. For Snowflake it points at docs.snowflake.com. For AWS, the AI agent will happily produce `docs.aws.amazon.com/...` URLs - verify it is actually reaching the web-search tool (Snowsight > AI & ML > Agents > Settings > Tools and connectors > Web search).
+- **Explanation doc link**: the explanation schema returns `doc_search` (2-3 search words), never a URL - models hallucinate URLs, so the prompt must not ask for one. In `cke`/`custom` mode the displayed 📖 link reuses the question's stored `DOC_URL` (the CKE chunk's `SOURCE_URL`); in `none` mode the app turns `doc_search` into `https://docs.snowflake.com/en/search?q=...`. For a non-Snowflake exam in `none` mode that link still points at docs.snowflake.com, so for provider-correct links (`docs.aws.amazon.com`, `learn.microsoft.com`) edit the `none`-mode link builder in the explanation render - the app does not use a web-search tool for this.
 
 #### What needs a touch-up
 
@@ -156,7 +156,7 @@ Each has its own `SNOWPRO_QUIZ` Streamlit app (rename to `AWS_SAA_QUIZ`, `AZURE_
 
 #### Optional: branch per exam (Git-backed workspace only)
 
-If you loaded the asset via Git integration (recommended path in step 2 of [instructions.md](instructions.md)), you can isolate each exam on its own git branch in addition to the schema. This mirrors the CLI variant's setup and keeps each exam's `AGENTS.md` + generated `app/` project pinned to a separate commit history.
+If you loaded the asset via Git integration (recommended path in step 2 of [instructions.md](instructions.md)), you can isolate each exam on its own git branch in addition to the schema. This keeps each exam's `AGENTS.md` + generated `app/` project pinned to a separate commit history.
 
 The agent does **not** run `git checkout` - you create the branch yourself:
 

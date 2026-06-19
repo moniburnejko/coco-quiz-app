@@ -210,9 +210,9 @@ LIST @{database}.QUIZ_<CODE>.STAGE_QUIZ_DATA;
 ```sql
 CREATE TRANSIENT TABLE IF NOT EXISTS {database}.QUIZ_<CODE>._DOC_CONTENT (doc_content VARCHAR);
 INSERT INTO {database}.QUIZ_<CODE>._DOC_CONTENT
-SELECT AI_PARSE_DOCUMENT(
+SELECT PARSE_JSON(AI_PARSE_DOCUMENT(
     TO_FILE('@{database}.QUIZ_<CODE>.STAGE_QUIZ_DATA', '<pdf_filename>'),
-    {'mode': 'LAYOUT'}):content::VARCHAR
+    {'mode': 'LAYOUT'})):content::VARCHAR   -- AI_PARSE_DOCUMENT returns JSON AS A STRING; PARSE_JSON before colon access
 WHERE NOT EXISTS (SELECT 1 FROM {database}.QUIZ_<CODE>._DOC_CONTENT);
 ```
 **Ground every domain, topic, and `key_facts` value in this parsed content - never hand-author them from your own knowledge** (that silently swaps the real study guide for a remembered, possibly-stale blueprint). Every prompt below reads `(SELECT doc_content FROM {database}.QUIZ_<CODE>._DOC_CONTENT)`. This is **build-time PDF grounding** - a separate regime from the runtime `grounding_mode`/CKE contract (Step 1g), which governs the deployed app's question/explanation/hint/etc. generation.

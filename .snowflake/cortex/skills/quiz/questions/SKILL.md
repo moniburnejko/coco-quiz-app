@@ -1,6 +1,6 @@
 ---
 name: quiz-questions
-description: "Question generation patterns - DIFFICULTY_GUIDE, topic scheduling, deduplication, fallback chain, retry logic, schema validation. Use when loading questions or generating via AI. Triggers: generate questions, question generation, topic schedule, deduplication, difficulty guide, fallback chain, question validation, DIFFICULTY_GUIDE. Do NOT use for page/screen contracts (quiz-screens) or prompt audits (cortex-prompt-audit)."
+description: "Question generation patterns - DIFFICULTY_GUIDE, topic scheduling, deduplication, fallback chain, retry logic, schema validation. Use when loading questions or generating via AI. Triggers: generate questions, question generation, topic schedule, deduplication, difficulty guide, fallback chain, question validation, DIFFICULTY_GUIDE. Do NOT use for page/screen contracts (quiz-screens) or prompt audits (cortex)."
 ---
 
 # When to Load
@@ -185,7 +185,7 @@ Generation goes through `call_cortex_json(prompt, "question")` - the `RESPONSE_F
 What the code still does:
 - **Length - two mechanisms** (the schema guarantees shape, not length):
   1. The AI prompt MUST include length guidance: `question_text (string, max 500 chars)`, `option_a through option_e (string, max 500 chars each)` - so the model targets the right length
-  2. After the call, apply safety-net truncation: `data["question_text"][:500]`, `data["option_a"][:500]`, etc. - this should rarely activate if the prompt constraint works, but prevents DB overflow (matches the `VARCHAR(500)` option columns)
+  2. After the call, apply safety-net truncation: `data["question_text"][:500]`, `data["option_a"][:500]`, etc. - this should rarely activate if the prompt constraint works, but prevents DB overflow - options `[:500]` match the `VARCHAR(500)` option columns, and `question_text[:500]` is a readability cap (its column is `VARCHAR(2000)`)
 - **Structural gate** (`_answers_valid`): `correct_answer` letters reference options that are actually present (no `"E"` when `option_e` is empty), `>=2` options, `>=1` correct. Regenerate on violation.
 - **Correctness gate** (`_verify_correct`, the `$cortex` `"verify"` pass): a temperature-0, doc-grounded re-check that the marked answer is right and every distractor is wrong. `is_correct=false` (or a failed call) regenerates - structural validity alone never ships a question.
 - **Near-duplicate gate** (`_too_similar`): token-Jaccard vs this round's shown texts, cap 2 rejects then DB fallback (see Deduplication).
