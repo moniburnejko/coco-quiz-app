@@ -65,14 +65,36 @@ Each tier has CONSTRAINT (what the question must do) and STYLE (how the question
 
 **Principle**: Generate questions per TOPIC, not per domain. This guarantees even coverage - if 5 topics and 20 questions, each topic gets exactly 4 questions.
 
-**How it works:**
-1. Collect all `(domain, topic)` pairs from `EXAM_DOMAINS.topics` JSON array
-2. Filter by `domain_filter` if set (empty = all domains)
-3. Repeat the pool until we have `round_size` entries
-4. Shuffle for random order
-5. Store in `st.session_state["_topic_schedule"]`
+**How it works** (no early repeats, no back-to-back repeats):
+1. Collect all **distinct** `(domain, topic)` pairs from `EXAM_DOMAINS.topics` (`parse_topics`).
+2. Filter by `domain_filter` if set (empty = all domains).
+3. Shuffle the distinct pairs - this first pass means **every topic appears once before any topic repeats**.
+4. If `round_size` exceeds the pool, append more **whole passes**, each re-shuffled - never a flat `pool * n` slice that would re-hit the same topics early.
+5. Trim to `round_size`, then break adjacency: if a pair equals the one before it, swap it forward so the **same topic never lands twice in a row**.
+6. Store in `st.session_state["_topic_schedule"]`; `get_question()` pops the next entry.
 
-Built **once per round** (in Start Round handler). `get_question()` pops the next entry.
+Built **once per round** (in Start Round handler). Sampling without replacement within each pass is what stops a 20-question round from drilling the same three topics; tiling by whole passes keeps coverage even when the pool is small.
+
+```python
+def _build_topic_schedule(domains, domain_filter, round_size):
+    sel = [d for d in domains if not domain_filter or d["DOMAIN_NAME"] in domain_filter]
+    pairs = [(d["DOMAIN_NAME"], t) for d in sel for t in parse_topics(d.get("TOPICS"))]
+    if not pairs:                                        # topic-less exam: schedule by domain
+        pairs = [(d["DOMAIN_NAME"], None) for d in sel]
+    if not pairs:
+        return []
+    schedule = []
+    while len(schedule) < round_size:                    # tile by WHOLE shuffled passes
+        chunk = pairs[:]; random.shuffle(chunk)
+        schedule.extend(chunk)
+    schedule = schedule[:round_size]
+    for i in range(1, len(schedule)):                    # break same-topic adjacency
+        if schedule[i] == schedule[i - 1]:
+            for j in range(i + 1, len(schedule)):
+                if schedule[j] != schedule[i - 1]:
+                    schedule[i], schedule[j] = schedule[j], schedule[i]; break
+    return schedule
+```
 
 `parse_topics()` helper safely parses the VARIANT/JSON topics field:
 ```python
@@ -97,6 +119,19 @@ WHERE question_text NOT IN (?, ?, ?, ...)
 ```
 
 **AI path**: Collect `question_text[:80]` from round_history. Include as "DO NOT repeat these already-asked questions:" block in the prompt.
+
+**Near-duplicate rejection (token-Jaccard).** Exact-text `NOT IN` / `WHERE NOT EXISTS` only catches byte-identical text, but two AI questions can reword the same fact. After a candidate passes structural + correctness validation, compute the token-Jaccard overlap of its `question_text` against each shown text this round; on any pair `>= 0.6`, reject and regenerate. **Cap rejections at 2** per question: on the 3rd near-duplicate, stop regenerating and serve a DB question instead (in pure `ai` mode with no DB, accept the candidate rather than fail the round) - a thin topic must never spin the loop forever.
+```python
+def _tokens(text):
+    return set(re.findall(r"[a-z0-9]+", (text or "").lower()))      # re imported at module level
+
+def _too_similar(text, shown, threshold=0.6):
+    a = _tokens(text)
+    if not a:
+        return False
+    return any(len(a & b) / len(a | b) >= threshold
+               for b in (_tokens(s) for s in shown) if b)
+```
 
 **Key rule**: Do NOT use separate `shown_question_ids` or `shown_question_texts` keys in session_state. Mutable objects in SiS session_state are unreliable. Always derive from `round_history`.
 
@@ -151,16 +186,30 @@ What the code still does:
 - **Length - two mechanisms** (the schema guarantees shape, not length):
   1. The AI prompt MUST include length guidance: `question_text (string, max 500 chars)`, `option_a through option_e (string, max 500 chars each)` - so the model targets the right length
   2. After the call, apply safety-net truncation: `data["question_text"][:500]`, `data["option_a"][:500]`, etc. - this should rarely activate if the prompt constraint works, but prevents DB overflow (matches the `VARCHAR(500)` option columns)
-- **Sanity check**: `correct_answer` letters must reference options that are actually present (e.g. no `"E"` when `option_e` is empty) - regenerate on violation
-- **Retry loop**: retry only on `None` (call failed / returned NULL / guard tripped):
+- **Structural gate** (`_answers_valid`): `correct_answer` letters reference options that are actually present (no `"E"` when `option_e` is empty), `>=2` options, `>=1` correct. Regenerate on violation.
+- **Correctness gate** (`_verify_correct`, the `$cortex` `"verify"` pass): a temperature-0, doc-grounded re-check that the marked answer is right and every distractor is wrong. `is_correct=false` (or a failed call) regenerates - structural validity alone never ships a question.
+- **Near-duplicate gate** (`_too_similar`): token-Jaccard vs this round's shown texts, cap 2 rejects then DB fallback (see Deduplication).
+- **Retry loop**: structural -> correctness -> near-duplicate, each retry shifting the variety angle:
   ```python
-  for _attempt in range(5):
-      data = call_cortex_json(prompt, "question", model=model_for("generation"))
-      if data is None: continue
-      if not _answers_valid(data): continue
-      return build_question(data)  # success
+  dupe_rejects = 0
+  for attempt in range(5):
+      data = call_cortex_json(build_prompt(attempt), "question", model=model_for("generation"))
+      if data is None: continue                                  # call failed / NULL / guard
+      if not _answers_valid(data): continue                      # structural
+      if not _verify_correct(data, chunks, model): continue      # correctness ($cortex "verify")
+      if _too_similar(data["question_text"], shown):             # near-duplicate (token-Jaccard)
+          dupe_rejects += 1
+          if dupe_rejects > 2: break                             # give up -> DB fallback (accept in pure ai)
+          continue
+      return build_question(data)                                # success
   st.session_state["last_cortex_error"] = f"AI generation failed after 5 attempts for {domain}/{difficulty}"
   return None
+  ```
+  ```python
+  def _verify_correct(data, chunks, model):
+      """$cortex 'verify' pass: temperature-0, grounded in the same chunks. True = answer stands."""
+      v = call_cortex_json(build_verify_prompt(data, chunks), "verify", model=model)
+      return bool(v and v.get("is_correct"))                     # None (call failed) -> reject + regenerate
   ```
 
 ---
@@ -208,6 +257,26 @@ Do not write a generic domain question. The question stem must reference "{topic
 Also filter `key_facts` to topic-relevant lines before including in prompt. Track used topics to avoid generating about topics already covered this round.
 
 Reference: see `generate_ai_question()` in `_questions.py`
+
+---
+
+# Question variety (angle rotation + nonce)
+
+Repeated `(domain, topic)` pairs (a small bank, a long round) must not yield the same question. Generation already runs at a moderate temperature (`FEATURE_TEMPERATURE["question"]`, `$cortex`); layer two cheap variety controls on top:
+
+- **Angle rotation** - rotate how the same topic is framed, keyed off the attempt index:
+  ```python
+  QUESTION_ANGLES = ["a direct definition", "a real-world scenario", "a troubleshooting situation",
+      "a comparison between two similar features", "a best-practice / when-to-use decision",
+      "a cost or performance trade-off"]                       # _config.py
+  angle = QUESTION_ANGLES[attempt % len(QUESTION_ANGLES)]      # shifts on every retry
+  ```
+- **Nonce** - a throwaway token the model uses only to vary phrasing, never as content:
+  ```python
+  nonce = str(random.randint(1000, 9999))
+  ```
+
+Append to the prompt: `Approach this as {angle}. Variety token (do NOT treat as content; use only to vary phrasing): {nonce}`. The angle **varies the framing only** - it never overrides the `DIFFICULTY_GUIDE` STYLE/CONSTRAINT or the topic constraint (a `hard` question stays multi-step analysis whatever the angle).
 
 ---
 
