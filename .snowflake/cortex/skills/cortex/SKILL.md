@@ -43,11 +43,17 @@ RESPONSE_FORMATS = {
         'required':['why_correct','why_wrong','mnemonic','doc_search']}}""",
 }
 ```
-Further schemas, same style: `"hint"` {hint_1, hint_2}; `"deep_dive"` {summary, how_it_works[], when_to_use, exam_traps[]} (the core Deep dive - the **question's topic**, no option picker, `$quiz/screens`); `"debrief"` {patterns[], priority_actions[], one_thing}.
+Further schemas, same style: `"hint"` {hint_1, hint_2}; `"deep_dive"` {summary, how_it_works[], when_to_use, exam_traps[]} (the core Deep dive - the **question's topic**, no option picker, `$quiz/screens`); `"debrief"` {patterns[], priority_actions[], one_thing}; `"verify"` {is_correct (boolean), issue (string)} - the correctness check below.
 
 **Helpers live in `_cortex.py`.** Both take an optional `model` (defaulting to `CORTEX_MODEL`) so a call can use its **per-group configured model** (Admin App config - `$quiz/screens`). The model is **never a user-typed value**: it is one of `_config.py` `MODEL_OPTIONS` chosen from a selectbox, so validate it against that whitelist before interpolating (same safety class as `CORTEX_MODEL`).
 ```python
 MODEL_OPTIONS = ["claude-haiku-4-5", "claude-sonnet-4-6", "claude-opus-4-8"]  # _config.py
+
+# Per-feature sampling (AI_COMPLETE temperature range 0-1): question generation gets a moderate
+# temperature so repeated prompts vary instead of returning the same question; every other call
+# is deterministic (0) for faithful, reproducible output.
+FEATURE_TEMPERATURE = {"question": 0.4, "verify": 0.0, "explanation": 0.0,    # _config.py
+                       "hint": 0.0, "deep_dive": 0.0, "debrief": 0.0}
 
 def _model(model):
     return model if model in MODEL_OPTIONS else CORTEX_MODEL   # whitelist guard before interpolation
@@ -69,9 +75,10 @@ def call_cortex_json(prompt, fmt_key, model=None):
     """Schema-constrained completion. Returns a dict or None."""
     try:
         safe = prompt.replace("$$", "$ $")
+        temp = FEATURE_TEMPERATURE.get(fmt_key, 0.0)           # moderate for "question", 0 elsewhere
         rows = session.sql(
             f"SELECT AI_COMPLETE(model => '{_model(model)}', prompt => $${safe}$$, "
-            f"model_parameters => {{}}, response_format => {RESPONSE_FORMATS[fmt_key]})").collect()
+            f"model_parameters => {{'temperature': {temp}}}, response_format => {RESPONSE_FORMATS[fmt_key]})").collect()
         if not rows or rows[0][0] is None: return None
         raw = rows[0][0]
         data = json.loads(raw) if isinstance(raw, str) else raw
@@ -87,6 +94,10 @@ Rules:
 - **No fence-stripping, no double-encode handling, no fence-aware parser** - the single `json.loads` guard above is the whole parse path.
 - Retry on `None` only (call failed / NULL) - not on "bad JSON" (structured output removes that case).
 - For an OpenAI `gpt-*` model the schema must also set `'additionalProperties': false` and list every property in `required` (Claude doesn't need it).
+
+## Question correctness verification (the generation correctness gate)
+
+`_answers_valid` checks only **structure** (a marked letter maps to a non-empty option), not whether the marked answer is actually right. So after a generated question passes structural validation, run ONE more `call_cortex_json(..., "verify")` call - **temperature 0** (via `FEATURE_TEMPERATURE`) and grounded in the **same `<doc_context>`** as the generation - that re-reads the question, the options, and the marked `correct_answer` and returns `{is_correct, issue}`: is the marked answer correct, and is every distractor wrong, according to the documentation? On `is_correct=false`, reject the question and retry (inside the generation retry loop - `$quiz/questions`). This separates **variety** (the moderate-temperature generation) from **correctness** (this deterministic check), so generation can vary without shipping a wrong answer. In `cke`/`custom` mode the verify call embeds the same retrieved chunks; in `none` mode it checks against the model's own judgment.
 
 ---
 
@@ -121,7 +132,9 @@ Every **runtime generation path that produces exam content or doc links** is gro
 "Grounded" is a **factual-accuracy** constraint (assert nothing the docs don't support), not a *restate-the-docs* instruction. Pick the wording by what the call is for:
 
 - **Fact-extraction calls** (question generation, batch, flashcards): *"Use ONLY facts present in the documentation below; do not invent features, limits, or names. "* - strict, because a hallucinated fact becomes a wrong question.
-- **Teaching calls** (explanation, hint, deep dive): *"Ground every claim in the documentation below (state nothing it doesn't support), but EXPLAIN the concept in your own words as a tutor - synthesize the WHY, connect the ideas, make it click. Do NOT quote or paraphrase the docs line-by-line, and do NOT pepper the answer with 'the documentation says' / 'per the docs' / 'as stated in the documentation'. At most ONE short quoted passage if it truly helps; everything else is your own explanation."* The `📖` doc link already credits the source - the prose's job is to **teach**, not to cite. **Never** use the bare *"answer ONLY from the provided documentation; do not use prior knowledge"* line on a teaching call - that is exactly what produces the doc-parroting (every bullet "…in the documentation", truncated quotes with `¶`).
+- **Teaching calls** (explanation, hint, deep dive): *"Ground every claim in the documentation below (state nothing it doesn't support), but EXPLAIN the concept in your own words as a tutor, speaking to the learner directly in the second person ('you') - synthesize the WHY, connect the ideas, make it click. Do NOT quote or paraphrase the docs line-by-line, and do NOT pepper the answer with 'the documentation says' / 'per the docs' / 'as stated in the documentation'. At most ONE short quoted passage if it truly helps; everything else is your own explanation."* The `📖` doc link already credits the source - the prose's job is to **teach**, not to cite. **Never** use the bare *"answer ONLY from the provided documentation; do not use prior knowledge"* line on a teaching call - that is exactly what produces the doc-parroting (every bullet "…in the documentation", truncated quotes with `¶`).
+
+**Voice - speak to the user.** Every call whose output the user reads about themselves or their learning - the teaching calls AND the round **debrief / summary** - addresses the user in the **second person, as their tutor**: "you should review X", "you can remember this by…", "you mixed up A and B". Never the third person ("the student must…", "the user should…", "they need to…"). The debrief in particular is feedback *to* the user, not a report *about* them.
 
 **Runtime path = the Python `snowflake.core` API.** It requires the **`snowflake` package in `environment.yml`** (provides `snowflake.core`; unpinned) - omit it and the app raises `ModuleNotFoundError: snowflake.core` at load. `SNOWFLAKE.CORTEX.SEARCH_PREVIEW` is **build-time only** (the Step 1g probe / seeding recipe), never in app modules; the app role needs USAGE on the search service.
 
@@ -193,6 +206,8 @@ Run when a prompt produces wrong keys, shallow content, or unsafe interpolation.
 6. **`$$` sanitization** - `.replace("$$", "$ $")` present.
 7. **`doc_search` not `doc_url`** - in `none` mode code converts `doc_search` → `https://docs.snowflake.com/en/search?q={query}`; in `cke`/`custom` mode the link is the chunk's real `SOURCE_URL` and `doc_search` is unused. Either way the prompt must never ask for a URL (the model hallucinates them).
 8. **Model routing** - every runtime generation call passes `model=model_for(<group>)` (NOT bare `call_cortex_json(prompt, key)`): `"generation"` for questions + Admin batch, `"explanation"` for explanation/hint/deep-dive, `"meta"` for debrief. A call with no `model=` arg silently stays on `CORTEX_MODEL`, so the Admin per-call model selector is dead. The Admin Generate-batch call passes its own selected model. Flag any generation `call_cortex*` missing `model=`.
+9. **User-directed voice** - the round debrief/summary and the teaching calls (explanation/hint/deep dive) address the user in the **second person** ("you should review X"), never the third person ("the student must…", "the user should…"). FAIL on third-person framing of feedback aimed at the user.
+10. **Per-feature temperature + correctness gate** - `call_cortex_json` sets `model_parameters => {'temperature': …}` from `FEATURE_TEMPERATURE` (question moderate, every other call 0); question generation runs the temperature-0 `"verify"` correctness pass with reject+retry. FAIL if generation calls omit temperature or skip the verify pass.
 
 Output: a table (# · check · PASS/FAIL/N·A · note). Verdict - all PASS → "reliable and safe"; any FAIL → "rewrite required," show the corrected prompt in full.
 
