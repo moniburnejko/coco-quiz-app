@@ -31,7 +31,7 @@ One case rule, applied **everywhere** via the `_ui.py` helpers (never hand-typed
 
 **Sentence case, verbatim - NEVER uppercased**: question text, option text, all AI prose (explanations, hints, deep dive, round summary, debrief), mnemonics, doc URLs, and the dynamic `EXAM_NAME` (it keeps its own casing, e.g. "SnowPro Advanced: Data Engineer").
 
-**Pills carry an UPPERCASE label but a lowercase/raw value** (`st.pills` has no `format_func`): the option list is uppercase for display and the selection is normalized back for logic - both the option list and the normalizer live in `_ui.py` (e.g. `DIFFICULTY_PILLS = ["MIXED","EASY","MEDIUM","HARD"]` + `difficulty_value(label) -> label.lower()`; `SOURCE_PILLS` + its value map). The DB column values (`domain_name`, `source`, `difficulty`) are **unchanged**; only the displayed label is uppercased. Enforced by the gate's case-audit check (`$quiz/screens`).
+**Pills show an UPPERCASE label but keep the raw value** via `st.pills(..., format_func=str.upper)`: `format_func` transforms only the *display*, and `st.pills` still returns the raw option, so the option list stays the lowercase/raw values (`difficulty = ["mixed","easy","medium","hard"]`, domains = the real `DOMAIN_NAME`s) and no separate normalizer is needed. When the display text differs from the value entirely, pass a dict-backed `format_func` (e.g. `lambda v: SOURCE_LABELS.get(v, v.upper())`). The DB column values (`domain_name`, `source`, `difficulty`) are **unchanged**; only the displayed label is uppercased. For DB-enum display *outside* pills (badges, table cells, table headers) use the `_ui.py` label helpers (`source_label`, `column_label`). Enforced by the gate's case-audit check (`$quiz/screens`).
 
 # Badges
 
@@ -90,8 +90,8 @@ There is **one** shared-UI module, **`_ui.py`**. Every page imports it and route
 - `md(text)` - the `$`-escaper (below). · `cfg_index(options, value, default)` - guarded selectbox index.
 - `page_title(text)` → `st.markdown(f"## {text}")` · `section_header(label)` → `st.markdown(f"**{label.upper()}**")`.
 - `render_domain_badge(name)` / `render_difficulty_badge(diff)` - the UPPERCASE badges. · `render_docs_link(url)` - the `📖` link (only when present).
-- **Case/label helpers** (the UI-text-case rule): `DIFFICULTY_PILLS` / `SOURCE_PILLS` (UPPERCASE option lists) + `difficulty_value()` / `source_value()` normalizers; `SOURCE_LABELS = {"MANUAL":"MANUAL","AI_GENERATED":"AI GENERATED"}` + `source_label(v)`; `column_label(col)` → display header (`QUESTION_ID`→"QUESTION ID", underscore→space, title/upper per the table contract).
-- Button helper(s) so action buttons share `type`/`use_container_width` defaults.
+- **Case/label helpers** (the UI-text-case rule): pills get their UPPERCASE display from `format_func=str.upper` (raw values stay the options - no normalizer); for DB-enum display outside pills, `SOURCE_LABELS = {"MANUAL":"MANUAL","AI_GENERATED":"AI GENERATED"}` + `source_label(v)`, and `column_label(col)` → display header (`QUESTION_ID`→"QUESTION ID", underscore→space, uppercase).
+- Button helper(s) so action buttons share `type`/`width` defaults.
 
 ---
 
@@ -183,8 +183,8 @@ Applies in: inside the on-demand AI-explanation expander (after the **💡 AI ex
 
 # Buttons
 
-- No emoji in button labels: `"Start Round"` not `"▶️ Start Round"`
-- Action buttons: `type="primary"`, `use_container_width=True`
+- No **decorative** emoji on plain action buttons (`"START ROUND"`, not `"▶️ START ROUND"`); the learning-aid buttons keep their **semantic** icon: `"💡 HINT"`, `"💡 AI EXPLANATION"`, `"🔬 DEEP DIVE"`.
+- Action buttons: `type="primary"`, `width='stretch'` (the full-width form)
 - All pills: `label_visibility="collapsed"` (bold Markdown label above instead)
 - **Low-emphasis / deliberately understated destructive action** (e.g. Admin "Reset all logs"): `type="tertiary"` (borderless/frameless) - no expander, no "DANGER ZONE" framing; the safety is the **two-step Confirm/Cancel**, not visual alarm. (`type="tertiary"` is the borderless variant; `"secondary"` still draws a border.)
 

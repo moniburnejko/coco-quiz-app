@@ -172,7 +172,7 @@ When loading from DB, try in order:
 3. `domain only` (full pool, no exclusion)
 4. `generate_ai_question()` (auto-fallback when DB exhausted)
 
-**Every level selects with `ORDER BY RANDOM() LIMIT 1` - never sequential / ordered-by-id.** combined with the `NOT IN (shown)` dedup this gives shuffled, non-repeating coverage. (`_shuffle_options` then randomizes option positions - see below.)
+**Every level selects with `ORDER BY RANDOM() LIMIT 1` - never sequential / ordered-by-id.** combined with the `NOT IN (shown)` dedup this gives shuffled, non-repeating coverage. (`_shuffle_options` then randomizes option positions - see below.) Each level **selects `doc_url` too**, so a bank-served question carries `DOC_URL` for the explanation link (`$quiz/screens` reuses it); a manual CSV row may have it NULL, and the explanation then falls back to a fresh doc search.
 
 Reference: see `_get_db_question()` in `_questions.py`
 
@@ -287,7 +287,7 @@ In `cke`/`custom` grounding mode the generator grounds in retrieved docs and ans
 ```python
 chunks = search_docs(f"{domain_name}: {topic}")
 ```
-- **Embed `chunks` in `<doc_context>`** as the primary source ("answer only from this; do not use prior knowledge"), with the topic-relevant `key_facts` as supporting scope (keeps coverage when a topic is thin in the docs). Store the top chunk's `SOURCE_URL` on the question as `DOC_URL`.
+- **Embed `chunks` in `<doc_context>`** as the primary source ("answer only from this; do not use prior knowledge"), with the topic-relevant `key_facts` as supporting scope (keeps coverage when a topic is thin in the docs). After generation, **re-rank the retrieved `chunks` by token-Jaccard overlap with the generated `question_text`** (reuse the `_tokens` tokeniser from Deduplication) and store the best-matching chunk's `SOURCE_URL` as the question's `DOC_URL` - the broad `{domain_name}: {topic}` retrieval can rank a loosely-related page first, and the generated question is the better key. The explanation reuses this `DOC_URL` (`$quiz/screens`) and never re-searches for the link.
 - **If `chunks == []`:** broaden the query once (`f"{domain_name}"`); if still empty, **fail this generation** (`return None` - the retry loop counts it). Do NOT generate from built-in knowledge.
 
 `none` mode (non-Snowflake exams, explicit opt-in) is the only ungrounded path - `$cortex` owns that branch. Grounding never narrows exam scope: the topic/domain still drive the question.
@@ -308,7 +308,7 @@ The code then adds UPPERCASE keys (`QUESTION_TEXT`, `DOMAIN_ID`, `DOMAIN_NAME`, 
 
 # Bank persistence
 
-Runtime AI generation **grows the bank**: when `generate_ai_question` returns a validated question, **INSERT it into `QUIZ_QUESTIONS`** (bind params per `$sis`; `source='AI_GENERATED'`; columns `domain_id`, `domain_name`, `difficulty`, `question_text`, `is_multi`, `option_a..e`, `correct_answer` - `question_id`/`created_at` are auto). The persist is **fire-and-forget**: the in-memory question keeps `QUESTION_ID = None` (`history_item.question_id` is `int/None`). **"Question Bank" mode serves persisted rows with no AI call.**
+Runtime AI generation **grows the bank**: when `generate_ai_question` returns a validated question, **INSERT it into `QUIZ_QUESTIONS`** (bind params per `$sis`; `source='AI_GENERATED'`; columns `domain_id`, `domain_name`, `difficulty`, `question_text`, `is_multi`, `option_a..e`, `correct_answer`, `doc_url` - `question_id`/`created_at` are auto). The persist is **fire-and-forget**: the in-memory question keeps `QUESTION_ID = None` (`history_item.question_id` is `int/None`). **"Question Bank" mode serves persisted rows with no AI call.**
 
 - **Exact-text dedup**: insert only when no row with the same `question_text` already exists - `INSERT … SELECT … WHERE NOT EXISTS (SELECT 1 FROM {FQ}.QUIZ_QUESTIONS WHERE QUESTION_TEXT = ?)` (qmark bind, per `$sis`) - so re-asked concepts don't pile up duplicates.
 - **Always on** (no toggle). Persist the question as generated; `_get_db_question` re-shuffles option order on load anyway.
