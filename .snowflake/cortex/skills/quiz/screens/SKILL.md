@@ -36,7 +36,7 @@ main.py  ->  st.navigation([
 
 **Config layer**: runtime behavior toggles live in `QUIZ_CONFIG` (defaults in `_config.py` `CONFIG_DEFAULTS`, DB overrides; `load_config()` cached + `save_config()` in `_data.py`, both with `clear_caches()` on write). Gates used below: `hints_enabled`, `debrief_enabled` (both in `CONFIG_DEFAULTS`), and the **per-call-group model** keys `model_generation` / `model_explanation` / `model_meta` - these **default inline to `CORTEX_MODEL`** via `.get(key, CORTEX_MODEL)` (NOT a `CONFIG_DEFAULTS` entry), so they always track the base model instead of pinning a second hardcoded default; see Admin App config. (There is no `explanations_default` config - the explanation + deep-dive are always on-demand. There is **no** `default_round_size` or `pass_threshold_override` config - round size is set on Home each round, and the pass threshold is the fixed `PASS_THRESHOLD` study proxy, not user-tunable.)
 
-**Config (de)serialization — COPY this; it is the #1 config crash.** `QUIZ_CONFIG.config_value` is `VARIANT`. The round-trip is **`PARSE_JSON(?)` on write + `json.loads` on read** — and it goes through the **one `save_config()` helper**. Do NOT inline a config MERGE in a page, and **NEVER `TO_VARIANT(json.dumps(value))`** — that double-encodes (stores `"\"ai\""`, reads back the literal `'"ai"'`) and then `options.index('"ai"')` raises `ValueError`. (`PARSE_JSON` here is in a MERGE `USING` sub-select, which is allowed — the `$sis` "no PARSE_JSON inside `VALUES(`" rule is only about `INSERT … VALUES`.) VARIANT is kept (matches the DDL + the Step-1g `grounding_mode` seed); a plain `VARCHAR` column would also work but needs no schema change, so don't.
+**Config (de)serialization - COPY this; it is the #1 config crash.** `QUIZ_CONFIG.config_value` is `VARIANT`. The round-trip is **`PARSE_JSON(?)` on write + `json.loads` on read** - and it goes through the **one `save_config()` helper**. Do NOT inline a config MERGE in a page, and **NEVER `TO_VARIANT(json.dumps(value))`** - that double-encodes (stores `"\"ai\""`, reads back the literal `'"ai"'`) and then `options.index('"ai"')` raises `ValueError`. (`PARSE_JSON` here is in a MERGE `USING` sub-select, which is allowed - the `$sis` "no PARSE_JSON inside `VALUES(`" rule is only about `INSERT … VALUES`.) VARIANT is kept (matches the DDL + the Step-1g `grounding_mode` seed); a plain `VARCHAR` column would also work but needs no schema change, so don't.
 ```python
 # _data.py
 def save_config(key, value):
@@ -59,18 +59,49 @@ def load_config():
         cfg[r["CONFIG_KEY"]] = v
     return cfg
 ```
-**Guard every config-seeded widget default** — a stored value that isn't in the options list must never crash the page (`ValueError`/`StreamlitAPIException`). Use a helper, never a bare `options.index(cfg[key])`:
+**Guard every config-seeded widget default** - a stored value that isn't in the options list must never crash the page (`ValueError`/`StreamlitAPIException`). Use a helper, never a bare `options.index(cfg[key])`:
 ```python
 def cfg_index(options, value, default=0):       # _ui.py
     return options.index(value) if value in options else default
 # st.selectbox("Model", MODEL_OPTIONS, index=cfg_index(MODEL_OPTIONS, cfg.get("model_generation", CORTEX_MODEL)))
 ```
 
+**`_ui.py` - the ONE shared style/helpers module (COPY + ADAPT).** Every page imports these; **no raw `st.title` / `st.markdown("## …")` / `st.markdown("**…**")` / hardcoded category labels in page code** (`$quiz/design` - Shared UI module + UI-text-case rule).
+```python
+# _ui.py - shared style + helpers. The ONLY place titles / section headers / labels / badges / case live.
+import streamlit as st
+
+def md(text) -> str:                                  # $-escape so dynamic text never renders as LaTeX
+    return ("" if text is None else str(text)).replace("$", r"\$")
+
+def page_title(text):       st.markdown(f"## {text}")            # page/tab entry title - NEVER st.title
+def section_header(label):  st.markdown(f"**{str(label).upper()}**")  # in-page section - NEVER st.subheader
+
+def render_domain_badge(name):  return f":blue-badge[{(name or '').upper()}]"
+def render_difficulty_badge(diff):
+    d = (diff or "medium").lower()
+    return {"easy": ":green-badge[EASY]", "hard": ":red-badge[HARD]"}.get(d, ":orange-badge[MEDIUM]")
+
+def render_docs_link(url):
+    if url and url.strip():  st.markdown(f"📖 [Snowflake Documentation]({url.strip()})")
+
+def cfg_index(options, value, default=0):             # guarded selectbox index - never bare .index()
+    return options.index(value) if value in options else default
+
+# UI-text-case rule ($quiz/design): pills/labels show UPPERCASE, logic uses the lowercase/raw value.
+DIFFICULTY_PILLS = ["MIXED", "EASY", "MEDIUM", "HARD"]
+def difficulty_value(label):  return (label or "MIXED").lower()        # "EASY" -> "easy" for the query
+SOURCE_PILLS = ["QUESTION BANK", "AI GENERATED"]                       # Home source-filter labels
+SOURCE_LABELS = {"MANUAL": "MANUAL", "AI_GENERATED": "AI GENERATED"}   # DB enum -> display label
+def source_label(v):   return SOURCE_LABELS.get(v, (v or "").replace("_", " ").upper())
+def column_label(col): return (col or "").replace("_", " ").upper()    # QUESTION_ID -> "QUESTION ID" (table headers)
+```
+
 **Entry point (`main.py`)**: `st.set_page_config` (first `st.` call) -> `init_session_state()` -> shared sidebar title -> `st.navigation(pages).run()`. Pages share `st.session_state` (it persists across page switches).
 
 **Inside `pages/quiz.py`** the three screens are an internal state machine driven by `st.session_state["screen"]` (`home` / `quiz` / `summary`) - they are NOT separate pages.
 
-**Inside `pages/review.py`** the tabs are `st.pills` with `st.divider()` and `st.title()` per tab, driven by `_review_page` - `WRONG ANSWERS` and `LEARNING DASHBOARD`.
+**Inside `pages/review.py`** each tab body opens with `page_title()` (NEVER `st.title`) and uses `section_header()` for its sections (`$quiz/design`).
 
 Cross-page redirects: set the target state, then `st.switch_page("pages/<target>.py")`.
 
@@ -149,11 +180,11 @@ Pair this with the spinner + single-`st.rerun()` rule in `$sis`.
 
 The 📖 doc link appears **only inside this expander, only after the button is clicked** - never auto-shown (not even for correct answers). Render every dynamic field (`why_correct`, `why_wrong`, `mnemonic`) through the `_ui.py` `md()` escaper before `st.markdown`/`st.info` (`$quiz/design` - escaping dynamic text). Store `mnemonic` + `doc_url` on `current_history_item` for the review log.
 
-**Doc grounding is MANDATORY in `cke`/`custom` mode (`$cortex`)**: retrieve `chunks = search_docs(question_text)` once; if `[]`, broaden once, else **fail visibly** (no built-in). Embed the top chunk(s) in the prompt as `<doc_context>`; `doc_url = chunks[0]["SOURCE_URL"]`. This is a **teaching** call — use the **teaching grounding style** (`$cortex` "Grounded ≠ parroting"): ground every claim in the chunks, but **EXPLAIN the concept in your own words**; do NOT use the bare *"answer ONLY from the provided documentation"* line, do NOT quote the docs line-by-line, and do NOT write every bullet as "the documentation says…". **`none` mode only**: the prompt asks for `doc_search` ("2-3 words, no URLs/commas") → `https://docs.snowflake.com/en/search?q={query}`.
+**Doc grounding is MANDATORY in `cke`/`custom` mode (`$cortex`)**: retrieve `chunks = search_docs(question_text)` once; if `[]`, broaden once, else **fail visibly** (no built-in). Embed the top chunk(s) in the prompt as `<doc_context>`; `doc_url = chunks[0]["SOURCE_URL"]`. This is a **teaching** call - use the **teaching grounding style** (`$cortex` "Grounded ≠ parroting"): ground every claim in the chunks, but **EXPLAIN the concept in your own words**; do NOT use the bare *"answer ONLY from the provided documentation"* line, do NOT quote the docs line-by-line, and do NOT write every bullet as "the documentation says…". **`none` mode only**: the prompt asks for `doc_search` ("2-3 words, no URLs/commas") → `https://docs.snowflake.com/en/search?q={query}`.
 
-**Explanation prompt content** - the schema guarantees shape, the prompt controls quality. Lead with: *"You are a SnowPro tutor. Explain comprehensively and holistically WHY the correct answer is right and each distractor is wrong — teach the underlying concept so it sticks. Ground every claim in `<doc_context>` but write in your own words; cite at most one short passage."* Then the fields:
+**Explanation prompt content** - the schema guarantees shape, the prompt controls quality. Lead with: *"You are a SnowPro tutor. Explain comprehensively and holistically WHY the correct answer is right and each distractor is wrong - teach the underlying concept so it sticks. Ground every claim in `<doc_context>` but write in your own words; cite at most one short passage."* Then the fields:
 ```
-"why_correct": ["First reason — a real explanation of the mechanism, not 'the docs say X'", "Second reason with technical detail", "Optional third"],
+"why_correct": ["First reason - a real explanation of the mechanism, not 'the docs say X'", "Second reason with technical detail", "Optional third"],
 "why_wrong": {"X": "one sentence explaining the actual misconception behind option X", "Y": "..."},
 "mnemonic": "a memorable phrase or acronym for the correct answer",
 "doc_search": "exactly 2-3 words for Snowflake docs search. No URLs. No commas. Max 3 words."
@@ -165,12 +196,12 @@ A single **"🔬 Deep dive"** button - **NO option picker** → `call_cortex_jso
 
 ---
 
-# Reference code (COPY + ADAPT — the high-fidelity-risk handlers)
+# Reference code (COPY + ADAPT - the high-fidelity-risk handlers)
 
-The prose above is the contract; this is the **reference implementation of the parts that are repeatedly gotten wrong** (home slider, hint state machine, on-demand spinner, stacked after-submit layout, deep-dive-in-expander, sidebar End Round). **Copy these handlers and adapt** (swap `EXAM_NAME`, wire your `_cortex`/`_search`/`_data` helpers) — do not re-derive them from the prose. The Step-8 UX-conformance gate checks that the generated `quiz.py` matches these shapes.
+The prose above is the contract; this is the **reference implementation of the parts that are repeatedly gotten wrong** (home slider, hint state machine, on-demand spinner, stacked after-submit layout, deep-dive-in-expander, sidebar End Round). **Copy these handlers and adapt** (swap `EXAM_NAME`, wire your `_cortex`/`_search`/`_data` helpers) - do not re-derive them from the prose. The Step-8 UX-conformance gate checks that the generated `quiz.py` matches these shapes.
 
 ```python
-# pages/quiz.py — reference for render_home / render_quiz (hard parts). LETTERS = ["A","B","C","D","E"]
+# pages/quiz.py - reference for render_home / render_quiz (hard parts). LETTERS = ["A","B","C","D","E"]
 
 def render_home():
     cfg = load_config(); domains = load_domains()
@@ -216,7 +247,7 @@ def render_quiz():
             st.session_state["question"] = get_question()
         st.rerun()
 
-    with st.sidebar:                                              # END ROUND — always present in quiz
+    with st.sidebar:                                              # END ROUND - always present in quiz
         if st.button("End Round", use_container_width=True, key="btn_end_round"):
             st.session_state["_pending_finish"] = True
     if st.session_state.get("_pending_finish") and st.session_state.get("answered"):
@@ -230,7 +261,7 @@ def render_quiz():
     st.markdown(f"#### {md(q.get('QUESTION_TEXT',''))}")
     options = {lt: q.get(f"OPTION_{lt}") for lt in LETTERS if q.get(f"OPTION_{lt}")}
 
-    # answer input (radio single / checkbox multi), disabled once answered — NO per-option ✅/❌ markup
+    # answer input (radio single / checkbox multi), disabled once answered - NO per-option ✅/❌ markup
     if not q.get("IS_MULTI"):
         chosen = st.radio("Answer", [f"{lt}) {md(t)}" for lt, t in options.items()], index=None,
                           disabled=answered, key=f"radio_{idx}", label_visibility="collapsed")
@@ -240,7 +271,7 @@ def render_quiz():
         selected = [lt for lt in options if st.checkbox(f"{lt}) {md(options[lt])}", key=f"cb_{lt}", disabled=answered)]
 
     if not answered:
-        # HINT — state machine: render revealed hints FIRST, then the button (relabels, hides at level 2)
+        # HINT - state machine: render revealed hints FIRST, then the button (relabels, hides at level 2)
         if cfg.get("hints_enabled", True):
             hint, lvl = st.session_state.get("hint"), st.session_state.get("hint_level", 0)
             if isinstance(hint, dict):
@@ -281,7 +312,7 @@ def render_quiz():
             _advance(is_last)    # write-back if last/pending, else load next + reset hint/explanation/deep_dive
 ```
 
-Notes the gate enforces: round size is a **slider**; the hint **state machine** (no double-dump, button hides at level 2, prior hints persist); **End Round** in the sidebar; the explanation is **stacked** with **Next pinned last**; **Deep dive lives inside `_render_explanation_expander`** (the quiz screen, on the question's topic) — **never** in the summary; no per-option ✅/❌ markup; the missed-question summary shows **full-text** correct answers only.
+Notes the gate enforces: round size is a **slider**; the hint **state machine** (no double-dump, button hides at level 2, prior hints persist); **End Round** in the sidebar; the explanation is **stacked** with **Next pinned last**; **Deep dive lives inside `_render_explanation_expander`** (the quiz screen, on the question's topic) - **never** in the summary; no per-option ✅/❌ markup; the missed-question summary shows **full-text** correct answers only.
 
 ---
 
@@ -334,22 +365,22 @@ Each submitted answer is appended to `round_history`:
 
 Query `QUIZ_REVIEW_LOG` via the cached loader in `_data.py` (`@st.cache_data` with NO ttl, `get_active_session()` inside - see `$sis` Caching). Do NOT query directly in the page code. Freshness comes from `clear_caches()` at write time, not from a ttl.
 
-Filters (BOTH always present — the app-v4 regression was a filterless log dump): a **domain `st.pills`** (multi-select, empty = all) over the distinct `DOMAIN_NAME` values, PLUS a **date-range `st.date_input`** - **always shown**, even when all wrong answers fall on one day (do NOT hide it when `min == max`; pass that single date as both `value` ends + `min_value`/`max_value`). Keep a row when (no domain selected OR its `DOMAIN_NAME` is in the selection) AND its cast `LOGGED_AT` date is within `[start, end]`. Filtering is **client-side in Python over the cached frame** — the loader takes no params and never filters server-side. Show a `st.caption` with the filtered count.
+Filters (BOTH always present): a **domain `st.pills`** (multi-select, empty = all) over the distinct `DOMAIN_NAME` values, PLUS a **date-range `st.date_input`** - **always shown**, even when all wrong answers fall on one day (do NOT hide it when `min == max`; pass that single date as both `value` ends + `min_value`/`max_value`). Keep a row when (no domain selected OR its `DOMAIN_NAME` is in the selection) AND its cast `LOGGED_AT` date is within `[start, end]`. Filtering is **client-side in Python over the cached frame** - the loader takes no params and never filters server-side. Show a `st.caption` with the filtered count.
 
 Wrong answer cards: `st.container(border=True)` with domain badge + difficulty badge + date (`:gray-badge[YYYY-MM-DD]`) badge, question text, **correct answer in FULL TEXT**, mnemonic (`st.info` 🧠) only-when-present, doc link only-when-present.
 
-**Correct answer — FULL TEXT, NEVER a bare letter.** Render `**Correct answer:** {md(CORRECT_ANSWER)}` straight from the `QUIZ_REVIEW_LOG.CORRECT_ANSWER` column. That column is **already stored resolved** as `"{letter}) {full_text}"` (joined with ` & ` for multi-answer) by the Write-Back Contract — so the card does a **plain passthrough with NO letter→option lookup** (the review log has no `OPTION_*` columns to look up anyway). A card reading `Correct: A` is the exact app-v4 anti-pattern to avoid; it must read e.g. `Correct answer: B) Time Travel lets you query historical data`. Do NOT show the user's pick (the log never stores it). Escape through `md()` so a `$` in the answer text doesn't render as LaTeX (`$quiz/design`).
+**Correct answer - FULL TEXT, NEVER a bare letter.** Render `**Correct answer:** {md(CORRECT_ANSWER)}` straight from the `QUIZ_REVIEW_LOG.CORRECT_ANSWER` column. That column is **already stored resolved** as `"{letter}) {full_text}"` (joined with ` & ` for multi-answer) by the Write-Back Contract - so the card does a **plain passthrough with NO letter→option lookup** (the review log has no `OPTION_*` columns to look up anyway). A card must never read just `Correct: A`; it must read e.g. `Correct answer: B) Time Travel lets you query historical data`. Do NOT show the user's pick (the log never stores it). Escape through `md()` so a `$` in the answer text doesn't render as LaTeX (`$quiz/design`).
 
-**Mnemonic — render ONLY when a real one exists; guard the literal string `"None"`.** A wrong answer the user never opened the explanation on has an empty `mnemonic` (the column is `VARCHAR`, not VARIANT), and a Python `None` coerced via `str()` surfaces as the literal text `"None"`. Render the `st.info("🧠 …")` box **only** when the value is truthy AND not the literal `"None"` — e.g. `mnem = (row["MNEMONIC"] or "").strip()` then `if mnem and mnem.lower() != "none": st.info(f"🧠 {md(mnem)}")`. This prevents the app-v4 `🧠 None` box. `st.info` is mnemonic-only (`$quiz/design` — never for status). The doc link follows the same only-when-present guard and uses the standard format `📖 [Snowflake Documentation]({url})`.
+**Mnemonic - render ONLY when a real one exists; guard the literal string `"None"`.** A wrong answer the user never opened the explanation on has an empty `mnemonic` (the column is `VARCHAR`, not VARIANT), and a Python `None` coerced via `str()` surfaces as the literal text `"None"`. Render the `st.info("🧠 …")` box **only** when the value is truthy AND not the literal `"None"` - e.g. `mnem = (row["MNEMONIC"] or "").strip()` then `if mnem and mnem.lower() != "none": st.info(f"🧠 {md(mnem)}")`. This prevents a `🧠 None` box. `st.info` is mnemonic-only (`$quiz/design` - never for status). The doc link follows the same only-when-present guard and uses the standard format `📖 [Snowflake Documentation]({url})`.
 
 **Date handling** (filters + dashboard): values from the cached loader are Snowflake datetimes - cast with `datetime.date(raw.year, raw.month, raw.day)` before feeding any widget or doing date arithmetic. The Wrong-Answers date filter is an **`st.date_input` range** (always rendered - see above); `st.date_input` returns a 1- or 2-tuple mid-selection, so **defensively unpack** both ends before comparing. Compare each row's cast `LOGGED_AT` date against the selected `[start, end]` in Python. For any `TIMESTAMP_LTZ` range query in SQL, pass dates as `strftime("%Y-%m-%d")` strings with an exclusive upper bound (`< end + 1 day`) to include the full last day. Never pass a `datetime.date` to `st.slider` (`$sis`).
 
-## Reference code (COPY + ADAPT — Review Wrong-Answers handler)
+## Reference code (COPY + ADAPT - Review Wrong-Answers handler)
 
-The prose above is the contract; this is the **reference implementation of the Review Wrong-Answers parts that one-shot generation gets wrong** (app-v4 shipped a bare-letter correct answer, a `🧠 None` mnemonic box, and a filterless log dump). **Copy this handler and adapt** — do not re-derive it from the prose. The Step-8 UX gate checks `review.py` against this shape. It is `st.pills`-driven tab content in `pages/review.py`; `load_review_log`/`clear_caches` are the `_data.py` loaders (no ttl), `md`/`render_domain_badge`/`render_difficulty_badge` are the `_ui.py` helpers (`$quiz/design`); `LETTERS = ["A","B","C","D","E"]`.
+The prose above is the contract; this is the **reference implementation of the Review Wrong-Answers handler**. **Copy this handler and adapt** - do not re-derive it from the prose. The Step-8 UX gate checks `review.py` against this shape. It is `st.pills`-driven tab content in `pages/review.py`; `load_review_log`/`clear_caches` are the `_data.py` loaders (no ttl), `md`/`render_domain_badge`/`render_difficulty_badge` are the `_ui.py` helpers (`$quiz/design`); `LETTERS = ["A","B","C","D","E"]`.
 
 ```python
-# pages/review.py — reference for the WRONG ANSWERS sub-tab. LETTERS = ["A","B","C","D","E"]
+# pages/review.py - reference for the WRONG ANSWERS sub-tab. LETTERS = ["A","B","C","D","E"]
 import datetime
 
 def _cast_date(raw):                                            # Snowflake datetime → date before any widget/math
@@ -357,16 +388,16 @@ def _cast_date(raw):                                            # Snowflake date
 
 def render_wrong_answers():
     rows = load_review_log()       # cached (@st.cache_data, NO ttl, get_active_session() inside) → list[Row], newest first
-    if not rows:                   # list[Row] — read fields by row["UPPER"], never .get()/attr on a Row ($sis item 20)
-        st.markdown(":gray-badge[No wrong answers logged yet — finish a round to populate this.]"); return
+    if not rows:                   # list[Row] - read fields by row["UPPER"], never .get()/attr on a Row ($sis item 20)
+        st.markdown(":gray-badge[No wrong answers logged yet - finish a round to populate this.]"); return
 
-    # FILTERS — both always rendered. Domain pills (empty = all) + date-range (shown even when min == max).
+    # FILTERS - both always rendered. Domain pills (empty = all) + date-range (shown even when min == max).
     dom_opts = sorted({r["DOMAIN_NAME"] for r in rows if r["DOMAIN_NAME"]})
     doms = st.pills("Filter by domain", dom_opts, selection_mode="multi",
                     default=[], key="wa_domain", label_visibility="collapsed")
 
     dates = [_cast_date(r["LOGGED_AT"]) for r in rows]
-    min_d, max_d = min(dates), max(dates)                       # safe — rows is non-empty past the guard above
+    min_d, max_d = min(dates), max(dates)                       # safe - rows is non-empty past the guard above
     rng = st.date_input("Date range", value=(min_d, max_d),
                         min_value=min_d, max_value=max_d, key="wa_dates")
     start = rng[0] if isinstance(rng, (list, tuple)) and len(rng) >= 1 else min_d
@@ -383,7 +414,7 @@ def render_wrong_answers():
             st.markdown(f"{render_domain_badge(r['DOMAIN_NAME'] or '')}  "
                         f"{render_difficulty_badge(r['DIFFICULTY'] or 'medium')}  :gray-badge[{d}]")
             st.markdown(f"#### {md(r['QUESTION_TEXT'])}")
-            st.markdown(f"**Correct answer:** {md(r['CORRECT_ANSWER'])}")   # FULL TEXT, stored resolved — no letter lookup
+            st.markdown(f"**Correct answer:** {md(r['CORRECT_ANSWER'])}")   # FULL TEXT, stored resolved - no letter lookup
             mnem = (r["MNEMONIC"] or "").strip()
             if mnem and mnem.lower() != "none":                  # guard None, "", AND the literal "None" → no 🧠 None box
                 st.info(f"🧠 {md(mnem)}")
@@ -431,7 +462,7 @@ Admin's widget / pagination / pending-confirm keys - `_qm_filters`, `_qm_select_
 
 Each defaults to `CORTEX_MODEL` (`load_config().get(f"model_{group}", CORTEX_MODEL)`); the call sites read it via `model_for(group)` and pass it to `call_cortex`/`call_cortex_json` (`$cortex`). The Cortex-spend "by model" chart reflects these choices.
 
-**Do NOT show:** `grounding_mode` (fixed at setup, `$setup-exam` Step 1g - not a runtime toggle, so don't surface it at all), `pass_threshold_override` (the official threshold doesn't change - removed), `default_round_size` (set on Home before each round - redundant), and `question_source` / `difficulty` (these are **per-round Home choices**, never global config - re-adding them here as selectboxes is the exact app-v4 regression to avoid; App config holds ONLY the two toggles + the three model selectboxes). The only grounding UI here is the guard: in `cke`/`custom` mode, if `docs_available()` is False, a red caption - "The doc grounding service is unavailable - install/grant the Snowflake Documentation CKE; the app can't generate until it's reachable." Every change → the **`save_config()` helper** (the `PARSE_JSON` round-trip from Config layer — NEVER inline a config MERGE here, NEVER `TO_VARIANT(json.dumps())`) → `clear_caches()` (clears `docs_available`/`search_docs` too) → `st.toast`. The three model `st.selectbox`es seed their `index` via `cfg_index(MODEL_OPTIONS, cfg.get(f"model_{group}", CORTEX_MODEL))` (never a bare `.index()` — see Config layer).
+**Do NOT show:** `grounding_mode` (fixed at setup, `$setup-exam` Step 1g - not a runtime toggle, so don't surface it at all), `pass_threshold_override` (the official threshold doesn't change - removed), `default_round_size` (set on Home before each round - redundant), and `question_source` / `difficulty` (these are **per-round Home choices**, never global config - they are never re-added here as selectboxes; App config holds ONLY the two toggles + the three model selectboxes). The only grounding UI here is the guard: in `cke`/`custom` mode, if `docs_available()` is False, a red caption - "The doc grounding service is unavailable - install/grant the Snowflake Documentation CKE; the app can't generate until it's reachable." Every change → the **`save_config()` helper** (the `PARSE_JSON` round-trip from Config layer - NEVER inline a config MERGE here, NEVER `TO_VARIANT(json.dumps())`) → `clear_caches()` (clears `docs_available`/`search_docs` too) → `st.toast`. The three model `st.selectbox`es seed their `index` via `cfg_index(MODEL_OPTIONS, cfg.get(f"model_{group}", CORTEX_MODEL))` (never a bare `.index()` - see Config layer).
 
 ## 2. Questions manager
 
@@ -453,11 +484,11 @@ Two nested `st.tabs` - **Bank** and **Generate**.
   - **Editor-state discipline (the hard part - follow vendors02 `01_ai_recommendations.py`):** keep a signature of the rendered slice (tuple of `QUESTION_ID`s). On a **non-append** change (filters/Search/Delete changed the set) drop the `data_editor` widget key and reset `_qm_select_all` so the checkbox column re-seeds cleanly; on a **pure append** (Load-10-more extends the slice) keep the selection. Without this, selection jumps on every Load-more/Search.
   - **Edit vs Add form (one form, a mode flag):** `_qm_mode` ∈ `"add"`/`"edit"` (+ `_qm_edit_id` for edit). **Add** renders the empty `st.form(clear_on_submit=True)` → INSERT. **Edit** seeds the form from the selected row by writing the field values into the widget `session_state` keys at the **top of the run, before the widgets render** (flag-at-top - `$sis` widget lifecycle); **never pass both `value=`/`default=` and also set the `session_state` key** (raises "created with a default value but also had its value set"). Switching Add↔Edit clears the prior field keys via the same flag-at-top reset.
 
-**Generate** - Generate batch with options: **count** (`st.slider`, 1-20 - each item is its own grounded LLM call, so the batch is capped to stay well under the statement timeout; never an unbounded `st.number_input`), **difficulty** (pills, incl. "mixed"), **domain** (`st.selectbox`/multiselect over `EXAM_DOMAINS`), and **model** (`st.selectbox` over `MODEL_OPTIONS`, `index` seeded via `cfg_index(MODEL_OPTIONS, cfg.get("model_generation", CORTEX_MODEL))`) → generates via the **same grounded `_questions.py` path** (`$quiz/questions`: in `cke`/`custom` mode each question embeds retrieved `<doc_context>` as the primary source with `key_facts` as supporting scope, answers ONLY from the docs, fails visibly on empty retrieval - never built-in) → INSERT `source='AI_GENERATED'` → `clear_caches()`. **Feedback is mandatory** (the app-v4 "silent batch" bug): run the loop under one `st.spinner`, then on completion fire an `st.toast` **and** render a transient `:green-badge[Added N question(s)]` line (NEVER `st.success`/`st.warning` - `$quiz/design`); a `st.caption` notes larger batches take longer and cost more. The batch passes its chosen model through `call_cortex_json(..., model=…)`.
+**Generate** - Generate batch with options: **count** (`st.slider`, 1-20 - each item is its own grounded LLM call, so the batch is capped to stay well under the statement timeout; never an unbounded `st.number_input`), **difficulty** (pills, incl. "mixed"), **domain** (`st.selectbox`/multiselect over `EXAM_DOMAINS`), and **model** (`st.selectbox` over `MODEL_OPTIONS`, `index` seeded via `cfg_index(MODEL_OPTIONS, cfg.get("model_generation", CORTEX_MODEL))`) → generates via the **same grounded `_questions.py` path** (`$quiz/questions`: in `cke`/`custom` mode each question embeds retrieved `<doc_context>` as the primary source with `key_facts` as supporting scope, answers ONLY from the docs, fails visibly on empty retrieval - never built-in) → INSERT `source='AI_GENERATED'` → `clear_caches()`. **Feedback is mandatory**: run the loop under one `st.spinner`, then on completion fire an `st.toast` **and** render a transient `:green-badge[Added N question(s)]` line (NEVER `st.success`/`st.warning` - `$quiz/design`); a `st.caption` notes larger batches take longer and cost more. The batch passes its chosen model through `call_cortex_json(..., model=…)`.
 
 ## 3. Cortex spend (graceful - distinguish "no grant" from "no data")
 
-`_cortex.py` sets a `QUERY_TAG` (JSON: `app`, `feature`, `model`) per call. Read `SNOWFLAKE.ACCOUNT_USAGE.CORTEX_AISQL_USAGE_HISTORY` (the **current** view — `CORTEX_FUNCTIONS_USAGE_HISTORY` is deprecated/"no longer updated" per Snowflake docs; columns `USAGE_TIME` / `MODEL_NAME` / `FUNCTION_NAME` / `TOKENS` / `TOKEN_CREDITS` / **`QUERY_TAG`** — the view **echoes the per-call `QUERY_TAG` directly**, so feature attribution needs **no** `QUERY_HISTORY` join) inside try/except and branch **structurally**, not "any-exception → GRANT" (an ACCOUNTADMIN holds `IMPORTED PRIVILEGES` by default, so blaming every empty/error result on permissions shows a false GRANT banner):
+`_cortex.py` sets a `QUERY_TAG` (JSON: `app`, `feature`, `model`) per call. Read `SNOWFLAKE.ACCOUNT_USAGE.CORTEX_AISQL_USAGE_HISTORY` (the **current** view - `CORTEX_FUNCTIONS_USAGE_HISTORY` is deprecated/"no longer updated" per Snowflake docs; columns `USAGE_TIME` / `MODEL_NAME` / `FUNCTION_NAME` / `TOKENS` / `TOKEN_CREDITS` / **`QUERY_TAG`** - the view **echoes the per-call `QUERY_TAG` directly**, so feature attribution needs **no** `QUERY_HISTORY` join) inside try/except and branch **structurally**, not "any-exception → GRANT" (an ACCOUNTADMIN holds `IMPORTED PRIVILEGES` by default, so blaming every empty/error result on permissions shows a false GRANT banner):
 - **Success path** - the query returned. If the result is **empty** → a plain caption: "No Cortex spend recorded yet - ACCOUNT_USAGE lags up to ~2 h, or no AI calls have run." (This is the ACCOUNTADMIN-on-a-fresh-account case; ACCOUNTADMIN holds `IMPORTED PRIVILEGES` by default, so **never** show the GRANT banner here.) Otherwise render the charts.
 - **Exception path** - inspect the error. Only when its message signals a **privilege/visibility problem on the SNOWFLAKE share** (e.g. it contains `Insufficient privileges`, `not authorized`, or `does not exist or not authorized` - the symptom of a role lacking `IMPORTED PRIVILEGES`) → the info banner with the exact `GRANT IMPORTED PRIVILEGES ON DATABASE SNOWFLAKE TO ROLE <role>;` (substitute the live `CURRENT_ROLE()`). For any **other** exception → a generic "couldn't read Cortex spend: {error}" caption, NOT the GRANT banner.
 
@@ -480,14 +511,14 @@ A read-only log viewer plus a reset - the vendors02 logs page, no download:
 - **Both log tables shown**: `QUIZ_REVIEW_LOG` via `load_review_log()` and `QUIZ_SESSION_LOG` via **`load_session_log()`** - a new no-ttl cached loader for the full session-log table (`load_recent_sessions()` is the dashboard's last-10 aggregate, NOT this); **add `load_session_log` to `_data.py` and register it in `clear_caches()`** (`$sis` item 24, else it dangles). Read-only `st.dataframe`, newest first. **No `st.download_button`.**
 - **Filters + paging** (`QUIZ_REVIEW_LOG`): a **domain `st.multiselect`** (empty = all) applied **in Python over the cached `list[Row]`** (`[r for r in rows if not doms or r["DOMAIN_NAME"] in doms]` - `load_review_log()` returns `.collect()` Rows, NOT a DataFrame), plus `Load N more` paging via a page-local `_log_limit` (don't render thousands of rows). `st.dataframe` accepts the `list[Row]` slice directly. The session-log table is shown as-is, newest first.
 - **Loader return-type convention** (`$sis` Caching): every cached loader returns a **`.collect()` `list[Row]`** (read fields by `row["UPPER"]`, never `.get()`/attr - `$sis` scan item 20) - `load_review_log`, `load_session_log`, `load_recent_sessions`, `load_domain_errors`, `load_bank_stats`, `load_domains`, `load_cortex_spend`. **The sole exception is `load_questions_page`** (the Questions-manager Bank table), which returns **`.to_pandas()`** because `st.data_editor` structurally requires a DataFrame. Do NOT "normalize" the two - a DataFrame handler against a `list[Row]` loader (or vice-versa) crashes on the first `.empty`/`.iterrows`/`[col]` call.
-- **Reset all logs** - a **frameless/borderless button** (`st.button(..., type="tertiary")`) below the tables, with **no expander and no "DANGER ZONE" label**, then a **two-step confirm** (a bordered `pending_reset` panel with Confirm / Cancel - NOT a type-`DELETE` text gate). Confirm runs `DELETE FROM` on the **two log tables only** (`QUIZ_REVIEW_LOG`, `QUIZ_SESSION_LOG`) - **NEVER `DROP`**, consistent with governance - then `clear_caches()` + `st.toast`. The reset lives **in this Logs tab**, never in App config (the app-v4 misplacement).
+- **Reset all logs** - a **frameless/borderless button** (`st.button(..., type="tertiary")`) below the tables, with **no expander and no "DANGER ZONE" label**, then a **two-step confirm** (a bordered `pending_reset` panel with Confirm / Cancel - NOT a type-`DELETE` text gate). Confirm runs `DELETE FROM` on the **two log tables only** (`QUIZ_REVIEW_LOG`, `QUIZ_SESSION_LOG`) - **NEVER `DROP`**, consistent with governance - then `clear_caches()` + `st.toast`. The reset lives **in this Logs tab**, never in App config.
 
-## Reference code (COPY + ADAPT — Admin handlers)
+## Reference code (COPY + ADAPT - Admin handlers)
 
-The prose above is the contract; this is the **reference implementation of the Admin parts that one-shot generation gets wrong** (app-v4 shipped App config with the wrong fields, a Questions manager with no editable table, a spend panel that blamed every empty result on permissions, and the log reset on the wrong tab). **Copy these handlers and adapt** — do not re-derive them from the prose. The Step-8 UX gate checks `admin.py` against these shapes. All four are `st.tabs` contents in `pages/admin.py`; `LETTERS = ["A","B","C","D","E"]`; `save_config`/`load_config`/`cfg_index`/`clear_caches` are the Config-layer helpers; `SCHEMA`/`MODEL_OPTIONS`/`CORTEX_MODEL` are `_config.py` constants.
+The prose above is the contract; this is the **reference implementation of the Admin handlers**. **Copy these handlers and adapt** - do not re-derive them from the prose. The Step-8 UX gate checks `admin.py` against these shapes. All four are `st.tabs` contents in `pages/admin.py`; `LETTERS = ["A","B","C","D","E"]`; `save_config`/`load_config`/`cfg_index`/`clear_caches` are the Config-layer helpers; `SCHEMA`/`MODEL_OPTIONS`/`CORTEX_MODEL` are `_config.py` constants.
 
 ```python
-# 1. APP CONFIG — ONLY two toggles + three model selectboxes. No source/round/difficulty/grounding/threshold.
+# 1. APP CONFIG - ONLY two toggles + three model selectboxes. No source/round/difficulty/grounding/threshold.
 def render_app_config():
     cfg = load_config()
     st.markdown("**FEATURES**")
@@ -512,7 +543,7 @@ def render_app_config():
         st.toast("Settings saved")                         # save_config already clears caches
 
 
-# 2. QUESTIONS MANAGER — nested tabs; Bank = KPIs + editable/filterable/deletable table (the app-v4 gap).
+# 2. QUESTIONS MANAGER - nested tabs; Bank = KPIs + editable/filterable/deletable table.
 def render_questions_manager():
     bank_tab, gen_tab = st.tabs(["Bank", "Generate"])
     with bank_tab:    render_bank()
@@ -522,7 +553,7 @@ def _is_append(prev, sig):                                  # append = prev is a
     return len(sig) >= len(prev) and sig[:len(prev)] == prev
 
 @st.cache_data(show_spinner=False)
-def load_questions_page(flt, limit):                        # the ONE .to_pandas() loader — st.data_editor needs a DataFrame
+def load_questions_page(flt, limit):                        # the ONE .to_pandas() loader - st.data_editor needs a DataFrame
     where, params = [], []
     for col, key in [("domain_name", "dom"), ("difficulty", "diff"), ("source", "src")]:
         vals = flt.get(key) or []
@@ -537,7 +568,7 @@ def load_questions_page(flt, limit):                        # the ONE .to_pandas
 
 def render_bank():
     rows = load_bank_stats()                                # cached coverage loader → list[Row] (domain × difficulty × source, CNT)
-    cols = st.columns(4)                                    # KPIs are st.metric, NOT a table — derive them from the rows
+    cols = st.columns(4)                                    # KPIs are st.metric, NOT a table - derive them from the rows
     cols[0].metric("Total",  sum(r["CNT"] for r in rows))
     cols[1].metric("Manual", sum(r["CNT"] for r in rows if r["SOURCE"] == "MANUAL"))
     cols[2].metric("AI",     sum(r["CNT"] for r in rows if r["SOURCE"] == "AI_GENERATED"))
@@ -642,12 +673,12 @@ def render_generate():
     cfg = load_config()
     if grounding_required() and not docs_available():
         st.markdown(":red-badge[DOC GROUNDING UNAVAILABLE] Can't generate until the CKE is reachable."); return
-    n     = st.slider("Count", 1, 20, 5, key="gen_n")       # SLIDER, capped — each item is a grounded LLM call
+    n     = st.slider("Count", 1, 20, 5, key="gen_n")       # SLIDER, capped - each item is a grounded LLM call
     diff  = st.pills("Difficulty", ["mixed","easy","medium","hard"], default="mixed", key="gen_diff") or "mixed"
     doms  = st.multiselect("Domains", [d["DOMAIN_NAME"] for d in load_domains()], key="gen_dom")
     model = st.selectbox("Model", MODEL_OPTIONS,
         index=cfg_index(MODEL_OPTIONS, cfg.get("model_generation", CORTEX_MODEL)), key="gen_model")
-    st.caption("Larger batches take longer and cost more — each question is its own grounded generation.")
+    st.caption("Larger batches take longer and cost more - each question is its own grounded generation.")
     if st.button("Generate batch", type="primary", disabled=st.session_state.get("_gen_busy", False)):
         st.session_state["_gen_busy"] = True; made = 0
         with st.spinner(f"Generating {n} question(s)…"):
@@ -657,11 +688,11 @@ def render_generate():
         clear_caches(); st.session_state["_gen_busy"] = False
         st.session_state["_gen_result"] = made
         st.toast(f"Generated {made} question(s)"); st.rerun()
-    if "_gen_result" in st.session_state:                   # transient feedback — never st.success ($quiz/design)
+    if "_gen_result" in st.session_state:                   # transient feedback - never st.success ($quiz/design)
         st.markdown(f":green-badge[Added {st.session_state.pop('_gen_result')} question(s)] to the bank.")
 
 
-# 3. CORTEX SPEND — branch STRUCTURALLY: success-but-empty ≠ permission error. (app-v4 blamed every miss on a grant.)
+# 3. CORTEX SPEND - branch STRUCTURALLY: success-but-empty ≠ permission error.
 def render_spend():
     try:
         rows = load_cortex_spend()      # cached → list[Row]; SELECT over CORTEX_AISQL_USAGE_HISTORY scoped to this app
@@ -676,14 +707,14 @@ def render_spend():
             st.caption(f"Couldn't read Cortex spend: {e}")      # any OTHER error → caption, NOT the GRANT banner
         return
     if not rows:                        # ACCOUNTADMIN holds IMPORTED PRIVILEGES by default → empty ≠ no-grant
-        st.caption("No Cortex spend recorded yet — ACCOUNT_USAGE lags up to ~2 h, or no AI calls have run."); return
+        st.caption("No Cortex spend recorded yet - ACCOUNT_USAGE lags up to ~2 h, or no AI calls have run."); return
     # ...build a DataFrame inline from `rows` for the two Altair charts, SUM(token_credits):
-    #    by MODEL_NAME (haiku/sonnet/opus) and by the parsed QUERY_TAG :feature — per $quiz/design,
+    #    by MODEL_NAME (haiku/sonnet/opus) and by the parsed QUERY_TAG :feature - per $quiz/design,
     #    same list[Row]→chart pattern as the Learning Dashboard...
     st.caption("ACCOUNT_USAGE lags up to ~2 h.")
 
 
-# 4. LOGS — both tables (filtered), then a FRAMELESS reset with a two-step confirm. Reset lives HERE, not App config.
+# 4. LOGS - both tables (filtered), then a FRAMELESS reset with a two-step confirm. Reset lives HERE, not App config.
 def render_logs():
     st.markdown("**REVIEW LOG**")
     rows = load_review_log()                                # cached → list[Row] (.collect()), newest first
@@ -704,7 +735,7 @@ def render_logs():
             rc = st.columns(2)
             if rc[0].button("Confirm", type="primary", key="reset_yes"):
                 s = get_active_session()
-                s.sql(f"DELETE FROM {SCHEMA}.QUIZ_REVIEW_LOG").collect()      # DELETE the two log tables — NEVER DROP
+                s.sql(f"DELETE FROM {SCHEMA}.QUIZ_REVIEW_LOG").collect()      # DELETE the two log tables - NEVER DROP
                 s.sql(f"DELETE FROM {SCHEMA}.QUIZ_SESSION_LOG").collect()
                 clear_caches(); st.session_state.pop("pending_reset", None)
                 st.toast("Logs reset"); st.rerun()
@@ -779,11 +810,11 @@ Navigation is owned by `st.navigation` (no `nav_pills` / `_current_page` / `_red
 
 ---
 
-# UX-Conformance Gate (run before deploy — separate from the `$sis` scan)
+# UX-Conformance Gate (run before deploy - separate from the `$sis` scan)
 
-The `$sis` pre-deploy scan certifies the app **runs** and is **SQL-safe** (imports resolve, no `NameError`, binds, cache freshness). It does **NOT** certify that the generated screens match the UX contracts above — so an app can pass the scan 100% while shipping a slider-less Home, a bare-letter answer, a config crash, and a tableless Questions manager (the session-2 "false PASS"). This gate closes that gap: it is a **conformance checklist read statically against the generated `app/` files**, owned here because `$quiz/screens` owns the screen contracts.
+The `$sis` pre-deploy scan certifies the app **runs** and is **SQL-safe** (imports resolve, no `NameError`, binds, cache freshness). It does **NOT** certify that the generated screens match the UX contracts above - so an app can pass the scan 100% while shipping a slider-less Home, a bare-letter answer, a config crash, and a tableless Questions manager (the session-2 "false PASS"). This gate closes that gap: it is a **conformance checklist read statically against the generated `app/` files**, owned here because `$quiz/screens` owns the screen contracts.
 
-**How to run** (Step 8 item 9, after the `$sis` scan): run the gate from **this section read fresh** (not a remembered checklist), and **re-read every generated file from disk this turn** (`pages/quiz.py`, `pages/review.py`, `pages/admin.py`, `_data.py`, `_cortex.py`, `_config.py`, `main.py`) — never from memory, and **writing a file earlier is not reading it** (re-read each from disk). **Report EVERY check below, not a subset** — an abbreviated "N/N pass" reconstructed from memory is the session-04 false-PASS (the gate has many checks; emit a row for each). A "possible loop" warning during the re-reads is an **expected false positive** — re-read everything before emitting any verdict. Each check is decided by a static read; output one row per check (**# · check · PASS/FAIL · `file:line`**). **Deploy only when every check PASSES**; on any FAIL, fix → re-read → re-run the affected checks (do NOT deploy on a FAIL, exactly like the scan). Most checks are mechanical (grep-able); the few marked *(judgment)* need a short read of the handler. The reference implementations these check against are the `# Reference code (COPY + ADAPT)` blocks above — a FAIL usually means the generator paraphrased instead of copying. **If you cannot re-read every generated file from disk THIS turn** (file-not-found / `I/O` / read-only or degraded session / broken workspace mount), you **cannot run this gate** — **STOP, do not certify, do not deploy**, and report the access failure rather than certifying from memory or a prior turn's reads (the session-03 false-PASS).
+**How to run** (Step 8 item 9, after the `$sis` scan): run the gate from **this section read fresh** (not a remembered checklist), and **re-read every generated file from disk this turn** (`pages/quiz.py`, `pages/review.py`, `pages/admin.py`, `_data.py`, `_cortex.py`, `_config.py`, `main.py`) - never from memory, and **writing a file earlier is not reading it** (re-read each from disk). **Report EVERY check below, not a subset** - an abbreviated "N/N pass" reconstructed from memory is not acceptable (the gate has many checks; emit a row for each). A "possible loop" warning during the re-reads is an **expected false positive** - re-read everything before emitting any verdict. Each check is decided by a static read; output one row per check (**# · check · PASS/FAIL · `file:line`**). **Deploy only when every check PASSES**; on any FAIL, fix → re-read → re-run the affected checks (do NOT deploy on a FAIL, exactly like the scan). Most checks are mechanical (grep-able); the few marked *(judgment)* need a short read of the handler. The reference implementations these check against are the `# Reference code (COPY + ADAPT)` blocks above - a FAIL usually means the generator paraphrased instead of copying. **If you cannot re-read every generated file from disk THIS turn** (file-not-found / `I/O` / read-only or degraded session / broken workspace mount), you **cannot run this gate** - **STOP, do not certify, do not deploy**, and report the access failure rather than certifying from memory or a prior turn's reads.
 
 ### Quiz screen (`pages/quiz.py`)
 1. **Round size = slider.** FAIL if round size uses `st.pills` or `st.number_input` (must be `st.slider(1, 100, …)`). *(Home reference)*
@@ -792,34 +823,34 @@ The `$sis` pre-deploy scan certifies the app **runs** and is **SQL-safe** (impor
 4. **On-demand generation.** FAIL if hint / explanation / deep-dive auto-generate (no button), or the button stays visible beside the spinner instead of being replaced by one `st.spinner`.
 5. **End Round in the sidebar.** FAIL if there is no `st.sidebar` "End Round" button while `screen == "quiz"`.
 6. **No per-option ✅/❌.** FAIL if answer options are annotated with per-option correct/incorrect markup, strikethrough, or color after submit (the result is a single badge + the correct-answer line only).
-7. **Deep dive exists, inside the explanation expander.** FAIL if there is **no** `🔬 Deep dive` control inside `_render_explanation_expander` (it must exist), OR if a deep-dive button/section renders anywhere outside it (it is topic-level, **no** per-option picker) — and see check 11.
+7. **Deep dive exists, inside the explanation expander.** FAIL if there is **no** `🔬 Deep dive` control inside `_render_explanation_expander` (it must exist), OR if a deep-dive button/section renders anywhere outside it (it is topic-level, **no** per-option picker) - and see check 11.
 8. **Next pinned last.** FAIL if "Next"/"Finish Round" renders before the explanation expander, or both render at once (mutually exclusive, full-width, at the very bottom).
 9. **Explanation on-demand for all.** FAIL if the "💡 AI explanation" button is hidden for correct answers (it appears for correct + incorrect alike).
 
 ### Summary screen (`pages/quiz.py`, `screen == "summary"`)
 10. **TO REMEMBER, not WRONG ANSWERS.** FAIL if the missed-questions expander isn't `st.expander("TO REMEMBER", expanded=True)`, OR shows **bare letters**, OR shows the user's pick (must be the correct answer in **full text** only).
 11. **No deep dive in the summary.** FAIL if any `deep`/`🔬` reference appears in the summary section (deep dive is a quiz-screen concept only).
-12. **"Round Summary" naming.** FAIL if a **button or section-heading label** reads "Round Brief" or "Debrief" (the on-demand button + heading must read "Round Summary"; the internal `debrief` state key and code comments are fine — check rendered label text only). The debrief is on-demand, gated by `debrief_enabled`, only when ≥1 wrong.
+12. **"Round Summary" naming.** FAIL if a **button or section-heading label** reads "Round Brief" or "Debrief" (the on-demand button + heading must read "Round Summary"; the internal `debrief` state key and code comments are fine - check rendered label text only). The debrief is on-demand, gated by `debrief_enabled`, only when ≥1 wrong.
 
 ### Review page (`pages/review.py`)
-13. **Full-text correct answer.** FAIL if the wrong-answer card shows a bare letter instead of the full-text `CORRECT_ANSWER` passthrough. *(judgment — read the card)*
+13. **Full-text correct answer.** FAIL if the wrong-answer card shows a bare letter instead of the full-text `CORRECT_ANSWER` passthrough. *(judgment - read the card)*
 14. **Both filters present.** FAIL if there is no domain `st.pills` filter, or no always-rendered `st.date_input` range (must render even when `min == max`).
-15. **Mnemonic guard.** FAIL if `st.info(🧠 …)` renders without the `mnem and mnem.lower() != "none"` guard (the app-v4 `🧠 None` box).
+15. **Mnemonic guard.** FAIL if `st.info(🧠 …)` renders without the `mnem and mnem.lower() != "none"` guard.
 
 ### Admin page (`pages/admin.py`)
-16. **Four tabs.** FAIL if Admin isn't four `st.tabs` — App config · Questions manager · Cortex spend · Logs.
+16. **Four tabs.** FAIL if Admin isn't four `st.tabs` - App config · Questions manager · Cortex spend · Logs.
 17. **App config is minimal.** FAIL if App config renders any selector for `question_source` / `round_size`/`default_round_size` / `difficulty` / `grounding_mode` / `pass_threshold` (it holds ONLY the two toggles + three model selectboxes).
 18. **Config writes are safe.** FAIL if any config write uses `TO_VARIANT(json.dumps(` or an inline config `MERGE`/`INSERT` in the page (must route through `save_config()` / `PARSE_JSON(?)`), OR if a config-seeded widget uses a bare `options.index(` instead of `cfg_index(`.
-19. **Questions manager has the editable table.** FAIL if it isn't nested `st.tabs(["Bank","Generate"])`, OR the Bank tab lacks an `st.data_editor` with a `select` `CheckboxColumn` (+ disabled other columns), OR renders the KPIs as a table instead of `st.metric` (the app-v4 "two stacked sections, no table" regression).
+19. **Questions manager has the editable table.** FAIL if it isn't nested `st.tabs(["Bank","Generate"])`, OR the Bank tab lacks an `st.data_editor` with a `select` `CheckboxColumn` (+ disabled other columns), OR renders the KPIs as a table instead of `st.metric`.
 20. **Batch count = slider.** FAIL if the Generate batch count uses `st.number_input`, or the slider max exceeds 20.
-21. **Batch feedback.** FAIL if batch generation doesn't run under an `st.spinner` AND fire an `st.toast` AND show a transient `:green-badge[Added N …]` line (no silent batch).
+21. **Batch feedback.** FAIL if batch generation doesn't run under an `st.spinner` AND fire an `st.toast` AND show a transient `:green-badge[Added N …]` line.
 22. **Spend branches structurally.** FAIL if the Cortex-spend tab reads `METERING_DAILY_HISTORY` or the deprecated `CORTEX_FUNCTIONS_USAGE_HISTORY` (must be `CORTEX_AISQL_USAGE_HISTORY`), OR uses a generic `except → GRANT` instead of the three-way branch (empty-on-success → caption; privilege signal → GRANT with the live `CURRENT_ROLE()`; other error → caption).
 23. **Logs reset is here and frameless.** FAIL if the "Reset all logs" button isn't in the Logs tab (never App config), isn't `type="tertiary"`, or uses a type-`DELETE` text gate instead of a bordered two-step `pending_reset` Confirm/Cancel; Logs also carries a domain filter applied in Python.
 
 ### Cross-cutting
 24. **No exam-code caption.** FAIL if `main.py`/`pages/quiz.py` renders the exam code as a subtitle/caption under a page title.
-25. **Loader return-type contract.** FAIL if any of `load_review_log` / `load_session_log` / `load_recent_sessions` / `load_domain_errors` / `load_bank_stats` / `load_domains` / `load_cortex_spend` is consumed with DataFrame ops (`.empty` / `.iterrows` / `.dropna` / `.isin` / `.head`) — they return `.collect()` `list[Row]`; only `load_questions_page` is a `.to_pandas()` DataFrame (for `st.data_editor`).
-26. **Grounding style** *(judgment — read the prompts)*. The explanation / hint / deep-dive calls are **teaching** calls: ground in the retrieved `<doc_context>` but explain in the model's own words, at most one short cited passage. FAIL if any of these prompts in `_cortex.py` instead instructs strict fact-extraction — e.g. "answer ONLY from the provided documentation", "do not use prior knowledge", "quote/excerpt the docs" — OR fails to tell the model to explain/teach in its own words. (The strict fact-extraction phrasing belongs ONLY to question/batch/flashcard generation — `$cortex`, "Grounded ≠ parroting".)
+25. **Loader return-type contract.** FAIL if any of `load_review_log` / `load_session_log` / `load_recent_sessions` / `load_domain_errors` / `load_bank_stats` / `load_domains` / `load_cortex_spend` is consumed with DataFrame ops (`.empty` / `.iterrows` / `.dropna` / `.isin` / `.head`) - they return `.collect()` `list[Row]`; only `load_questions_page` is a `.to_pandas()` DataFrame (for `st.data_editor`).
+26. **Grounding style** *(judgment - read the prompts)*. The explanation / hint / deep-dive calls are **teaching** calls: ground in the retrieved `<doc_context>` but explain in the model's own words, at most one short cited passage. FAIL if any of these prompts in `_cortex.py` instead instructs strict fact-extraction - e.g. "answer ONLY from the provided documentation", "do not use prior knowledge", "quote/excerpt the docs" - OR fails to tell the model to explain/teach in its own words. (The strict fact-extraction phrasing belongs ONLY to question/batch/flashcard generation - `$cortex`, "Grounded ≠ parroting".)
 27. **Status via badges only.** FAIL if `st.success` / `st.warning` / `st.error` appears anywhere, or `st.info` is used for anything other than the mnemonic 🧠 box (`$quiz/design`).
 
 **Verdict:** all PASS → "UX-conformance gate clean." Any FAIL → "Fix [list] before deploy" with `file:line` + the reference block to copy. A clean `$sis` scan + a clean gate are **both** required to deploy.

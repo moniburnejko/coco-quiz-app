@@ -23,6 +23,16 @@ Parent skill `$quiz` routes here for DESIGN intent.
 
 **All generated UI text is English** - every label, button, heading, badge, toast, caption, and section header. No other language, regardless of the conversation or prompt language. (Exam *content* follows the study guide.)
 
+# UI text case - ONE rule for the whole app
+
+One case rule, applied **everywhere** via the `_ui.py` helpers (never hand-typed per page):
+
+**UPPERCASE** - category/control labels (`QUESTIONS`, `DOMAINS`, `DIFFICULTY`, `SOURCE`), section + **expander** titles (`TO REMEMBER`, `ROUND SUMMARY`, `PATTERNS`, `PRIORITY ACTIONS`, …), all badges, **pill option labels**, button labels, and config-derived display values - `AI_GENERATED` shows as **`AI GENERATED`** (underscore→space, uppercase), never the raw stored value.
+
+**Sentence case, verbatim - NEVER uppercased**: question text, option text, all AI prose (explanations, hints, deep dive, round summary, debrief), mnemonics, doc URLs, and the dynamic `EXAM_NAME` (it keeps its own casing, e.g. "SnowPro Advanced: Data Engineer").
+
+**Pills carry an UPPERCASE label but a lowercase/raw value** (`st.pills` has no `format_func`): the option list is uppercase for display and the selection is normalized back for logic - both the option list and the normalizer live in `_ui.py` (e.g. `DIFFICULTY_PILLS = ["MIXED","EASY","MEDIUM","HARD"]` + `difficulty_value(label) -> label.lower()`; `SOURCE_PILLS` + its value map). The DB column values (`domain_name`, `source`, `difficulty`) are **unchanged**; only the displayed label is uppercased. Enforced by the gate's case-audit check (`$quiz/screens`).
+
 # Badges
 
 `:color-badge[TEXT]` Markdown syntax is the standard for all metadata display.
@@ -60,15 +70,28 @@ Define `EXAM_NAME` constant at module level (e.g., `EXAM_NAME = "SnowPro Core"`)
 
 No exam code caption under titles. Sidebar shows only `{EXAM_NAME} Quiz` and navigation pills.
 
+**ONE title mechanism, no `st.title`/`st.subheader` anywhere.** Page/tab entry titles use the `_ui.py` helper **`page_title(text)`** (`st.markdown(f"## {text}")`); in-page section labels use **`section_header(label)`** (`st.markdown(f"**{LABEL}**")`). Review and Admin tab bodies open with `page_title()`; their sections use `section_header()`. Every page goes through these helpers so titles stay consistent in size and case across pages.
+
 ---
 
 # Section Headers
 
-Use `st.markdown("**LABEL**")` for all section headers. Labels are UPPERCASE.
+Use the `_ui.py` **`section_header("LABEL")`** helper (renders `st.markdown("**LABEL**")`, UPPERCASE) for all section headers - do NOT hand-type `st.markdown("**…**")` per page and do NOT use `st.subheader()`/`st.title()`.
 
-Do NOT use `st.subheader()` for section labels - use `st.markdown("**LABEL**")`.
+Examples: `**QUESTIONS**`, `**DOMAINS**`, `**DIFFICULTY**`, `**SOURCE**`, `**SCORE PER SESSION**`, `**ERRORS BY DOMAIN**`, `**FOCUS AREAS**`, `**TOPICS TO REVIEW**`, `**NEXT STEPS**` (the summary's `TO REMEMBER` is an `st.expander` title, not a bold label)
 
-Examples: `**QUESTIONS**`, `**DOMAINS**`, `**DIFFICULTY**`, `**SOURCE**`, `**SCORE PER SESSION**`, `**ERRORS BY DOMAIN**`, `**FOCUS AREAS**`, `**TOPICS TO REVIEW**`, `**NEXT STEPS**` (the summary's `WRONG ANSWERS` is an `st.expander` title, not a bold label)
+---
+
+# Shared UI module (`_ui.py`) - the single style/helpers layer
+
+There is **one** shared-UI module, **`_ui.py`**. Every page imports it and routes ALL titles, section headers, category/pill/button labels, badges, and docs links through it - **no raw `st.title` / `st.markdown("## …")` / `st.markdown("**…**")` / hardcoded category labels in page code.** This is what keeps the pages visually consistent.
+
+`_ui.py` exposes (the generator builds these; `$quiz/screens` carries the reference code):
+- `md(text)` - the `$`-escaper (below). · `cfg_index(options, value, default)` - guarded selectbox index.
+- `page_title(text)` → `st.markdown(f"## {text}")` · `section_header(label)` → `st.markdown(f"**{label.upper()}**")`.
+- `render_domain_badge(name)` / `render_difficulty_badge(diff)` - the UPPERCASE badges. · `render_docs_link(url)` - the `📖` link (only when present).
+- **Case/label helpers** (the UI-text-case rule): `DIFFICULTY_PILLS` / `SOURCE_PILLS` (UPPERCASE option lists) + `difficulty_value()` / `source_value()` normalizers; `SOURCE_LABELS = {"MANUAL":"MANUAL","AI_GENERATED":"AI GENERATED"}` + `source_label(v)`; `column_label(col)` → display header (`QUESTION_ID`→"QUESTION ID", underscore→space, title/upper per the table contract).
+- Button helper(s) so action buttons share `type`/`use_container_width` defaults.
 
 ---
 
@@ -121,7 +144,7 @@ Rules:
 - Map dialog answers ONLY to these keys; if the user asks for something theming cannot do (animations, per-element CSS, custom layout), say so and offer the nearest theme-level effect.
 - **Charts ↔ theme alignment**: `chartCategoricalColors[0]` must equal the score-line constant and `[1]` the error-bar constant in `_config.py` (the Altair specs reference the constants explicitly).
 - SiS caveats: `st.set_page_config` `page_title`/`page_icon`/`menu_items` are NOT supported in SiS - do not set them; `layout="centered"` always, never `"wide"` (set once, in `main.py`).
-- Shared visual helpers (badges, cards, doc links) live in `_ui.py` as plain Streamlit components - no raw HTML.
+- Shared visual helpers live in **`_ui.py`** as plain Streamlit components - no raw HTML (see "Shared UI module" above).
 
 ---
 
