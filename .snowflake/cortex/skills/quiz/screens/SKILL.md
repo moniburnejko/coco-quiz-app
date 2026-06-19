@@ -29,7 +29,7 @@ Navigation is native multipage (`st.Page` + `st.navigation`), built in `main.py`
 ```
 main.py  ->  st.navigation([
     pages/quiz.py      "Quiz"   (default)   home -> quiz -> summary  (internal state machine)
-    pages/review.py    "Review"             WRONG ANSWERS | LEARNING DASHBOARD  (st.pills sub-tabs)
+    pages/review.py    "Review"             Learning Dashboard | Wrong Answers  (st.tabs, Dashboard first)
     pages/admin.py     "Admin"              app config (+ per-call model) · questions manager · Cortex spend · logs
 ])
 ```
@@ -366,6 +366,20 @@ Each submitted answer is appended to `round_history`:
 
 ---
 
+# Review page (`pages/review.py`) - sub-tabs
+
+The page entry `render_review()` opens `page_title("Review")` then **two `st.tabs`: `["Learning Dashboard", "Wrong Answers"]`** - **Learning Dashboard first** (the default view), matching the Admin tab style. `st.tabs` owns the active tab client-side and keeps it across reruns, so there is **no session key for the active sub-tab** and no programmatic tab switch. Tab labels are **Title Case** (tabs are not pills, so not uppercased - `$quiz/design`).
+
+```python
+def render_review():                                            # page entry - st.tabs, Dashboard first
+    page_title("Review")
+    tab_dash, tab_wrong = st.tabs(["Learning Dashboard", "Wrong Answers"])
+    with tab_dash:  render_dashboard()
+    with tab_wrong: render_wrong_answers()
+```
+
+---
+
 # Review: Wrong Answers (`pages/review.py`)
 
 Query `QUIZ_REVIEW_LOG` via the cached loader in `_data.py` (`@st.cache_data` with NO ttl, `get_active_session()` inside - see `$sis` Caching). Do NOT query directly in the page code. Freshness comes from `clear_caches()` at write time, not from a ttl.
@@ -382,7 +396,7 @@ Wrong answer cards: `st.container(border=True)` with domain badge + difficulty b
 
 ## Reference code (COPY + ADAPT - Review Wrong-Answers handler)
 
-The prose above is the contract; this is the **reference implementation of the Review Wrong-Answers handler**. **Copy this handler and adapt** - do not re-derive it from the prose. The Step-8 UX gate checks `review.py` against this shape. It is `st.pills`-driven tab content in `pages/review.py`; `load_review_log`/`clear_caches` are the `_data.py` loaders (no ttl), `md`/`render_domain_badge`/`render_difficulty_badge` are the `_ui.py` helpers (`$quiz/design`); `LETTERS = ["A","B","C","D","E"]`.
+The prose above is the contract; this is the **reference implementation of the Review Wrong-Answers handler**. **Copy this handler and adapt** - do not re-derive it from the prose. The Step-8 UX gate checks `review.py` against this shape. It is the **Wrong Answers** tab handler (`render_review` above wires the `st.tabs`); `load_review_log`/`clear_caches` are the `_data.py` loaders (no ttl), `md`/`render_domain_badge`/`render_difficulty_badge` are the `_ui.py` helpers (`$quiz/design`); `LETTERS = ["A","B","C","D","E"]`.
 
 ```python
 # pages/review.py - reference for the WRONG ANSWERS sub-tab. LETTERS = ["A","B","C","D","E"]
@@ -440,6 +454,8 @@ Notes the gate enforces: the correct answer is the **full-text `CORRECT_ANSWER` 
 - `load_session_stats()` - sessions, avg_score, total_questions
 - `load_recent_sessions()` - last 10 with session labels (e.g. "#1 . 31/03")
 - `load_domain_errors()` - error count per domain
+
+All three return **`list[Row]`** (the loader convention) - read fields as `row["UPPER"]`, never `.get()`/attr on a `Row` (`$sis` scan item 20). `load_session_stats()` is a **single-row aggregate**, so read `stats[0]["SESSIONS"]` / `["AVG_SCORE"]` / `["TOTAL_QUESTIONS"]` (guard the empty-state first).
 
 **Layout**: 3 metrics (Sessions, Questions, Readiness with delta) -> Score per Session chart -> Errors by Domain chart.
 
@@ -571,7 +587,7 @@ Caption: ACCOUNT_USAGE has reporting latency (up to ~2 h; this view only covers 
 A read-only log viewer plus a reset - the vendors02 logs page, no download:
 - **Both log tables shown**: `QUIZ_REVIEW_LOG` via `load_review_log()` and `QUIZ_SESSION_LOG` via **`load_session_log()`** - a new no-ttl cached loader for the full session-log table (`load_recent_sessions()` is the dashboard's last-10 aggregate, NOT this); **add `load_session_log` to `_data.py` and register it in `clear_caches()`** (`$sis` item 24, else it dangles). Read-only `st.dataframe`, newest first. **No `st.download_button`.**
 - **Filters + paging** (`QUIZ_REVIEW_LOG`): a **domain `st.multiselect`** (empty = all) applied **in Python over the cached `list[Row]`** (`[r for r in rows if not doms or r["DOMAIN_NAME"] in doms]` - `load_review_log()` returns `.collect()` Rows, NOT a DataFrame), plus `Load N more` paging via a page-local `_log_limit` (don't render thousands of rows). `st.dataframe` accepts the `list[Row]` slice directly. The session-log table is shown as-is, newest first.
-- **Loader return-type convention** (`$sis` Caching): every cached loader returns a **`.collect()` `list[Row]`** (read fields by `row["UPPER"]`, never `.get()`/attr - `$sis` scan item 20) - `load_review_log`, `load_session_log`, `load_recent_sessions`, `load_domain_errors`, `load_bank_stats`, `load_domains`, `load_cortex_spend`. **The exceptions are the `st.data_editor` tables** - `load_questions_page` (Questions bank) and `load_review_log_editable` (the editable review-log table) - which return **`.to_pandas()`** because `st.data_editor`/`column_config` structurally require a DataFrame. (`load_review_log` stays `list[Row]` for the read-only Review wrong-answers cards; the editable admin table uses the separate `load_review_log_editable`.) Do NOT "normalize" them - a DataFrame handler against a `list[Row]` loader (or vice-versa) crashes on the first `.empty`/`.iterrows`/`[col]` call.
+- **Loader return-type convention** (`$sis` Caching): every cached loader returns a **`.collect()` `list[Row]`** (read fields by `row["UPPER"]`, never `.get()`/attr - `$sis` scan item 20) - `load_review_log`, `load_session_log`, `load_recent_sessions`, `load_domain_errors`, `load_session_stats`, `load_bank_stats`, `load_domains`, `load_cortex_spend`. **The exceptions are the `st.data_editor` tables** - `load_questions_page` (Questions bank) and `load_review_log_editable` (the editable review-log table) - which return **`.to_pandas()`** because `st.data_editor`/`column_config` structurally require a DataFrame. (`load_review_log` stays `list[Row]` for the read-only Review wrong-answers cards; the editable admin table uses the separate `load_review_log_editable`.) Do NOT "normalize" them - a DataFrame handler against a `list[Row]` loader (or vice-versa) crashes on the first `.empty`/`.iterrows`/`[col]` call.
 - **Reset all logs** - a **frameless/borderless button** (`st.button(..., type="tertiary")`) below the tables, with **no expander and no "DANGER ZONE" label**, then a **two-step confirm** (a bordered `pending_reset` panel with Confirm / Cancel - NOT a type-`DELETE` text gate). Confirm runs `DELETE FROM` on the **two log tables only** (`QUIZ_REVIEW_LOG`, `QUIZ_SESSION_LOG`) - **NEVER `DROP`**, consistent with governance - then `clear_caches()` + `st.toast`. The reset lives **in this Logs tab**, never in App config.
 
 ## Reference code (COPY + ADAPT - Admin handlers)
@@ -851,7 +867,6 @@ All keys initialized in `init_session_state()` in `main.py` (state is shared acr
 | `domain_filter` | list | `[]` | Selected domain names; empty=all; from `DEFAULT_ROUND_CONFIG` |
 | `question_source` | str | `"ai"` | mix/db/ai; round-config default from `DEFAULT_ROUND_CONFIG` |
 | `_current_topic` | str | `""` | Current topic from schedule |
-| `_review_page` | str | `"WRONG ANSWERS"` | Active review sub-tab |
 | `correct_count` | int | `0` | Correct answers this round |
 | `total_count` | int | `0` | Total answered this round |
 | `current_history_item` | dict\|None | `None` | Ref to last appended history item |
@@ -910,7 +925,7 @@ The `$sis` pre-deploy scan certifies the app **runs** and is **SQL-safe** (impor
 
 ### Cross-cutting
 24. **No exam-code caption.** FAIL if `main.py`/`pages/quiz.py` renders the exam code as a subtitle/caption under a page title.
-25. **Loader return-type contract.** FAIL if any of `load_review_log` / `load_session_log` / `load_recent_sessions` / `load_domain_errors` / `load_bank_stats` / `load_domains` / `load_cortex_spend` is consumed with DataFrame ops (`.empty` / `.iterrows` / `.dropna` / `.isin` / `.head`) - they return `.collect()` `list[Row]`; only `load_questions_page` and `load_review_log_editable` are `.to_pandas()` DataFrames (the `st.data_editor` tables).
+25. **Loader return-type contract.** FAIL if any of `load_review_log` / `load_session_log` / `load_recent_sessions` / `load_domain_errors` / `load_session_stats` / `load_bank_stats` / `load_domains` / `load_cortex_spend` is consumed with DataFrame ops (`.empty` / `.iterrows` / `.dropna` / `.isin` / `.head`) - they return `.collect()` `list[Row]`; only `load_questions_page` and `load_review_log_editable` are `.to_pandas()` DataFrames (the `st.data_editor` tables).
 26. **Grounding style** *(judgment - read the prompts)*. The explanation / hint / deep-dive calls are **teaching** calls: ground in the retrieved `<doc_context>` but explain in the model's own words, at most one short cited passage. FAIL if any of these prompts in `_cortex.py` instead instructs strict fact-extraction - e.g. "answer ONLY from the provided documentation", "do not use prior knowledge", "quote/excerpt the docs" - OR fails to tell the model to explain/teach in its own words. (The strict fact-extraction phrasing belongs ONLY to question/batch/flashcard generation - `$cortex`, "Grounded ≠ parroting".)
 27. **Status via badges only.** FAIL if `st.success` / `st.warning` / `st.error` appears anywhere, or `st.info` is used for anything other than the mnemonic 🧠 box (`$quiz/design`).
 
