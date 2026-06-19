@@ -186,7 +186,7 @@ Applies in: inside the on-demand AI-explanation expander (after the **💡 AI ex
 - No **decorative** emoji on plain action buttons (`"START ROUND"`, not `"▶️ START ROUND"`); the learning-aid buttons keep their **semantic** icon: `"💡 HINT"`, `"💡 AI EXPLANATION"`, `"🔬 DEEP DIVE"`.
 - Action buttons: `type="primary"`, `width='stretch'` (the full-width form)
 - All pills: `label_visibility="collapsed"` (bold Markdown label above instead)
-- **Low-emphasis / deliberately understated destructive action** (e.g. Admin "Reset all logs"): `type="tertiary"` (borderless/frameless) - no expander, no "DANGER ZONE" framing; the safety is the **two-step Confirm/Cancel**, not visual alarm. (`type="tertiary"` is the borderless variant; `"secondary"` still draws a border.)
+- **Deliberately understated destructive action** (e.g. Admin "Reset all logs"): a **bordered `type="secondary"` button, right-aligned** (in a narrow right `st.columns` cell), with no expander; the safety is the **two-step Confirm/Cancel**, not visual alarm.
 
 # KPIs / metrics
 

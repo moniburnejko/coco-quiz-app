@@ -479,7 +479,7 @@ The three admin tables (Questions bank, review log, session log) share one displ
 - **Display headers** come from `_ui.py` `column_label(col)` set in `column_config` (`QUESTION_ID` shows as "QUESTION ID"; underscore to space, uppercase). Display only - the DataFrame keys stay UPPERCASE for access.
 - **Per-column** `width` ("small"/"medium"/"large") and `disabled=True` for every read-only column.
 - **Pin the leading key columns** so they stay visible while scrolling wide tables: pass `pinned=True` to the `column_config` entry for the `select` checkbox (where present) and the id column; the rest scroll horizontally.
-- **Row id shows as a contiguous 1..N index, not the raw key.** `AUTOINCREMENT` ids are unique and increasing but not gap-free (a stored id like 1, 2, 3, 101 looks wrong), so compute the display number at read time with `ROW_NUMBER() OVER (ORDER BY <timestamp column>) AS "#"` and keep the real id only as the hidden key for edit/delete (`WHERE question_id = ?`).
+- **Row id shows as a contiguous 1..N index, not the raw key.** `AUTOINCREMENT` ids are unique and increasing but not gap-free (a stored id like 1, 2, 3, 101 looks wrong), so compute the display number at read time with `ROW_NUMBER() OVER (ORDER BY <a stable column - the id, or a created timestamp>) AS "#"` and keep the real id only as the hidden key for edit/delete (`WHERE question_id = ?`).
 - **Editable cells** (only where specified, e.g. the review log's `mnemonic` + `doc_url`): make ONLY those columns editable, keep every other column `disabled=True`, read the edited frame back from the `st.data_editor` return value, and persist each changed row with a bind-param `UPDATE` keyed by the row id, then `clear_caches()`. An editable table has its own loader (edits must write back), separate from any display-only loader.
 
 ```python
@@ -543,25 +543,27 @@ Each defaults to `CORTEX_MODEL` (`load_config().get(f"model_{group}", CORTEX_MOD
 
 ## 2. Questions manager
 
-Two nested `st.tabs` - **Bank** and **Generate**.
+Two nested `st.tabs` - **Question bank** and **Add questions**.
 
-**Bank** - KPIs above an editable table (the vendors02 reference pattern):
-- **KPIs as `st.metric`, NOT a table**: Total questions · MANUAL · AI_GENERATED · domains covered (in `st.columns`, `$quiz/design` KPI cards). Backed by **`load_bank_stats()`** - a no-ttl cached coverage loader (per domain × difficulty × source) in `_data.py`, registered in `clear_caches()` (`$sis` item 24). The editable table below uses its own filtered loader (next).
-- **Editable / filterable / deletable table**:
-  1. **Filters** in an `st.expander("Filters", expanded=True)` - domain / difficulty / source pills - then a **"Search"** button commits them to a `_qm_filters` session dict (don't query live off widget state). A "Reset filters" button.
-  2. **`Select All` / `Clear`** buttons above the table (toggle a `_qm_select_all` flag).
-  3. **`st.data_editor`** with a leading `select` `st.column_config.CheckboxColumn`; **every other column `disabled`**; read the selection back as `edited[edited["select"]]`. The table's source is a **no-ttl cached loader returning a pandas DataFrame** (`.to_pandas()`) - `data_editor` preserves its checkbox selection across reruns ONLY when its input is byte-identical (a ttl that expired mid-edit would wipe the selection - `$sis` caching), and `.to_pandas()` columns come back UPPERCASE so there is **no `Row` access at all** - selected-row fields are read as `row["QUESTION_TEXT"]`, never `.get()`/attr on a `Row` (`$sis` scan item 20). Apply the **Data tables display contract** above: `column_order` = select · question id · domain name · question text · correct answer · option a-e · difficulty · source; `column_label` headers; `pinned=True` on the `select` checkbox and the id column; per-column `width`; and a `ROW_NUMBER()` display index in place of the raw `question_id`.
-  4. **`Load 10 more`** (page cap 10 - don't render 1000 rows; paginate via a `_qm_limit` that grows by 10).
-  5. Below the table: **`Edit` · `Delete` · `Add`**.
-     - **Edit** (enabled when exactly 1 row selected): loads that row into the form below → UPDATE by `question_id`.
-     - **Add**: opens the same form **empty** → INSERT `source='MANUAL'`.
-     - The form (Edit + Add) is an **`st.form(clear_on_submit=True)`** so all fields commit together on submit and the form resets after Insert (fixes the per-field Cmd+Enter + "form stays filled" problem): question `st.text_area`, options A-E `st.text_input`, `correct_answer` `st.multiselect` **restricted to the NON-EMPTY option values** (read inside the form on submit, so no per-field Enter), difficulty pills; `is_multi` derived = `len(correct) > 1`.
-     - **Delete** (enabled when ≥1 selected): **two-step confirm** - a bordered `pending_delete` panel ("Delete N question(s)?") with **Confirm / Cancel** (vendors02 `pending_*` pattern, NOT a type-`DELETE` text gate) → `DELETE FROM QUIZ_QUESTIONS WHERE question_id IN (?, …)`.
+**Question bank** - KPIs above an editable table:
+- **KPIs as `st.metric`, NOT a table**: Total questions · MANUAL · AI · domains covered (in `st.columns`, `$quiz/design` KPI cards). Backed by **`load_bank_stats()`** - a no-ttl cached coverage loader (per domain × difficulty × source) in `_data.py`, registered in `clear_caches()` (`$sis` item 24). The editable table below uses its own filtered loader (next).
+- **Editable / filterable / deletable table** (the **Data tables display contract** above):
+  1. **Filters** in a **COLLAPSED** `st.expander("Filters", expanded=False)` - a domain `st.multiselect`, plus **difficulty + source pills on one `st.columns(2)` row** (the source pills show `AI GENERATED` via `format_func=source_label` but return the raw enum) - then **full-width** "SEARCH" (left, `type="primary"`) and "RESET FILTERS" (right, secondary) buttons that commit to a `_qm_filters` session dict (don't query live off widget state).
+  2. **`SELECT ALL` / `CLEAR`** buttons above the table (toggle a `_qm_select_all` flag).
+  3. **`st.data_editor`** with a leading `select` `st.column_config.CheckboxColumn`; read the selection back as `edited[edited["select"]]`. Source is the no-ttl `.to_pandas()` `load_questions_page` loader (UPPERCASE columns, so fields read as `row["QUESTION_TEXT"]`, never `.get()`/attr on a `Row` - `$sis` item 20). Apply the display contract: **`column_order` = select · `#` · domain name · question text · correct answer · option a-e · difficulty · source**; the **`#` is a `ROW_NUMBER()` display index** while the raw `QUESTION_ID` stays in the frame but **out of `column_order`** (hidden, read back as `edited["QUESTION_ID"]` for the edit/delete key - it survives in the returned frame); `column_label` headers on the data columns (the `select` and `#` columns carry literal `""` / `"#"` labels); per-column `width`; `pinned=True` on the `select` checkbox and the `#` column; `disabled=[every column but select]` so only the checkbox is editable.
+  4. **`LOAD 10 MORE`** (page cap 10 - don't render 1000 rows; paginate via a `_qm_limit` that grows by 10).
+  5. Below the table: **`EDIT` · `DELETE`, full-width in `st.columns(2)`** (single-question manual entry is the Add-questions tab's MANUAL form).
+     - **Edit** (enabled when exactly 1 row selected): seeds the form below from the selected row → UPDATE by `QUESTION_ID`. The **Edit form** is an **`st.form(clear_on_submit=True)`** (question `st.text_area`, options A-E `st.text_input`, `correct_answer` `st.multiselect` over the letters validated ⊆ the non-empty options on submit, difficulty pills; `is_multi` derived = `len(correct) > 1`).
+     - **Delete** (enabled when ≥1 selected): **two-step confirm** - a bordered `pending_delete` panel ("Delete N question(s)?") with **CONFIRM / CANCEL** (the `pending_*` pattern, NOT a type-`DELETE` text gate) → `DELETE FROM QUIZ_QUESTIONS WHERE question_id IN (?, …)`.
   - **Hard rules** (`$sis` scan item 21): every write via bind params (`?`, NEVER f-string); length caps in the form AND by truncation (question 2000, options 500); `correct_answer` ⊆ non-empty options; ≥2 options. Every write → `clear_caches()` → `st.toast`.
-  - **Editor-state discipline (the hard part - follow vendors02 `01_ai_recommendations.py`):** keep a signature of the rendered slice (tuple of `QUESTION_ID`s). On a **non-append** change (filters/Search/Delete changed the set) drop the `data_editor` widget key and reset `_qm_select_all` so the checkbox column re-seeds cleanly; on a **pure append** (Load-10-more extends the slice) keep the selection. Without this, selection jumps on every Load-more/Search.
-  - **Edit vs Add form (one form, a mode flag):** `_qm_mode` ∈ `"add"`/`"edit"` (+ `_qm_edit_id` for edit). **Add** renders the empty `st.form(clear_on_submit=True)` → INSERT. **Edit** seeds the form from the selected row by writing the field values into the widget `session_state` keys at the **top of the run, before the widgets render** (flag-at-top - `$sis` widget lifecycle); **never pass both `value=`/`default=` and also set the `session_state` key** (raises "created with a default value but also had its value set"). Switching Add↔Edit clears the prior field keys via the same flag-at-top reset.
+  - **Editor-state discipline:** keep a signature of the rendered slice (tuple of `QUESTION_ID`s). On a **non-append** change (filters/Search/Delete changed the set) drop the `data_editor` widget key and reset `_qm_select_all` so the checkbox column re-seeds cleanly; on a **pure append** (Load-10-more extends the slice) keep the selection. Without this, selection jumps on every Load-more/Search.
+  - **Edit form seeding (flag-at-top):** `_qm_mode == "edit"` (+ `_qm_edit_id`). Seed the form from the selected row by writing the field values into the widget `session_state` keys at the **top of the run, before the widgets render** (`$sis` widget lifecycle); **never pass both `value=`/`default=` and also set the `session_state` key** (raises "created with a default value but also had its value set").
 
-**Generate** - Generate batch with options: **count** (`st.slider`, 1-20 - each item is its own grounded LLM call, so the batch is capped to stay well under the statement timeout; never an unbounded `st.number_input`), **difficulty** (pills, incl. "mixed"), **domain** (`st.selectbox`/multiselect over `EXAM_DOMAINS`), and **model** (`st.selectbox` over `MODEL_OPTIONS`, `index` seeded via `cfg_index(MODEL_OPTIONS, cfg.get("model_generation", CORTEX_MODEL))`) → generates via the **same grounded `_questions.py` path** (`$quiz/questions`: in `cke`/`custom` mode each question embeds retrieved `<doc_context>` as the primary source with `key_facts` as supporting scope, answers ONLY from the docs, fails visibly on empty retrieval - never built-in) → INSERT `source='AI_GENERATED'` → `clear_caches()`. **Feedback is mandatory**: run the loop under one `st.spinner`, then on completion fire an `st.toast` **and** render a transient `:green-badge[Added N question(s)]` line (NEVER `st.success`/`st.warning` - `$quiz/design`); a `st.caption` notes larger batches take longer and cost more. The batch passes its chosen model through `call_cortex_json(..., model=…)`.
+**Add questions** - **two stacked sections, `AI GENERATE IN BATCH` and `MANUAL`** (split by `st.divider()`).
+
+**AI GENERATE IN BATCH** with options: **count** (`st.slider`, 1-20 - each item is its own grounded LLM call, so the batch is capped to stay well under the statement timeout; never an unbounded `st.number_input`), **difficulty** (pills, incl. "mixed"), **domain** (`st.multiselect` over `EXAM_DOMAINS`), and **model** (`st.selectbox` over `MODEL_OPTIONS`, `index` seeded via `cfg_index(MODEL_OPTIONS, cfg.get("model_generation", CORTEX_MODEL))`) → generates via the **same grounded `_questions.py` path** (`$quiz/questions`: in `cke`/`custom` mode each question embeds retrieved `<doc_context>` as the primary source with `key_facts` as supporting scope, answers ONLY from the docs, fails visibly on empty retrieval - never built-in) → INSERT `source='AI_GENERATED'` → `clear_caches()`. **Feedback**: run the loop under one `st.spinner`, then fire an `st.toast` **and** a transient **plain-text** "Added N question(s)" line (NO badge, NO `st.success`/`st.warning` - `$quiz/design`; and no "larger batches" caption). The batch passes its chosen model through `call_cortex_json(..., model=…)`.
+
+**MANUAL** - a single-question add form: an **atomic `st.form(clear_on_submit=True)`** (question `st.text_area`, options A-E `st.text_input`, difficulty pills, `correct_answer` `st.multiselect` over the letters, `is_multi` derived) **plus a short `st.caption` help line**. All fields commit together on ADD; validate `correct_answer` ⊆ the non-empty options and ≥2 options, then INSERT `source='MANUAL'` (bind params, length caps) → `clear_caches()` → `st.toast`.
 
 ## 3. Cortex spend (graceful - distinguish "no grant" from "no data")
 
@@ -582,13 +584,13 @@ WHERE TRY_PARSE_JSON(query_tag):app::VARCHAR = 'snowpro_quiz'   -- the value _co
 
 Caption: ACCOUNT_USAGE has reporting latency (up to ~2 h; this view only covers usage from 2025-11-17 on). When doc grounding is on, add a "docs search" line (Cortex Search query compute is billed to the consumer; small per query).
 
-## 4. Logs (was "Tools")
+## 4. Logs
 
-A read-only log viewer plus a reset - the vendors02 logs page, no download:
-- **Both log tables shown**: `QUIZ_REVIEW_LOG` via `load_review_log()` and `QUIZ_SESSION_LOG` via **`load_session_log()`** - a new no-ttl cached loader for the full session-log table (`load_recent_sessions()` is the dashboard's last-10 aggregate, NOT this); **add `load_session_log` to `_data.py` and register it in `clear_caches()`** (`$sis` item 24, else it dangles). Read-only `st.dataframe`, newest first. **No `st.download_button`.**
-- **Filters + paging** (`QUIZ_REVIEW_LOG`): a **domain `st.multiselect`** (empty = all) applied **in Python over the cached `list[Row]`** (`[r for r in rows if not doms or r["DOMAIN_NAME"] in doms]` - `load_review_log()` returns `.collect()` Rows, NOT a DataFrame), plus `Load N more` paging via a page-local `_log_limit` (don't render thousands of rows). `st.dataframe` accepts the `list[Row]` slice directly. The session-log table is shown as-is, newest first.
-- **Loader return-type convention** (`$sis` Caching): every cached loader returns a **`.collect()` `list[Row]`** (read fields by `row["UPPER"]`, never `.get()`/attr - `$sis` scan item 20) - `load_review_log`, `load_session_log`, `load_recent_sessions`, `load_domain_errors`, `load_session_stats`, `load_bank_stats`, `load_domains`, `load_cortex_spend`. **The exceptions are the `st.data_editor` tables** - `load_questions_page` (Questions bank) and `load_review_log_editable` (the editable review-log table) - which return **`.to_pandas()`** because `st.data_editor`/`column_config` structurally require a DataFrame. (`load_review_log` stays `list[Row]` for the read-only Review wrong-answers cards; the editable admin table uses the separate `load_review_log_editable`.) Do NOT "normalize" them - a DataFrame handler against a `list[Row]` loader (or vice-versa) crashes on the first `.empty`/`.iterrows`/`[col]` call.
-- **Reset all logs** - a **frameless/borderless button** (`st.button(..., type="tertiary")`) below the tables, with **no expander and no "DANGER ZONE" label**, then a **two-step confirm** (a bordered `pending_reset` panel with Confirm / Cancel - NOT a type-`DELETE` text gate). Confirm runs `DELETE FROM` on the **two log tables only** (`QUIZ_REVIEW_LOG`, `QUIZ_SESSION_LOG`) - **NEVER `DROP`**, consistent with governance - then `clear_caches()` + `st.toast`. The reset lives **in this Logs tab**, never in App config.
+A filterable log viewer plus a reset, no download. **Two sections, each with its own COLLAPSED `st.expander("Filters")` + SEARCH / RESET FILTERS** (commit on Search, like the bank):
+- **Review log** (`QUIZ_REVIEW_LOG`) - the **editable** table (the `render_review_log_table` over `load_review_log_editable()` above): only `mnemonic` + `doc_url` editable, write-back on change. Filters: domain `st.multiselect`, an always-rendered `st.date_input` range over `LOGGED_AT`, and "Has mnemonic" / "Has doc link" `st.toggle`s - applied in pandas over the cached frame.
+- **Session log** (`QUIZ_SESSION_LOG`) - a **read-only** `st.data_editor` (the Data tables display contract: `column_order`, `column_label` headers, pinned `SESSION_ID`, per-column `width`, `disabled=True`) over **`load_session_log()`** (a no-ttl **`.to_pandas()`** loader; add it to `_data.py` and register it in `clear_caches()` - `$sis` item 24). Filters: domain `st.multiselect`, date range over `SESSION_TS`, difficulty pills, and a **min score-percent `st.slider`** - applied in pandas. **No `st.download_button`.**
+- **Loader return-type convention** (`$sis` Caching): every cached loader returns a **`.collect()` `list[Row]`** (read fields by `row["UPPER"]`, never `.get()`/attr - `$sis` scan item 20) - `load_review_log`, `load_recent_sessions`, `load_domain_errors`, `load_session_stats`, `load_bank_stats`, `load_domains`, `load_cortex_spend`. **The exceptions are the `st.data_editor` tables** - `load_questions_page` (Questions bank), `load_review_log_editable` (editable review log), and `load_session_log` (read-only session-log display) - which return **`.to_pandas()`** because `st.data_editor`/`column_config` structurally require a DataFrame. (`load_review_log` stays `list[Row]` for the read-only Review wrong-answers cards; the editable admin table uses the separate `load_review_log_editable`.) Do NOT "normalize" them - a DataFrame handler against a `list[Row]` loader (or vice-versa) crashes on the first `.empty`/`.iterrows`/`[col]` call.
+- **Reset all logs** - a **bordered `st.button(..., type="secondary")`, right-aligned** (placed in a narrow right `st.columns` cell) below the tables, with **no expander**; the safety is the **two-step confirm** (a bordered `pending_reset` panel with Confirm / Cancel - NOT a type-`DELETE` text gate). Confirm runs `DELETE FROM` on the **two log tables only** (`QUIZ_REVIEW_LOG`, `QUIZ_SESSION_LOG`) - **NEVER `DROP`**, consistent with governance - then `clear_caches()` + `st.toast`. The reset lives **in this Logs tab**, never in App config.
 
 ## Reference code (COPY + ADAPT - Admin handlers)
 
@@ -612,7 +614,7 @@ def render_app_config():
     if grounding_required() and not docs_available():
         st.markdown(":red-badge[DOC GROUNDING UNAVAILABLE] Install/grant the Snowflake Documentation CKE; "
                     "the app can't generate until it's reachable.")
-    if st.button("Save", type="primary"):
+    if st.button("SAVE", type="primary"):
         save_config("hints_enabled", hints)                # PARSE_JSON round-trip; NEVER TO_VARIANT(json.dumps())
         save_config("debrief_enabled", debrief)
         for group, model in picks.items():
@@ -620,17 +622,17 @@ def render_app_config():
         st.toast("Settings saved")                         # save_config already clears caches
 
 
-# 2. QUESTIONS MANAGER - nested tabs; Bank = KPIs + editable/filterable/deletable table.
+# 2. QUESTIONS MANAGER - nested tabs; Question bank = KPIs + editable/filterable/deletable table.
 def render_questions_manager():
-    bank_tab, gen_tab = st.tabs(["Bank", "Generate"])
-    with bank_tab:    render_bank()
-    with gen_tab:     render_generate()
+    bank_tab, add_tab = st.tabs(["Question bank", "Add questions"])
+    with bank_tab:  render_bank()
+    with add_tab:   render_add_questions()
 
 def _is_append(prev, sig):                                  # append = prev is a prefix of the new id slice
     return len(sig) >= len(prev) and sig[:len(prev)] == prev
 
 @st.cache_data(show_spinner=False)
-def load_questions_page(flt, limit):                        # the ONE .to_pandas() loader - st.data_editor needs a DataFrame
+def load_questions_page(flt, limit):                        # .to_pandas() (a data_editor table; column_config needs a frame)
     where, params = [], []
     for col, key in [("domain_name", "dom"), ("difficulty", "diff"), ("source", "src")]:
         vals = flt.get(key) or []
@@ -638,10 +640,11 @@ def load_questions_page(flt, limit):                        # the ONE .to_pandas
             where.append(f"{col} IN ({','.join(['?'] * len(vals))})"); params += vals
     clause = ("WHERE " + " AND ".join(where)) if where else ""
     return get_active_session().sql(
-        f"SELECT question_id, domain_name, difficulty, source, question_text, "
+        f'SELECT ROW_NUMBER() OVER (ORDER BY question_id DESC) AS "#", '       # contiguous display index (raw id is gap-prone)
+        f"question_id, domain_name, difficulty, source, question_text, "
         f"option_a, option_b, option_c, option_d, option_e, correct_answer "
         f"FROM {SCHEMA}.QUIZ_QUESTIONS {clause} ORDER BY question_id DESC LIMIT {int(limit)}",
-        params=params).to_pandas()                          # UPPERCASE cols; register in clear_caches()
+        params=params).to_pandas()                          # UPPERCASE cols + "#"; register in clear_caches()
 
 def render_bank():
     rows = load_bank_stats()                                # cached coverage loader → list[Row] (domain × difficulty × source, CNT)
@@ -651,49 +654,59 @@ def render_bank():
     cols[2].metric("AI",     sum(r["CNT"] for r in rows if r["SOURCE"] == "AI_GENERATED"))
     cols[3].metric("Domains", len({r["DOMAIN_NAME"] for r in rows}))
 
-    with st.expander("Filters", expanded=True):             # commit filters on Search, don't query live off widgets
-        f_dom  = st.pills("Domain", [d["DOMAIN_NAME"] for d in load_domains()], selection_mode="multi", key="qm_f_dom")
-        f_diff = st.pills("Difficulty", ["easy","medium","hard"], selection_mode="multi", key="qm_f_diff")
-        f_src  = st.pills("Source", ["MANUAL","AI_GENERATED"], selection_mode="multi", key="qm_f_src")
-        fc = st.columns(2)
-        if fc[0].button("Search"):
-            st.session_state["_qm_filters"] = {"dom": f_dom, "diff": f_diff or [], "src": f_src or []}
+    with st.expander("Filters", expanded=False):            # COLLAPSED; commit on Search, don't query live off widgets
+        f_dom = st.multiselect("Domain", [d["DOMAIN_NAME"] for d in load_domains()], key="qm_f_dom")
+        fcol = st.columns(2)                                # difficulty + source on one row
+        f_diff = fcol[0].pills("Difficulty", ["easy","medium","hard"], selection_mode="multi",
+                               format_func=str.upper, key="qm_f_diff")
+        f_src  = fcol[1].pills("Source", ["MANUAL","AI_GENERATED"], selection_mode="multi",
+                               format_func=source_label, key="qm_f_src")   # shows "AI GENERATED", returns the raw enum
+        sc = st.columns(2)
+        if sc[0].button("SEARCH", type="primary", width='stretch'):        # left, accent
+            st.session_state["_qm_filters"] = {"dom": f_dom or [], "diff": f_diff or [], "src": f_src or []}
             st.session_state["_qm_limit"] = 10
-        if fc[1].button("Reset filters"):
+        if sc[1].button("RESET FILTERS", width='stretch'):                 # right, secondary
             st.session_state.pop("_qm_filters", None); st.session_state["_qm_limit"] = 10
 
     flt   = st.session_state.get("_qm_filters", {})
     limit = st.session_state.get("_qm_limit", 10)
-    df = load_questions_page(flt, limit)                    # cached, .to_pandas() → UPPERCASE cols, no Row access
+    df = load_questions_page(flt, limit)                    # cached .to_pandas() → UPPERCASE cols + "#"
+    df["SOURCE"] = df["SOURCE"].map(source_label)           # display "AI GENERATED" (SOURCE is not used as a key)
     df.insert(0, "select", False)
 
-    sig  = tuple(df["QUESTION_ID"].tolist())                # editor-state discipline (vendors02)
+    sig  = tuple(df["QUESTION_ID"].tolist())                # editor-state discipline: drop the widget on a non-append change
     prev = st.session_state.get("_qm_sig")
     if prev is not None and not _is_append(prev, sig):      # non-append change → re-seed checkbox column cleanly
         st.session_state.pop("editor_qm", None); st.session_state["_qm_select_all"] = False
     st.session_state["_qm_sig"] = sig
 
-    sc = st.columns(2)
-    if sc[0].button("Select all"): st.session_state["_qm_select_all"] = True;  st.session_state.pop("editor_qm", None)
-    if sc[1].button("Clear"):      st.session_state["_qm_select_all"] = False; st.session_state.pop("editor_qm", None)
+    sc2 = st.columns(2)
+    if sc2[0].button("SELECT ALL"): st.session_state["_qm_select_all"] = True;  st.session_state.pop("editor_qm", None)
+    if sc2[1].button("CLEAR"):      st.session_state["_qm_select_all"] = False; st.session_state.pop("editor_qm", None)
     if st.session_state.get("_qm_select_all"): df["select"] = True
 
+    OPTS = ["OPTION_A","OPTION_B","OPTION_C","OPTION_D","OPTION_E"]        # Data tables display contract
     edited = st.data_editor(df, key="editor_qm", hide_index=True, width='stretch',
-        column_config={"select": st.column_config.CheckboxColumn("", default=False)},
-        disabled=[c for c in df.columns if c != "select"])  # every column but the checkbox is read-only
-    sel = edited[edited["select"]]                          # read selection back as a DataFrame slice
+        column_order=["select","#","DOMAIN_NAME","QUESTION_TEXT","CORRECT_ANSWER",*OPTS,"DIFFICULTY","SOURCE"],
+        column_config={                                     # QUESTION_ID stays in df (omitted here = hidden) → the edit/delete key
+            "select": st.column_config.CheckboxColumn("", pinned=True),
+            "#": st.column_config.Column("#", width="small", disabled=True, pinned=True),
+            **table_column_config([("DOMAIN_NAME","medium",False,False), ("QUESTION_TEXT","large",False,False),
+                ("CORRECT_ANSWER","medium",False,False), *[(o,"medium",False,False) for o in OPTS],
+                ("DIFFICULTY","small",False,False), ("SOURCE","small",False,False)]),
+        },
+        disabled=[c for c in df.columns if c != "select"])  # read-only everywhere but the checkbox
+    sel = edited[edited["select"]]                          # selection slice; sel["QUESTION_ID"] is the key (survives the hide)
 
-    if len(df) >= limit and st.button("Load 10 more"):
+    if len(df) >= limit and st.button("LOAD 10 MORE"):
         st.session_state["_qm_limit"] = limit + 10; st.rerun()
 
-    bc = st.columns(3)
-    if bc[0].button("Edit", disabled=len(sel) != 1):        # enabled only when exactly 1 row is selected
+    bc = st.columns(2)                                       # Edit + Delete only - Add lives in Generate > MANUAL
+    if bc[0].button("EDIT", width='stretch', disabled=len(sel) != 1):       # enabled only when exactly 1 row is selected
         st.session_state["_qm_mode"] = "edit"
         st.session_state["_qm_edit_id"] = int(sel.iloc[0]["QUESTION_ID"])
         st.session_state["_qm_seed"]    = sel.iloc[0].to_dict(); st.rerun()
-    if bc[1].button("Add"):
-        st.session_state["_qm_mode"] = "add"; st.session_state.pop("_qm_seed", None); st.rerun()
-    if bc[2].button("Delete", disabled=len(sel) < 1):
+    if bc[1].button("DELETE", width='stretch', disabled=len(sel) < 1):
         st.session_state["pending_delete"] = [int(x) for x in sel["QUESTION_ID"]]
 
     if st.session_state.get("pending_delete"):              # two-step confirm, NOT a type-DELETE gate
@@ -701,36 +714,35 @@ def render_bank():
         with st.container(border=True):
             st.markdown(f"**Delete {len(ids)} question(s)?**")
             dc = st.columns(2)
-            if dc[0].button("Confirm", type="primary"):
+            if dc[0].button("CONFIRM", type="primary"):
                 marks = ",".join(["?"] * len(ids))          # bind params, never f-string the ids
                 get_active_session().sql(
                     f"DELETE FROM {SCHEMA}.QUIZ_QUESTIONS WHERE question_id IN ({marks})", params=ids).collect()
                 clear_caches(); st.session_state.pop("pending_delete", None)
                 st.toast(f"Deleted {len(ids)}"); st.rerun()
-            if dc[1].button("Cancel"):
+            if dc[1].button("CANCEL"):
                 st.session_state.pop("pending_delete", None); st.rerun()
 
-    if st.session_state.get("_qm_mode"):
+    if st.session_state.get("_qm_mode") == "edit":          # Edit form only - Add lives in Generate > MANUAL
         _render_question_form()
 
-def _render_question_form():
-    mode = st.session_state["_qm_mode"]
+def _render_question_form():                                # EDIT a selected bank row
     seed = st.session_state.pop("_qm_seed", None)           # flag-at-top: seed widget KEYS once, before they render
     if seed is not None:                                    # (never also pass value=/default= to the same widget)
         st.session_state["qf_text"] = seed.get("QUESTION_TEXT", "")
         for lt in LETTERS: st.session_state[f"qf_{lt}"] = seed.get(f"OPTION_{lt}") or ""
         st.session_state["qf_diff"]    = seed.get("DIFFICULTY", "medium")
         st.session_state["qf_correct"] = [c.strip() for c in (seed.get("CORRECT_ANSWER") or "").split(",") if c.strip()]
-    st.markdown(f"**{'EDIT QUESTION' if mode == 'edit' else 'ADD QUESTION'}**")
-    with st.form("qform", clear_on_submit=True):            # one form → all fields commit together, no per-field Enter
+    st.markdown("**EDIT QUESTION**")
+    with st.form("qform", clear_on_submit=True):            # one form → all fields commit together on submit
         text = st.text_area("Question", key="qf_text", max_chars=2000)
         opts = {lt: st.text_input(f"Option {lt}", key=f"qf_{lt}", max_chars=500) for lt in LETTERS}
         diff = st.pills("Difficulty", ["easy","medium","hard"], key="qf_diff")
         # a form can't live-filter options as the user types; offer all letters, enforce ⊆ non-empty options ON SUBMIT
         correct = st.multiselect("Correct answer(s)", LETTERS, key="qf_correct")
         fc = st.columns(2)
-        submitted = fc[0].form_submit_button("Save", type="primary")
-        cancelled = fc[1].form_submit_button("Cancel")
+        submitted = fc[0].form_submit_button("SAVE", type="primary")
+        cancelled = fc[1].form_submit_button("CANCEL")
     if cancelled:
         _close_question_form(); st.rerun()
     if submitted:
@@ -738,35 +750,55 @@ def _render_question_form():
         correct = [c for c in correct if c in present]
         if len(present) < 2 or not correct:
             st.markdown(":orange-badge[Need ≥2 options and ≥1 correct answer among the filled options]"); return
-        _save_question(mode, st.session_state.get("_qm_edit_id"), text.strip(), opts, correct, diff)  # bind params
+        _save_question("edit", st.session_state.get("_qm_edit_id"), text.strip(), opts, correct, diff)  # bind params
         clear_caches(); _close_question_form()
-        st.toast("Saved" if mode == "edit" else "Added"); st.rerun()
+        st.toast("Saved"); st.rerun()
 
 def _close_question_form():                                 # flag-at-top reset of every form key
     for k in ["_qm_mode", "_qm_edit_id", "qf_text", "qf_diff", "qf_correct", *[f"qf_{lt}" for lt in LETTERS]]:
         st.session_state.pop(k, None)
 
-def render_generate():
+def render_add_questions():
+    st.markdown("**AI GENERATE IN BATCH**")
     cfg = load_config()
     if grounding_required() and not docs_available():
-        st.markdown(":red-badge[DOC GROUNDING UNAVAILABLE] Can't generate until the CKE is reachable."); return
-    n     = st.slider("Count", 1, 20, 5, key="gen_n")       # SLIDER, capped - each item is a grounded LLM call
-    diff  = st.pills("Difficulty", ["mixed","easy","medium","hard"], default="mixed", key="gen_diff") or "mixed"
-    doms  = st.multiselect("Domains", [d["DOMAIN_NAME"] for d in load_domains()], key="gen_dom")
-    model = st.selectbox("Model", MODEL_OPTIONS,
-        index=cfg_index(MODEL_OPTIONS, cfg.get("model_generation", CORTEX_MODEL)), key="gen_model")
-    st.caption("Larger batches take longer and cost more - each question is its own grounded generation.")
-    if st.button("Generate batch", type="primary", disabled=st.session_state.get("_gen_busy", False)):
-        st.session_state["_gen_busy"] = True; made = 0
-        with st.spinner(f"Generating {n} question(s)…"):
-            for _ in range(n):
-                if generate_ai_question(diff, doms or None, model=model):   # same grounded _questions.py path
-                    made += 1
-        clear_caches(); st.session_state["_gen_busy"] = False
-        st.session_state["_gen_result"] = made
-        st.toast(f"Generated {made} question(s)"); st.rerun()
-    if "_gen_result" in st.session_state:                   # transient feedback - never st.success ($quiz/design)
-        st.markdown(f":green-badge[Added {st.session_state.pop('_gen_result')} question(s)] to the bank.")
+        st.markdown(":red-badge[DOC GROUNDING UNAVAILABLE] Can't generate until the CKE is reachable.")
+    else:
+        n     = st.slider("Count", 1, 20, 5, key="gen_n")   # SLIDER, capped - each item is a grounded LLM call
+        diff  = st.pills("Difficulty", ["mixed","easy","medium","hard"], format_func=str.upper,
+                         default="mixed", key="gen_diff") or "mixed"
+        doms  = st.multiselect("Domains", [d["DOMAIN_NAME"] for d in load_domains()], key="gen_dom")
+        model = st.selectbox("Model", MODEL_OPTIONS,
+            index=cfg_index(MODEL_OPTIONS, cfg.get("model_generation", CORTEX_MODEL)), key="gen_model")
+        if st.button("GENERATE BATCH", type="primary", disabled=st.session_state.get("_gen_busy", False)):
+            st.session_state["_gen_busy"] = True; made = 0
+            with st.spinner(f"Generating {n} question(s)…"):
+                for _ in range(n):
+                    if generate_ai_question(diff, doms or None, model=model):   # same grounded _questions.py path
+                        made += 1
+            clear_caches(); st.session_state["_gen_busy"] = False
+            st.session_state["_gen_result"] = made
+            st.toast(f"Generated {made} question(s)"); st.rerun()
+        if "_gen_result" in st.session_state:               # transient feedback - PLAIN TEXT, not a badge
+            st.markdown(f"Added {st.session_state.pop('_gen_result')} question(s) to the bank.")
+    st.divider()
+    render_manual_add()
+
+def render_manual_add():                                    # Generate > MANUAL - atomic form + help, source='MANUAL'
+    st.markdown("**MANUAL**")
+    st.caption("Add one question by hand - every field commits together when you click Add.")
+    with st.form("manual_add", clear_on_submit=True):
+        text = st.text_area("Question", key="ma_text", max_chars=2000)
+        opts = {lt: st.text_input(f"Option {lt}", key=f"ma_{lt}", max_chars=500) for lt in LETTERS}
+        diff = st.pills("Difficulty", ["easy","medium","hard"], format_func=str.upper, key="ma_diff")
+        correct = st.multiselect("Correct answer(s)", LETTERS, key="ma_correct")   # subset of filled options, checked on submit
+        if st.form_submit_button("ADD", type="primary"):
+            present = [lt for lt in LETTERS if (opts[lt] or "").strip()]
+            correct = [c for c in correct if c in present]
+            if len(present) < 2 or not correct:
+                st.markdown(":orange-badge[Need >=2 options and >=1 correct answer among the filled options]"); return
+            _save_question("add", None, text.strip(), opts, correct, diff or "medium")   # INSERT source='MANUAL', bind params
+            clear_caches(); st.toast("Added")
 
 
 # 3. CORTEX SPEND - branch STRUCTURALLY: success-but-empty ≠ permission error.
@@ -791,36 +823,100 @@ def render_spend():
     st.caption("ACCOUNT_USAGE lags up to ~2 h.")
 
 
-# 4. LOGS - both tables (filtered), then a FRAMELESS reset with a two-step confirm. Reset lives HERE, not App config.
-def render_logs():
-    st.markdown("**REVIEW LOG**")
-    rows = load_review_log()                                # cached → list[Row] (.collect()), newest first
-    doms = st.multiselect("Domain", sorted({r["DOMAIN_NAME"] for r in rows if r["DOMAIN_NAME"]}), key="log_dom")
-    view = [r for r in rows if not doms or r["DOMAIN_NAME"] in doms]   # filter in Python over the cached list
-    lim  = st.session_state.get("_log_limit", 50)
-    st.dataframe(view[:lim], hide_index=True, width='stretch')   # st.dataframe accepts list[Row]; NO download_button
-    if len(view) > lim and st.button("Load 50 more", key="log_more"):
-        st.session_state["_log_limit"] = lim + 50; st.rerun()
-    st.markdown("**SESSION LOG**")
-    st.dataframe(load_session_log(), hide_index=True, width='stretch')   # list[Row]
+# 4. LOGS - review log (editable) + session log, each with a COLLAPSED Filters expander; reset bordered/right.
+@st.cache_data(show_spinner=False)
+def load_session_log():                                     # .to_pandas() display table (a data_editor table); register in clear_caches()
+    return get_active_session().sql(
+        f'SELECT session_id AS "SESSION_ID", session_ts AS "SESSION_TS", round_size AS "ROUND_SIZE", '
+        f'correct_count AS "CORRECT_COUNT", score_pct AS "SCORE_PCT", domain_filter AS "DOMAIN_FILTER", '
+        f'difficulty AS "DIFFICULTY" FROM {SCHEMA}.QUIZ_SESSION_LOG ORDER BY session_ts DESC'
+    ).to_pandas()
 
-    if st.button("Reset all logs", type="tertiary", key="log_reset"):        # frameless, no DANGER ZONE
+def _log_date_range(series, key):                           # always-rendered date range over a .to_pandas() ts column
+    dates = series.dropna().map(lambda x: x.date())         # Snowflake datetimes -> date per value (no .dt accessor)
+    if dates.empty:
+        return None
+    lo, hi = dates.min(), dates.max()
+    rng = st.date_input("Date range", value=(lo, hi), min_value=lo, max_value=hi, key=key)   # shown even when lo == hi
+    start = rng[0] if isinstance(rng, (list, tuple)) and len(rng) >= 1 else lo
+    end   = rng[1] if isinstance(rng, (list, tuple)) and len(rng) >= 2 else start             # mid-selection 1-tuple guard
+    return (start, end)
+
+def render_logs():
+    _render_review_log(); st.divider()
+    _render_session_log(); st.divider()
+    _render_logs_reset()
+
+def _render_review_log():
+    st.markdown("**REVIEW LOG**")
+    df = load_review_log_editable()                         # .to_pandas() UPPERCASE; mnemonic/doc_url editable in-table
+    with st.expander("Filters", expanded=False):            # COLLAPSED
+        doms = st.multiselect("Domain", sorted(df["DOMAIN_NAME"].dropna().unique()), key="rl_f_dom")
+        dr   = _log_date_range(df["LOGGED_AT"], "rl_f_dates")
+        tc = st.columns(2)
+        f_mnem = tc[0].toggle("Has mnemonic", key="rl_f_mnem")
+        f_doc  = tc[1].toggle("Has doc link", key="rl_f_doc")
+        sc = st.columns(2)
+        if sc[0].button("SEARCH", type="primary", width='stretch', key="rl_search"):
+            st.session_state["_rl_filters"] = {"dom": doms, "dr": dr, "mnem": f_mnem, "doc": f_doc}
+        if sc[1].button("RESET FILTERS", width='stretch', key="rl_reset"):
+            st.session_state.pop("_rl_filters", None)
+    f = st.session_state.get("_rl_filters", {})
+    view = df
+    if f.get("dom"):  view = view[view["DOMAIN_NAME"].isin(f["dom"])]
+    if f.get("dr"):   view = view[view["LOGGED_AT"].map(lambda x: x.date()).between(f["dr"][0], f["dr"][1])]
+    if f.get("mnem"): view = view[view["MNEMONIC"].fillna("").str.strip().ne("")]
+    if f.get("doc"):  view = view[view["DOC_URL"].fillna("").str.strip().ne("")]
+    st.caption(f"{len(view)} row(s)")
+    render_review_log_table(view)                           # editable table (mnemonic + doc_url) + write-back on edit
+
+def _render_session_log():
+    st.markdown("**SESSION LOG**")
+    df = load_session_log()                                 # .to_pandas() UPPERCASE; read-only display
+    with st.expander("Filters", expanded=False):
+        doms = st.multiselect("Domain", sorted(df["DOMAIN_FILTER"].dropna().unique()), key="sl_f_dom")
+        dr   = _log_date_range(df["SESSION_TS"], "sl_f_dates")
+        fc = st.columns(2)
+        diffs = fc[0].pills("Difficulty", ["mixed","easy","medium","hard"], selection_mode="multi",
+                            format_func=str.upper, key="sl_f_diff")
+        pct = fc[1].slider("Min score %", 0, 100, 0, key="sl_f_pct")
+        sc = st.columns(2)
+        if sc[0].button("SEARCH", type="primary", width='stretch', key="sl_search"):
+            st.session_state["_sl_filters"] = {"dom": doms, "dr": dr, "diff": diffs or [], "pct": pct}
+        if sc[1].button("RESET FILTERS", width='stretch', key="sl_reset"):
+            st.session_state.pop("_sl_filters", None)
+    f = st.session_state.get("_sl_filters", {})
+    view = df
+    if f.get("dom"):  view = view[view["DOMAIN_FILTER"].isin(f["dom"])]
+    if f.get("dr"):   view = view[view["SESSION_TS"].map(lambda x: x.date()).between(f["dr"][0], f["dr"][1])]
+    if f.get("diff"): view = view[view["DIFFICULTY"].isin(f["diff"])]
+    if f.get("pct"):  view = view[view["SCORE_PCT"] >= f["pct"]]
+    st.caption(f"{len(view)} session(s)")
+    SL = ["SESSION_ID","SESSION_TS","ROUND_SIZE","CORRECT_COUNT","SCORE_PCT","DOMAIN_FILTER","DIFFICULTY"]
+    st.data_editor(view, key="sl_editor", hide_index=True, width='stretch', disabled=True,     # read-only display table
+        column_order=SL,
+        column_config={"SESSION_ID": st.column_config.Column(column_label("SESSION_ID"), pinned=True, disabled=True),
+            **table_column_config([(c, "medium" if c == "DOMAIN_FILTER" else "small", False, False) for c in SL[1:]])})
+
+def _render_logs_reset():
+    cols = st.columns([3, 1])                               # push the button to the right
+    if cols[1].button("RESET ALL LOGS", type="secondary", width='stretch', key="log_reset"):   # BORDERED, right-aligned
         st.session_state["pending_reset"] = True
-    if st.session_state.get("pending_reset"):
+    if st.session_state.get("pending_reset"):              # two-step confirm, NOT a type-DELETE gate
         with st.container(border=True):
             st.markdown("**Delete all review + session log rows?**")
             rc = st.columns(2)
-            if rc[0].button("Confirm", type="primary", key="reset_yes"):
+            if rc[0].button("CONFIRM", type="primary", key="reset_yes"):
                 s = get_active_session()
                 s.sql(f"DELETE FROM {SCHEMA}.QUIZ_REVIEW_LOG").collect()      # DELETE the two log tables - NEVER DROP
                 s.sql(f"DELETE FROM {SCHEMA}.QUIZ_SESSION_LOG").collect()
                 clear_caches(); st.session_state.pop("pending_reset", None)
                 st.toast("Logs reset"); st.rerun()
-            if rc[1].button("Cancel", key="reset_no"):
+            if rc[1].button("CANCEL", key="reset_no"):
                 st.session_state.pop("pending_reset", None); st.rerun()
 ```
 
-Notes the gate enforces: App config exposes **only** the two toggles + three model selectboxes (no source/round/difficulty); the Questions Bank has the **editable `st.data_editor` table** with the checkbox column + editor-state signature; every config/question/delete write uses **bind params** + `clear_caches()`; the spend panel **branches structurally** (empty-on-success → caption, privilege-signal → GRANT, other → caption); the log **reset is in the Logs tab**, frameless, two-step. Batch generation uses a **slider** and always fires **toast + transient badge** feedback.
+Notes the gate enforces: App config exposes **only** the two toggles + three model selectboxes (no source/round/difficulty); the Question bank has the **editable `st.data_editor` table** with the checkbox column + editor-state signature; every config/question/delete write uses **bind params** + `clear_caches()`; the spend panel **branches structurally** (empty-on-success → caption, privilege-signal → GRANT, other → caption); the log **reset is in the Logs tab**, bordered and right-aligned, two-step. Batch generation uses a **slider** and always fires **toast + a transient plain-text** line.
 
 ---
 
@@ -917,15 +1013,15 @@ The `$sis` pre-deploy scan certifies the app **runs** and is **SQL-safe** (impor
 16. **Four tabs.** FAIL if Admin isn't four `st.tabs` - App config · Questions manager · Cortex spend · Logs.
 17. **App config is minimal.** FAIL if App config renders any selector for `question_source` / `round_size`/`default_round_size` / `difficulty` / `grounding_mode` / `pass_threshold` (it holds ONLY the two toggles + three model selectboxes).
 18. **Config writes are safe.** FAIL if any config write uses `TO_VARIANT(json.dumps(` or an inline config `MERGE`/`INSERT` in the page (must route through `save_config()` / `PARSE_JSON(?)`), OR if a config-seeded widget uses a bare `options.index(` instead of `cfg_index(`.
-19. **Questions manager has the editable table.** FAIL if it isn't nested `st.tabs(["Bank","Generate"])`, OR the Bank tab lacks an `st.data_editor` with a `select` `CheckboxColumn` (+ disabled other columns), OR renders the KPIs as a table instead of `st.metric`.
-20. **Batch count = slider.** FAIL if the Generate batch count uses `st.number_input`, or the slider max exceeds 20.
-21. **Batch feedback.** FAIL if batch generation doesn't run under an `st.spinner` AND fire an `st.toast` AND show a transient `:green-badge[Added N …]` line.
+19. **Questions manager has the editable table.** FAIL if it isn't nested `st.tabs(["Question bank","Add questions"])`, OR the Question-bank tab lacks an `st.data_editor` with a `select` `CheckboxColumn` (+ disabled other columns), OR renders the KPIs as a table instead of `st.metric`, OR the bank tab has an `ADD` button (the bank is `EDIT` + `DELETE` only; single-question manual entry is the Add-questions tab's MANUAL form).
+20. **Batch count = slider.** FAIL if the batch count uses `st.number_input`, or the slider max exceeds 20.
+21. **Batch feedback.** FAIL if batch generation doesn't run under an `st.spinner` AND fire an `st.toast` AND show a transient **plain-text** "Added N …" line (NOT a badge); FAIL if a "larger batches take longer" caption is present (removed).
 22. **Spend branches structurally.** FAIL if the Cortex-spend tab reads `METERING_DAILY_HISTORY` or the deprecated `CORTEX_FUNCTIONS_USAGE_HISTORY` (must be `CORTEX_AISQL_USAGE_HISTORY`), OR uses a generic `except → GRANT` instead of the three-way branch (empty-on-success → caption; privilege signal → GRANT with the live `CURRENT_ROLE()`; other error → caption).
-23. **Logs reset is here and frameless.** FAIL if the "Reset all logs" button isn't in the Logs tab (never App config), isn't `type="tertiary"`, or uses a type-`DELETE` text gate instead of a bordered two-step `pending_reset` Confirm/Cancel; Logs also carries a domain filter applied in Python.
+23. **Logs reset is here, bordered + right.** FAIL if the "RESET ALL LOGS" button isn't in the Logs tab (never App config), isn't a **bordered `type="secondary"`** button **right-aligned** (in a narrow right `st.columns` cell), or uses a type-`DELETE` text gate instead of a bordered two-step `pending_reset` Confirm/Cancel; each Logs table also carries its own collapsed Filters expander applied in pandas.
 
 ### Cross-cutting
 24. **No exam-code caption.** FAIL if `main.py`/`pages/quiz.py` renders the exam code as a subtitle/caption under a page title.
-25. **Loader return-type contract.** FAIL if any of `load_review_log` / `load_session_log` / `load_recent_sessions` / `load_domain_errors` / `load_session_stats` / `load_bank_stats` / `load_domains` / `load_cortex_spend` is consumed with DataFrame ops (`.empty` / `.iterrows` / `.dropna` / `.isin` / `.head`) - they return `.collect()` `list[Row]`; only `load_questions_page` and `load_review_log_editable` are `.to_pandas()` DataFrames (the `st.data_editor` tables).
+25. **Loader return-type contract.** FAIL if any of `load_review_log` / `load_recent_sessions` / `load_domain_errors` / `load_session_stats` / `load_bank_stats` / `load_domains` / `load_cortex_spend` is consumed with DataFrame ops (`.empty` / `.iterrows` / `.dropna` / `.isin` / `.head`) - they return `.collect()` `list[Row]`; only `load_questions_page`, `load_review_log_editable`, and `load_session_log` are `.to_pandas()` DataFrames (the `st.data_editor` tables).
 26. **Grounding style** *(judgment - read the prompts)*. The explanation / hint / deep-dive calls are **teaching** calls: ground in the retrieved `<doc_context>` but explain in the model's own words, at most one short cited passage. FAIL if any of these prompts in `_cortex.py` instead instructs strict fact-extraction - e.g. "answer ONLY from the provided documentation", "do not use prior knowledge", "quote/excerpt the docs" - OR fails to tell the model to explain/teach in its own words. (The strict fact-extraction phrasing belongs ONLY to question/batch/flashcard generation - `$cortex`, "Grounded ≠ parroting".)
 27. **Status via badges only.** FAIL if `st.success` / `st.warning` / `st.error` appears anywhere, or `st.info` is used for anything other than the mnemonic 🧠 box (`$quiz/design`).
 

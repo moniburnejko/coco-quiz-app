@@ -283,7 +283,7 @@ Edit `AGENTS.md` within these boundaries.
 
 ## Step 8 - Build the `app/` project in the workspace
 
-1. Read the updated `AGENTS.md`. **If an `app/` project already exists in the workspace from a prior or interrupted session, do NOT trust it** - re-read each existing file and reconcile it to the CURRENT contracts (`$quiz/*`, `$sis`), regenerating any file that diverges. Prior-session files carry prior-session bugs (constants/columns the current modules no longer define - e.g. a `from _config import SCORE_COLOR` or a `stats["sessions"]` that mismatches today's loaders); do not inherit them unread.
+1. Read the updated `AGENTS.md`. **If an `app/` project already exists in the workspace from a prior or interrupted session, do NOT trust it** - re-read each existing file and reconcile it to the CURRENT contracts (`$quiz/*`, `$sis`), regenerating any file that diverges. Stale generated files carry stale bugs (constants/columns the current modules do not define - e.g. a `from _config import SCORE_COLOR` or a `stats["sessions"]` that mismatches today's loaders); do not inherit them unread.
 2. **MANDATORY - read these skills BEFORE writing any code** (they're generation rules, not a post-hoc linter - reading them first is what makes the scan pass):
    - `$sis` - gotchas (no-`ttl` cache + `clear_caches()`, widget lifecycle, SQL safety) + the pre-deploy scan your code must ALREADY pass
    - `$cortex` - `call_cortex_json` + `response_format` (no fence parsing), injection delimiting, the **mandatory grounding contract** (no built-in fallback), and the `_search.py` CKE helper (generate it unless `grounding_mode = none` - Step 1g; requires the `snowflake` package in `environment.yml`)
