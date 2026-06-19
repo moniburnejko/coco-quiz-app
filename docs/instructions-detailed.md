@@ -334,7 +334,7 @@ Then it runs the **pre-deploy scan** from `$sis` across all app files. It catche
 - Column-name case mismatches between SQL and pandas;
 - `get_active_session()` called outside the right cache scope.
 
-Then it runs a second, separate check: the **UX-conformance gate** from `$quiz/screens`. The scan proves the app *runs* and is *SQL-safe*; the gate proves the screens *match the UX contracts* — round size is a slider, the hint state machine and sidebar End Round are present, missed answers show full text, the Admin page has its four tabs with the editable Questions table, the config saves without crashing, and so on. (A clean scan alone can still ship a broken UI — that gap is exactly what the gate closes.)
+Then it runs a second, separate check: the **UX-conformance gate** from `$quiz/screens`. The scan proves the app *runs* and is *SQL-safe*; the gate proves the screens *match the UX contracts* - round size is a slider, the hint state machine and sidebar End Round are present, missed answers show full text, the Admin page has its four tabs with the editable Questions table, the config saves without crashing, and so on. (A clean scan alone can still ship a broken UI - that gap is exactly what the gate closes.)
 
 If either the scan or the gate fails, the agent fixes it and re-runs until both are clean. Do not proceed to deploy on a failed scan or a failed gate.
 
