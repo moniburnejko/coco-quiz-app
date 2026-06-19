@@ -44,6 +44,7 @@ def clear_caches():                       # must clear EVERY @st.cache_data load
     load_recent_sessions.clear(); load_domain_errors.clear(); load_review_log.clear()
     load_session_log.clear(); load_bank_stats.clear()           # Admin Logs + Questions-manager KPIs
     load_questions_page.clear(); load_cortex_spend.clear()      # Admin Questions table + Cortex-spend
+    load_review_log_editable.clear()                            # Admin editable review-log table
     from _search import docs_available, search_docs   # function-local: _search imports _data, so a
     docs_available.clear(); search_docs.clear()        # module-level import here would be circular
 ```

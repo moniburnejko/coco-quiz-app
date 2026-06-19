@@ -450,6 +450,62 @@ Four **`st.tabs`** - **App config · Questions manager · Cortex spend · Logs**
 
 Admin's widget / pagination / pending-confirm keys - `_qm_filters`, `_qm_select_all`, `_qm_limit`, `_qm_mode`/`_qm_edit_id`, `pending_delete`, `pending_reset` - are **page-local**: initialized/guarded with `.get()` defaults in `admin.py`, NOT added to the core `init_session_state` contract. The core contract carries only cross-page shared state.
 
+## Data tables - shared display contract
+
+The three admin tables (Questions bank, review log, session log) share one display contract so they look and scroll the same. Build each with **`st.data_editor`** (never a raw `st.dataframe`), `use_container_width=True`, fed a **`.to_pandas()` DataFrame with UPPERCASE columns** (the one loader-type exception to `list[Row]`, because `column_config` needs a frame; `$sis` loader convention).
+
+- **Column order** is explicit via `column_order=[...]`, independent of the SELECT order.
+- **Display headers** come from `_ui.py` `column_label(col)` set in `column_config` (`QUESTION_ID` shows as "QUESTION ID"; underscore to space, uppercase). Display only - the DataFrame keys stay UPPERCASE for access.
+- **Per-column** `width` ("small"/"medium"/"large") and `disabled=True` for every read-only column.
+- **Pin the leading key columns** so they stay visible while scrolling wide tables: pass `pinned=True` to the `column_config` entry for the `select` checkbox (where present) and the id column; the rest scroll horizontally.
+- **Row id shows as a contiguous 1..N index, not the raw key.** `AUTOINCREMENT` ids are unique and increasing but not gap-free (a stored id like 1, 2, 3, 101 looks wrong), so compute the display number at read time with `ROW_NUMBER() OVER (ORDER BY <timestamp column>) AS "#"` and keep the real id only as the hidden key for edit/delete (`WHERE question_id = ?`).
+- **Editable cells** (only where specified, e.g. the review log's `mnemonic` + `doc_url`): make ONLY those columns editable, keep every other column `disabled=True`, read the edited frame back from the `st.data_editor` return value, and persist each changed row with a bind-param `UPDATE` keyed by the row id, then `clear_caches()`. An editable table has its own loader (edits must write back), separate from any display-only loader.
+
+```python
+# _ui.py - column_config builder. spec = [(COL, "small"/"medium"/"large", editable, pinned), ...]
+import streamlit as st
+def table_column_config(spec):
+    return {col: st.column_config.Column(column_label(col), width=w, disabled=not editable, pinned=pinned)
+            for (col, w, editable, pinned) in spec}
+
+# _data.py - the EDITABLE review-log loader: .to_pandas() with UPPERCASE aliases + a write-back helper.
+@st.cache_data(show_spinner=False)
+def load_review_log_editable():
+    return get_active_session().sql(
+        f'SELECT log_id AS "LOG_ID", logged_at AS "LOGGED_AT", domain_name AS "DOMAIN_NAME", '
+        f'difficulty AS "DIFFICULTY", question_text AS "QUESTION_TEXT", correct_answer AS "CORRECT_ANSWER", '
+        f'mnemonic AS "MNEMONIC", doc_url AS "DOC_URL" '
+        f"FROM {SCHEMA}.QUIZ_REVIEW_LOG ORDER BY logged_at DESC"
+    ).to_pandas()
+
+def write_review_log_edit(log_id, mnemonic, doc_url):          # one row, bind params
+    get_active_session().sql(
+        f"UPDATE {SCHEMA}.QUIZ_REVIEW_LOG SET mnemonic = ?, doc_url = ? WHERE log_id = ?",
+        params=[mnemonic, doc_url, int(log_id)],
+    ).collect()
+    clear_caches()
+
+# pages/admin.py - editable review-log: only MNEMONIC + DOC_URL editable; persist the changed rows.
+def render_review_log_table(df):                                # df = load_review_log_editable(), post-filter
+    edited = st.data_editor(
+        df, key="rl_editor", hide_index=True, use_container_width=True,
+        column_order=["LOG_ID","LOGGED_AT","DOMAIN_NAME","DIFFICULTY","QUESTION_TEXT","CORRECT_ANSWER","MNEMONIC","DOC_URL"],
+        column_config={
+            "LOG_ID": st.column_config.Column(column_label("LOG_ID"), pinned=True, disabled=True),
+            **table_column_config([("LOGGED_AT","small",False,False), ("DOMAIN_NAME","medium",False,False),
+                ("DIFFICULTY","small",False,False), ("QUESTION_TEXT","large",False,False),
+                ("CORRECT_ANSWER","large",False,False), ("MNEMONIC","large",True,False), ("DOC_URL","large",True,False)]),
+        },
+    )
+    changed = [r for _, r in edited.iterrows()
+               if (r["MNEMONIC"] or "") != (df.loc[df["LOG_ID"] == r["LOG_ID"], "MNEMONIC"].iloc[0] or "")
+               or (r["DOC_URL"] or "") != (df.loc[df["LOG_ID"] == r["LOG_ID"], "DOC_URL"].iloc[0] or "")]
+    if changed:
+        for r in changed:
+            write_review_log_edit(r["LOG_ID"], r["MNEMONIC"], r["DOC_URL"])
+        st.toast(f"Updated {len(changed)} row(s)"); st.rerun()
+```
+
 ## 1. App config
 
 **Two toggles** - `hints_enabled`, `debrief_enabled` ("Round Summary"). Plus **AI model per call-group** (3 `st.selectbox`, options from `_config.py` `MODEL_OPTIONS = ["claude-haiku-4-5", "claude-sonnet-4-6", "claude-opus-4-8"]`):
@@ -473,7 +529,7 @@ Two nested `st.tabs` - **Bank** and **Generate**.
 - **Editable / filterable / deletable table**:
   1. **Filters** in an `st.expander("Filters", expanded=True)` - domain / difficulty / source pills - then a **"Search"** button commits them to a `_qm_filters` session dict (don't query live off widget state). A "Reset filters" button.
   2. **`Select All` / `Clear`** buttons above the table (toggle a `_qm_select_all` flag).
-  3. **`st.data_editor`** with a leading `select` `st.column_config.CheckboxColumn`; **every other column `disabled`**; read the selection back as `edited[edited["select"]]`. The table's source is a **no-ttl cached loader returning a pandas DataFrame** (`.to_pandas()`) - `data_editor` preserves its checkbox selection across reruns ONLY when its input is byte-identical (a ttl that expired mid-edit would wipe the selection - `$sis` caching), and `.to_pandas()` columns come back UPPERCASE so there is **no `Row` access at all** - selected-row fields are read as `row["QUESTION_TEXT"]`, never `.get()`/attr on a `Row` (`$sis` scan item 20).
+  3. **`st.data_editor`** with a leading `select` `st.column_config.CheckboxColumn`; **every other column `disabled`**; read the selection back as `edited[edited["select"]]`. The table's source is a **no-ttl cached loader returning a pandas DataFrame** (`.to_pandas()`) - `data_editor` preserves its checkbox selection across reruns ONLY when its input is byte-identical (a ttl that expired mid-edit would wipe the selection - `$sis` caching), and `.to_pandas()` columns come back UPPERCASE so there is **no `Row` access at all** - selected-row fields are read as `row["QUESTION_TEXT"]`, never `.get()`/attr on a `Row` (`$sis` scan item 20). Apply the **Data tables display contract** above: `column_order` = select · question id · domain name · question text · correct answer · option a-e · difficulty · source; `column_label` headers; `pinned=True` on the `select` checkbox and the id column; per-column `width`; and a `ROW_NUMBER()` display index in place of the raw `question_id`.
   4. **`Load 10 more`** (page cap 10 - don't render 1000 rows; paginate via a `_qm_limit` that grows by 10).
   5. Below the table: **`Edit` · `Delete` · `Add`**.
      - **Edit** (enabled when exactly 1 row selected): loads that row into the form below → UPDATE by `question_id`.
@@ -510,7 +566,7 @@ Caption: ACCOUNT_USAGE has reporting latency (up to ~2 h; this view only covers 
 A read-only log viewer plus a reset - the vendors02 logs page, no download:
 - **Both log tables shown**: `QUIZ_REVIEW_LOG` via `load_review_log()` and `QUIZ_SESSION_LOG` via **`load_session_log()`** - a new no-ttl cached loader for the full session-log table (`load_recent_sessions()` is the dashboard's last-10 aggregate, NOT this); **add `load_session_log` to `_data.py` and register it in `clear_caches()`** (`$sis` item 24, else it dangles). Read-only `st.dataframe`, newest first. **No `st.download_button`.**
 - **Filters + paging** (`QUIZ_REVIEW_LOG`): a **domain `st.multiselect`** (empty = all) applied **in Python over the cached `list[Row]`** (`[r for r in rows if not doms or r["DOMAIN_NAME"] in doms]` - `load_review_log()` returns `.collect()` Rows, NOT a DataFrame), plus `Load N more` paging via a page-local `_log_limit` (don't render thousands of rows). `st.dataframe` accepts the `list[Row]` slice directly. The session-log table is shown as-is, newest first.
-- **Loader return-type convention** (`$sis` Caching): every cached loader returns a **`.collect()` `list[Row]`** (read fields by `row["UPPER"]`, never `.get()`/attr - `$sis` scan item 20) - `load_review_log`, `load_session_log`, `load_recent_sessions`, `load_domain_errors`, `load_bank_stats`, `load_domains`, `load_cortex_spend`. **The sole exception is `load_questions_page`** (the Questions-manager Bank table), which returns **`.to_pandas()`** because `st.data_editor` structurally requires a DataFrame. Do NOT "normalize" the two - a DataFrame handler against a `list[Row]` loader (or vice-versa) crashes on the first `.empty`/`.iterrows`/`[col]` call.
+- **Loader return-type convention** (`$sis` Caching): every cached loader returns a **`.collect()` `list[Row]`** (read fields by `row["UPPER"]`, never `.get()`/attr - `$sis` scan item 20) - `load_review_log`, `load_session_log`, `load_recent_sessions`, `load_domain_errors`, `load_bank_stats`, `load_domains`, `load_cortex_spend`. **The exceptions are the `st.data_editor` tables** - `load_questions_page` (Questions bank) and `load_review_log_editable` (the editable review-log table) - which return **`.to_pandas()`** because `st.data_editor`/`column_config` structurally require a DataFrame. (`load_review_log` stays `list[Row]` for the read-only Review wrong-answers cards; the editable admin table uses the separate `load_review_log_editable`.) Do NOT "normalize" them - a DataFrame handler against a `list[Row]` loader (or vice-versa) crashes on the first `.empty`/`.iterrows`/`[col]` call.
 - **Reset all logs** - a **frameless/borderless button** (`st.button(..., type="tertiary")`) below the tables, with **no expander and no "DANGER ZONE" label**, then a **two-step confirm** (a bordered `pending_reset` panel with Confirm / Cancel - NOT a type-`DELETE` text gate). Confirm runs `DELETE FROM` on the **two log tables only** (`QUIZ_REVIEW_LOG`, `QUIZ_SESSION_LOG`) - **NEVER `DROP`**, consistent with governance - then `clear_caches()` + `st.toast`. The reset lives **in this Logs tab**, never in App config.
 
 ## Reference code (COPY + ADAPT - Admin handlers)
@@ -849,7 +905,7 @@ The `$sis` pre-deploy scan certifies the app **runs** and is **SQL-safe** (impor
 
 ### Cross-cutting
 24. **No exam-code caption.** FAIL if `main.py`/`pages/quiz.py` renders the exam code as a subtitle/caption under a page title.
-25. **Loader return-type contract.** FAIL if any of `load_review_log` / `load_session_log` / `load_recent_sessions` / `load_domain_errors` / `load_bank_stats` / `load_domains` / `load_cortex_spend` is consumed with DataFrame ops (`.empty` / `.iterrows` / `.dropna` / `.isin` / `.head`) - they return `.collect()` `list[Row]`; only `load_questions_page` is a `.to_pandas()` DataFrame (for `st.data_editor`).
+25. **Loader return-type contract.** FAIL if any of `load_review_log` / `load_session_log` / `load_recent_sessions` / `load_domain_errors` / `load_bank_stats` / `load_domains` / `load_cortex_spend` is consumed with DataFrame ops (`.empty` / `.iterrows` / `.dropna` / `.isin` / `.head`) - they return `.collect()` `list[Row]`; only `load_questions_page` and `load_review_log_editable` are `.to_pandas()` DataFrames (the `st.data_editor` tables).
 26. **Grounding style** *(judgment - read the prompts)*. The explanation / hint / deep-dive calls are **teaching** calls: ground in the retrieved `<doc_context>` but explain in the model's own words, at most one short cited passage. FAIL if any of these prompts in `_cortex.py` instead instructs strict fact-extraction - e.g. "answer ONLY from the provided documentation", "do not use prior knowledge", "quote/excerpt the docs" - OR fails to tell the model to explain/teach in its own words. (The strict fact-extraction phrasing belongs ONLY to question/batch/flashcard generation - `$cortex`, "Grounded ≠ parroting".)
 27. **Status via badges only.** FAIL if `st.success` / `st.warning` / `st.error` appears anywhere, or `st.info` is used for anything other than the mnemonic 🧠 box (`$quiz/design`).
 
